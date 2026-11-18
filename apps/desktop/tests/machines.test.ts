@@ -13,6 +13,7 @@ import {
   installsAlongside,
   isFinal,
   missingEngineFor,
+  missingEngines,
   moveJob,
   startLoad,
   updateStep,
@@ -120,4 +121,17 @@ test("fichier sans conversion : le moteur à installer est proposé seulement s'
   assert.equal(missingEngineFor("video", [engine({ state: "ready", origin: "system" })]), null, "déjà prêt");
   assert.equal(missingEngineFor("video", [engine({ installable: null })]), null, "pas de source ici");
   assert.equal(missingEngineFor("video", [engine({ state: "disabled" })]), null, "désactivé par l'utilisateur");
+});
+
+test("tout installer : seulement les moteurs utilisés, absents ou en panne, installables ici", () => {
+  const list = [
+    engine({}),
+    engine({ id: "7zip", name: "7-Zip", state: "broken", origin: "system", categories: ["archive"] }),
+    engine({ id: "pandoc", supported: false }),
+    engine({ id: "sys", state: "ready", origin: "system" }),
+    engine({ id: "nosrc", installable: null }),
+    engine({ id: "off", state: "disabled" }),
+  ];
+  assert.deepEqual(missingEngines(list).map((e) => e.id), ["ffmpeg", "7zip"]);
+  assert.deepEqual(missingEngines(null), []);
 });

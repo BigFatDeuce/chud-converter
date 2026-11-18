@@ -74,6 +74,9 @@ de tester l'installation sans rien toucher à votre installation (tests 17h–17
 | 17i | Puis **Retirer** | La carte redevient « Prêt », origine « installé sur le système », avec le chemin d'origine (rien n'a été modifié) |
 | 17g | En ligne de commande : `chud engines`, puis `chud engines install 7zip` | La liste indique `chud engines install …` pour les moteurs installables ; l'installation affiche ses étapes |
 | 17j | Seulement si FFmpeg n'est **pas** installé sur votre PC : glisser une vidéo dans **Convertir** | La ligne du fichier dit « aucune conversion possible… » et propose **installer FFmpeg (… Mo)** ; le clic ouvre **Moteurs** sur la confirmation (rien n'est téléchargé sans **Télécharger et installer**) ; une fois prêt, retour automatique à **Convertir**, fichier toujours sélectionné, formats vidéo proposés |
+| 17m | Premier démarrage d'un dossier neuf (supprimez `data\` pour le revoir), s'il manque un moteur | Fenêtre « Bienvenue » : chaque moteur manquant avec son usage, sa taille, sa source et sa licence, un bouton **Installer** chacun et **Tout installer** s'il en manque plusieurs ; **Plus tard** ferme. Elle ne revient pas au démarrage suivant. Si rien ne manque, elle ne s'affiche pas |
+| 17n | Cocher seulement un fichier qui demande un moteur absent | Panneau de droite : « Pour convertir « … », il faut FFmpeg. » avec **Installer FFmpeg (… Mo)** |
+| 17l | Seulement s'il manque FFmpeg ou 7-Zip sur votre PC : écran **Convertir** | Un bandeau « Moteurs manquants : … » avec **Tout installer (… Mo)** ; la confirmation liste chaque moteur (taille, source, licence) ; après **Télécharger et installer**, chaque moteur s'installe à son tour, avec **Arrêter** ; le bandeau disparaît quand tout est prêt. La croix le masque jusqu'au prochain démarrage |
 | 17k | Pendant l'installation de FFmpeg | Après la vérification, « Extraction : … % » avec une barre qui avance |
 
 ## Écrans qui défilent (corrigé)

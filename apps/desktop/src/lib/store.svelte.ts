@@ -18,7 +18,9 @@ import {
   startLoad,
   updateBusy,
   updateStep,
+  missingEngines as findMissingEngines,
   type Analysis,
+  type BulkInstall,
   type EngineAction,
   type EngineOp,
   type EngineOpEvent,
@@ -177,11 +179,18 @@ class Store {
 
   /** Moteurs détectés (machine `Load` : la dernière liste reste affichée pendant une recherche). */
   enginesLoad = $state<Load<EngineView[]>>(idle());
+  bulkInstall = $state<BulkInstall | null>(null);
+  /** Accueil du premier démarrage (moteurs à télécharger). */
+  welcomeOpen = $state(false);
+  /** Bandeau des moteurs manquants masqué dans Convertir (jusqu'au prochain démarrage). */
+  setupDismissed = $state(false);
   /** Moteur à faire défiler jusqu'à l'écran à l'ouverture des Moteurs. */
   focusEngine = $state<string | null>(null);
   /** Installation proposée depuis un autre écran : on y revient une fois le moteur prêt. */
   #returnAfterInstall: { id: string; view: View } | null = null;
   engines = $derived(current(this.enginesLoad));
+  /** Moteurs manquants que « Tout installer » propose. */
+  missingEngines = $derived(findMissingEngines(this.engines));
   /** Opérations sur les moteurs (installation, retrait, retour en arrière), par identifiant. */
   engineOps = $state<Record<string, EngineOp>>({});
   info = $state<AppInfo | null>(null);
@@ -246,7 +255,7 @@ class Store {
       this.view = "convert";
       void this.addPaths(paths);
     });
-    void this.loadEngines(false);
+    void this.loadEngines(false).then(() => this.#maybeWelcome());
     void this.loadPresets();
     const initial = await a.initialPaths();
     if (initial.length) await this.addPaths(initial);
@@ -808,10 +817,86 @@ class Store {
     this.askEngine(id, "install");
   }
 
-  /** L'utilisateur a confirmé : l'action est lancée. */
-  async confirmEngine(id: string) {
+  /** Premier démarrage : l'accueil présente les moteurs manquants ; s'il ne manque rien, il
+   *  n'est pas montré (et ne le sera plus). */
+  async #maybeWelcome() {
+    if (!this.settings || this.settings.introSeen || this.enginesLoad.state !== "ready") return;
+    if (this.missingEngines.length) this.welcomeOpen = true;
+    else await this.#introDone();
+  }
+
+  async #introDone() {
+    if (this.settings) this.settings = { ...this.settings, introSeen: true };
+    try {
+      await (await api).introDone();
+    } catch {
+      // Sans conséquence : l'accueil reviendrait au prochain démarrage.
+    }
+  }
+
+  closeWelcome() {
+    this.welcomeOpen = false;
+    this.setupDismissed = false;
+    void this.#introDone();
+  }
+
+  /** Installation d'un moteur depuis un écran qui a déjà montré taille, source et licence
+   *  (l'accueil) : le clic vaut accord. */
+  async installNow(id: string): Promise<boolean> {
+    this.askEngine(id, "install");
+    return this.confirmEngine(id);
+  }
+
+  /** Comme `installNow`, pour plusieurs moteurs à la suite. */
+  async installAllNow(ids: string[]) {
+    if (this.bulkInstall?.state === "running" || !ids.length) return;
+    this.bulkInstall = { state: "confirming", ids };
+    await this.installAll();
+  }
+
+  /** Première étape : la liste de ce qui sera téléchargé, en attente d'accord. */
+  askInstallAll() {
+    if (this.bulkInstall?.state === "running") return;
+    const ids = this.missingEngines.map((e) => e.id).filter((id) => this.engineOps[id]?.state !== "running");
+    if (!ids.length) return;
+    this.bulkInstall = { state: "confirming", ids };
+    this.setupDismissed = false;
+  }
+
+  dismissInstallAll() {
+    if (this.bulkInstall?.state === "confirming") this.bulkInstall = null;
+  }
+
+  /** Accord donné : les moteurs s'installent l'un après l'autre ; un échec n'arrête pas les
+   *  suivants, et chaque résultat est annoncé. */
+  async installAll() {
+    if (this.bulkInstall?.state !== "confirming") return;
+    const ids = this.bulkInstall.ids;
+    this.bulkInstall = { state: "running", ids, stopping: false };
+    let ok = 0;
+    for (const id of ids) {
+      if (this.bulkInstall?.state !== "running" || this.bulkInstall.stopping) break;
+      if (this.engines?.find((e) => e.id === id)?.state === "ready") continue;
+      this.askEngine(id, "install");
+      if (await this.confirmEngine(id)) ok++;
+    }
+    this.bulkInstall = null;
+    if (ok > 1) this.say(L(`${ok} moteurs installés et prêts.`, `${ok} engines installed and ready.`));
+  }
+
+  /** Arrête l'installation en cours et ne lance pas les suivantes. */
+  async stopInstallAll() {
+    const b = this.bulkInstall;
+    if (b?.state !== "running") return;
+    this.bulkInstall = { ...b, stopping: true };
+    const current = b.ids.find((id) => this.engineOps[id]?.state === "running");
+    if (current) await this.cancelEngine(current);
+  }
+
+  /** L'utilisateur a confirmé : l'action est lancée. Vrai si elle a abouti. */
+  async confirmEngine(id: string): Promise<boolean> {
     const op = this.engineOps[id];
-    if (op?.state !== "confirming") return;
+    if (op?.state !== "confirming") return false;
     const action = op.action;
     const before = this.engines?.find((e) => e.id === id);
     const name = before?.name ?? id;
@@ -835,6 +920,7 @@ class Store {
       const back = this.#returnAfterInstall;
       this.#returnAfterInstall = null;
       if (action === "install" && back?.id === id && this.view === "engines" && e?.state === "ready") this.view = back.view;
+      return true;
     } catch (err) {
       const cur = this.engineOps[id];
       if (cur?.state === "running" && cur.cancelling) {
@@ -843,6 +929,7 @@ class Store {
       } else {
         this.#engine(id, { type: "error", error: errorText(err) });
       }
+      return false;
     }
   }
 

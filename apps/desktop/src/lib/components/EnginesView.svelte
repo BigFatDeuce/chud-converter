@@ -1,6 +1,7 @@
 <script lang="ts">
   import { L } from "../i18n.svelte";
   import Icon from "./Icon.svelte";
+  import EngineSetup from "./EngineSetup.svelte";
   import { tick } from "svelte";
   import { store } from "../store.svelte";
   import { api, errorText } from "../api";
@@ -107,6 +108,7 @@
   {/if}
 
   {#if store.engines}
+    <EngineSetup place="engines" />
     <p class="muted small">{L(`${ready} moteur${ready > 1 ? "s" : ""} prêt${ready > 1 ? "s" : ""} sur ${used.length}.`, `${ready} of ${used.length} engines ready.`)}</p>
     <div class="grid">
       {#each used as e (e.id)}

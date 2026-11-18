@@ -2,11 +2,13 @@
   import FileList from "./FileList.svelte";
   import JobList from "./JobList.svelte";
   import TargetPanel from "./TargetPanel.svelte";
+  import EngineSetup from "./EngineSetup.svelte";
   import { store } from "../store.svelte";
 </script>
 
 <div class="convert">
   <div class="left">
+    <EngineSetup place="convert" />
     <FileList />
     {#if store.jobs.length}
       <JobList />

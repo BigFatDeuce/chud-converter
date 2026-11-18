@@ -169,6 +169,7 @@ fn main() {
             commands::shell_status,
             commands::shell_install,
             commands::shell_uninstall,
+            commands::intro_done,
             commands::settings,
             commands::set_language,
             commands::update_status,

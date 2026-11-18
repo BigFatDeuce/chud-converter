@@ -160,6 +160,15 @@ export function missingEngineFor(category: string | null, engines: readonly Engi
   );
 }
 
+/** Moteurs dont Chud Converter se sert, absents ou en panne, et qu'il sait installer ici : ce
+ *  que propose « Tout installer ». Un moteur du système qui fonctionne n'y figure jamais. */
+export function missingEngines(engines: readonly EngineView[] | null): EngineView[] {
+  return (engines ?? []).filter((e) => e.supported && (e.state === "missing" || e.state === "broken") && engineActions(e).includes("install"));
+}
+
+/** Installation groupée : une seule confirmation, puis un moteur après l'autre. */
+export type BulkInstall = { state: "confirming"; ids: string[] } | { state: "running"; ids: string[]; stopping: boolean };
+
 export function engineStep(op: EngineOp | null, e: EngineOpEvent): EngineOp | null {
   switch (e.type) {
     case "ask":

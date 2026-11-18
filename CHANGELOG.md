@@ -4,7 +4,23 @@ All notable changes to Chud Converter. Versions follow [Semantic Versioning](htt
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-11-18
+
+Engines without the terminal: FFmpeg and 7-Zip now install from the app, verified, on Windows
+and Linux (x64 and ARM64). No command to type or copy anywhere in the app.
+
 ### Added
+- **First-start welcome**: when engines are missing, the app says so at first launch, explains
+  what each one is for (video, audio, subtitles, archives), with its size, version, source and
+  license, and installs them one by one or all at once. Shown once; "Later" is always possible.
+- **The app says what a file needs**: a file that cannot be converted yet shows "To convert
+  “vacances.mkv”, you need FFmpeg" in the Convert panel, with the button to install it, and an
+  install link on its line in the file list.
+- **Install all missing engines in one click.** A banner on the Convert screen (and at the top
+  of Engines) lists what is missing and what it is needed for; one confirmation shows every
+  download (size, source, license), then the engines install one after the other, with progress
+  and a Stop button. A failure does not stop the others. Each engine can also be installed on
+  its own.
 - **Install FFmpeg and 7-Zip from the app**, in one click on the Engines screen (or
   `chud engines install ffmpeg|7zip`). Before anything is downloaded, the app shows the version,
   size, publisher and license, with a link to the original release. Each file comes from a fixed

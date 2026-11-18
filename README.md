@@ -67,7 +67,8 @@ selected, only the formats they all support are offered, with the worst fidelity
 The app also offers options generated from each engine (codec, quality, size, subtitles…),
 the destination (next to the original or another folder), what to do when the file already
 exists, a queue you can add to while it runs, per-file cancellation, and an **Engines** page
-showing what is installed.
+showing what is installed. FFmpeg and 7-Zip install from there in one click (no terminal, no
+command to copy), and a file that cannot be converted yet offers the engine it needs.
 
 ### Command line
 
@@ -85,8 +86,8 @@ styled ASS subtitles, so the conversion is *not* called lossless:
 
 <p align="center"><img src="docs/screenshots/cli-detect.svg" width="820" alt="Terminal: chud detect finds that faux.jpg is actually a PNG and that export.txt looks like CSV"></p>
 
-**Engines found on your machine**, with their version, location and the official command to
-install the missing ones:
+**Engines found on your machine**, with their version and location; `chud engines install
+ffmpeg|7zip` installs the missing ones, verified the same way as in the app:
 
 <p align="center"><img src="docs/screenshots/cli-engines.svg" width="820" alt="Terminal: chud engines lists FFmpeg and 7-Zip as ready, MKVToolNix as detected, and install commands for the others"></p>
 
@@ -185,13 +186,17 @@ The programs are `target/release/chud` and `target/release/chud-converter` (`.ex
 
 ### External engines (optional)
 
-Images and data work with nothing else installed. For the rest, install the engines with your
-system's package manager; `chud engines` tells you what is found and what is missing.
+Images and data work with nothing else installed. For the rest, open **Engines** in the app
+and click **Install**: the engine is downloaded from its official release, refused if its
+SHA-256 differs from the one pinned in the signed app, tried, and kept in the app's own folder.
+System installs are detected and never changed; removing or rolling back is one click.
 
-| Engine | Adds | Windows | Debian, Ubuntu |
+| Engine | Adds | Installable from the app on | Source |
 |---|---|---|---|
-| FFmpeg | video, audio, subtitles, animations | `winget install Gyan.FFmpeg` | `sudo apt install ffmpeg` |
-| 7-Zip | archives | `winget install 7zip.7zip` | `sudo apt install 7zip` |
+| FFmpeg | video, audio, subtitles, animations | Windows x64, Linux x64 and ARM64 | gyan.dev (Windows), BtbN (Linux) |
+| 7-Zip | archives | Windows x64, Linux x64 and ARM64 | Igor Pavlov's official release |
+
+Already installed with your package manager? It is used as is.
 
 MKVToolNix, Pandoc, LibreOffice, Calibre, ImageMagick, libvips, qpdf, Ghostscript, Tesseract,
 ExifTool and MediaInfo are already detected; support for them is coming release by release.
@@ -265,7 +270,8 @@ managed engines then stay in a `data` folder beside it — nothing in your user 
 - [x] Presets, quick-convert window, right-click menu in Windows File Explorer
 - [ ] Right-click menu on Linux: Dolphin, Nemo, Nautilus written but not yet tried on a real desktop; Thunar to do
 - [x] English and French, switchable in the settings
-- [ ] Verified installation and updates of engines
+- [x] Verified installation of engines from the app (FFmpeg, 7-Zip), checked weekly on every platform
+- [ ] Engine updates between app releases (signed index)
 - [ ] PDF, documents, e-books (qpdf, LibreOffice, Pandoc, Calibre), OCR
 - [ ] Universal inspector, duplicate finder, automatic optimization
 - [ ] Visual workflows, watch folders, history, plugins

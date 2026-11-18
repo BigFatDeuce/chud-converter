@@ -208,6 +208,8 @@ pub struct SettingsView {
     /// Après un changement : mise à jour du menu clic droit installé.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub menu_note: Option<String>,
+    /// L'accueil du premier démarrage a déjà été montré.
+    pub intro_seen: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1109,7 +1111,21 @@ impl App {
             file: file.display().to_string(),
             error,
             menu_note: None,
+            intro_seen: self.paths.intro_file().exists(),
         }
+    }
+
+    /// L'accueil du premier démarrage ne sera plus montré.
+    pub fn intro_done(&self) -> Result<(), String> {
+        let file = self.paths.intro_file();
+        if let Some(dir) = file.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(
+            &file, "1
+",
+        )
+        .map_err(|e| e.to_string())
     }
 
     /// Change la langue : enregistrée dans les réglages (partagés avec la ligne de commande),

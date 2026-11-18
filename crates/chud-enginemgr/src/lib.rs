@@ -226,6 +226,12 @@ impl AppPaths {
     pub fn settings_file(&self) -> PathBuf {
         self.config_dir.join("engines.toml")
     }
+
+    /// Marque « accueil déjà montré » : fichier à part, pour que les réglages restent lisibles
+    /// par les versions précédentes (ils refusent les champs inconnus).
+    pub fn intro_file(&self) -> PathBuf {
+        self.config_dir.join("intro-seen")
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

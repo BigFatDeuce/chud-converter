@@ -165,6 +165,10 @@ let installCancel = false;
 const installListeners: ((id: string, p: InstallProgress) => void)[] = [];
 
 let langChoice: LangChoice = "system";
+// « ?neuf » dans l'adresse : premier démarrage, sans aucun moteur.
+const fresh = typeof location !== "undefined" && location.search.includes("neuf");
+let introSeen = !fresh;
+if (fresh) Object.assign(ENGINES[0], { state: "missing", version: null, path: null, origin: null });
 const langListeners: ((l: Lang) => void)[] = [];
 const systemLang = (): Lang => (navigator.language.toLowerCase().startsWith("fr") ? "fr" : "en");
 const settings = (): SettingsView => ({
@@ -172,6 +176,7 @@ const settings = (): SettingsView => ({
   effective: langChoice === "system" ? systemLang() : langChoice,
   system: systemLang(),
   file: "C:\\Exemple\\config\\engines.toml",
+  introSeen,
 });
 
 let autoUpdate = true;
@@ -408,6 +413,9 @@ export function mockApi(): Api {
     shellInstall: () => ((menu = true), delay(shell(), 600)),
     shellUninstall: () => ((menu = false), delay(shell(), 300)),
     settings: () => delay(settings()),
+    async introDone() {
+      introSeen = true;
+    },
     async setLanguage(language) {
       langChoice = language;
       const v = settings();

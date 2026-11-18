@@ -200,6 +200,12 @@ pub async fn set_language(handle: AppHandle, app: Shared<'_>, language: LangChoi
 }
 
 #[tauri::command]
+pub async fn intro_done(app: Shared<'_>) -> Result<(), String> {
+    let app = app.inner().clone();
+    blocking(move || app.intro_done()).await
+}
+
+#[tauri::command]
 pub async fn shell_uninstall(app: Shared<'_>) -> Result<ShellView, String> {
     let app = app.inner().clone();
     blocking(move || app.shell_uninstall()).await

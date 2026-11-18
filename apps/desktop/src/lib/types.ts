@@ -172,6 +172,8 @@ export interface SettingsView {
   file: string;
   error?: string;
   menuNote?: string;
+  /** L'accueil du premier démarrage a déjà été montré. */
+  introSeen: boolean;
 }
 
 export interface AppInfo {

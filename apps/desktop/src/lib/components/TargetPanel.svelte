@@ -5,8 +5,9 @@
   import OptionsForm from "./OptionsForm.svelte";
   import { store, type CommonTarget } from "../store.svelte";
   import { api, errorText } from "../api";
-  import { categoryLabel, categoryOrder, fidelityLabel } from "../format";
-  import type { Category, Conflict, PlanView, PresetView } from "../types";
+  import { categoryLabel, categoryOrder, fidelityLabel, formatSize } from "../format";
+  import { analysisTargets, missingEngineFor } from "../machines";
+  import type { Category, Conflict, EngineView, PlanView, PresetView } from "../types";
 
   let query = $state("");
   let picking = $state(false);
@@ -26,6 +27,18 @@
   });
 
   const showPicker = $derived(picking || !store.targetInfo);
+
+  // Fichiers cochés sans aucune conversion possible, et le moteur (installable d'ici) qui leur
+  // manque : dit en clair, avec le bouton pour l'installer.
+  const stuck = $derived(store.checked.filter((f) => analysisTargets(f.analysis)?.targets.length === 0));
+  const needs = $derived.by(() => {
+    const out = new Map<string, EngineView>();
+    for (const f of stuck) {
+      const e = missingEngineFor(f.info.category, store.engines);
+      if (e) out.set(e.id, e);
+    }
+    return [...out.values()];
+  });
 
   // Aperçu du plan pour le premier fichier coché, recalculé quand la cible ou les options changent.
   const previewPath = $derived(store.checked.find((f) => f.analysis.state === "ready")?.info.path ?? null);
@@ -114,9 +127,33 @@
       <p class="hint">{L("Cochez au moins un fichier reconnu.", "Check at least one recognized file.")}</p>
     {:else if store.loadingTargets}
       <p class="hint">{L("Recherche des conversions possibles…", "Looking for possible conversions…")}</p>
+    {:else if !store.common.length && needs.length}
+      <div class="need" data-need={needs.map((e) => e.id).join(" ")}>
+        <p>
+          <strong>
+            {stuck.length === 1
+              ? L(`Pour convertir « ${stuck[0].info.name} », il faut ${needs.map((e) => e.name).join(" et ")}.`, `To convert “${stuck[0].info.name}”, you need ${needs.map((e) => e.name).join(" and ")}.`)
+              : L(`Pour convertir ces fichiers, il faut ${needs.map((e) => e.name).join(" et ")}.`, `To convert these files, you need ${needs.map((e) => e.name).join(" and ")}.`)}
+          </strong>
+        </p>
+        <p class="small muted">{L("Un logiciel libre, téléchargé une fois depuis sa publication officielle et vérifié ; rien n'est modifié sur le système.", "Free software, downloaded once from its official release and checked; nothing is changed on the system.")}</p>
+        <div class="need-actions">
+          {#each needs as e (e.id)}
+            <button class="btn primary" onclick={() => store.offerEngine(e.id)}>
+              <Icon name="download" size={14} />
+              {L(`Installer ${e.name}`, `Install ${e.name}`)}{e.installable ? ` (${formatSize(e.installable.size)})` : ""}
+            </button>
+          {/each}
+          {#if needs.length > 1}
+            <button class="btn" onclick={() => store.askInstallAll()}>{L("Tout installer", "Install all")}</button>
+          {/if}
+        </div>
+      </div>
     {:else if !store.common.length}
       <p class="hint warn">
-        {L(`Aucun format de sortie commun à ces ${store.checked.length} fichiers. Décochez-en certains pour les convertir par groupes.`, `No output format is common to these ${store.checked.length} files. Uncheck some to convert them in groups.`)}
+        {stuck.length && stuck.length === store.checked.length
+          ? L("Aucune conversion possible pour ce fichier avec les moteurs dont Chud Converter dispose aujourd'hui.", "No conversion possible for this file with the engines Chud Converter has today.")
+          : L(`Aucun format de sortie commun à ces ${store.checked.length} fichiers. Décochez-en certains pour les convertir par groupes.`, `No output format is common to these ${store.checked.length} files. Uncheck some to convert them in groups.`)}
       </p>
     {:else}
       {#if store.suggested.length}
@@ -311,6 +348,26 @@
 
   h2 {
     font-size: 18px;
+  }
+
+  .need {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--link);
+    background: var(--surface-2);
+  }
+
+  .need-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .need .small {
+    font-size: 12.5px;
   }
 
   .hint {

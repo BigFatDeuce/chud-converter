@@ -8,6 +8,7 @@
   import AboutView from "./lib/components/AboutView.svelte";
   import SettingsView from "./lib/components/SettingsView.svelte";
   import QuickView from "./lib/components/QuickView.svelte";
+  import Welcome from "./lib/components/Welcome.svelte";
   import Icon from "./lib/components/Icon.svelte";
   import { store } from "./lib/store.svelte";
   import { api, errorText, type WindowKind } from "./lib/api";
@@ -63,6 +64,10 @@
       <AboutView />
     {/if}
   </main>
+
+  {#if store.welcomeOpen}
+    <Welcome />
+  {/if}
 
   {#if store.dropHover}
     <div class="drop">

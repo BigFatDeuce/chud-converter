@@ -283,6 +283,12 @@ indépendant (ADR-007) reste prévu pour suivre les moteurs entre deux versions 
 - Les moteurs connus que Chud Converter ne sait pas encore utiliser (Pandoc, LibreOffice…) sont
   rangés à part, « Bientôt pris en charge », sans bouton d'installation : rien ne s'en
   servirait encore.
+- Premier démarrage (2026-11-18 : « mets un message au premier démarrage pour indiquer qu'il
+  faut les télécharger, […] 1 par 1 ou tous d'un seul coup ») : s'il manque des moteurs, un
+  accueil les présente (usage, taille, version, source, licence) avec un bouton par moteur et
+  « Tout installer » ; montré une fois (marque `intro-seen` dans le dossier de configuration,
+  à part des réglages, qui refusent les champs inconnus des versions précédentes). Ensuite, un
+  bandeau dans Convertir propose les moteurs manquants, tous ou un seul.
 - Un fichier sans conversion possible propose directement le moteur qui manque (« installer
   FFmpeg (110 Mo) ») ; la confirmation s'ouvre dans l'écran Moteurs, puis l'application revient
   à la conversion, le fichier toujours sélectionné.

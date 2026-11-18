@@ -23,8 +23,9 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [x] Qualité : `clippy` sans avertissement, `rustfmt`, documentation utilisateur (README, BUILDING)
 
 ### 2b. Gestionnaire de moteurs complet
-- [ ] Téléchargement en flux + SHA-256 + extraction contrôlée + installation versionnée
-- [ ] Désinstallation, retour arrière, épinglage, canaux
+- [x] Téléchargement en flux + SHA-256 + extraction contrôlée + installation versionnée (FFmpeg et 7-Zip : Windows x64, Linux x64 et ARM64 ; installation réelle vérifiée chaque semaine en CI) — 0.1.2
+- [x] Désinstallation (essayée en vrai), retour à la version précédente (testé sur installations simulées : une seule version publiée par moteur pour l'instant) — 0.1.2
+- [ ] Épinglage, canaux
 - [ ] Index signé (format, outil de génération en CI, clé)
 - [x] Manifestes de détection : FFmpeg, 7-Zip, Pandoc, LibreOffice, Calibre, ImageMagick, libvips, qpdf, Ghostscript, Tesseract, ExifTool, MediaInfo, MKVToolNix
 - [ ] Sources de téléchargement vérifiées dans les manifestes (+ Typst, DuckDB)
@@ -37,11 +38,11 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [x] Panneau d'options généré depuis les `OptionSpec`, options avancées repliées
 - [x] File d'attente : ajout pendant les conversions, progression et vitesse par tâche, annulation (une ou toutes), rapport détaillé avec niveau de vérification réellement atteint, « Afficher dans le dossier »
 - [x] Destination (à côté de l'original ou dossier), conflits de noms, date d'origine
-- [x] Écran Moteurs (état, version, origine, licence, commande d'installation officielle) et écran À propos
+- [x] Écran Moteurs (état, version, origine, licence) et écran À propos ; aucune commande à copier (0.1.2)
 - [x] Testé sous Windows sur de vrais fichiers (pilotage par UI Automation) ; compilation Linux en CI
 - [ ] Liste virtualisée (milliers de fichiers), progression globale, ETA, relance d'une tâche échouée
 - [ ] Favoris et formats récents
-- [ ] Installation des moteurs à la demande depuis l'écran Moteurs
+- [x] Installation des moteurs à la demande depuis l'écran Moteurs, ou depuis un fichier qui en a besoin — 0.1.2
 - [ ] Préférences complètes (modèle de nom, métadonnées, parallélisme, cache, thème forcé, portable)
 - [x] Français et anglais partout (application, rapports, erreurs, ligne de commande, menu clic droit), choix dans **Réglages**, `chud language`, `--lang` ; langue du système par défaut
 - [ ] Contrôle complet au clavier, tests d'interface automatisés

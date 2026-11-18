@@ -77,6 +77,7 @@ export interface Api {
 
   settings(): Promise<SettingsView>;
   setLanguage(language: LangChoice): Promise<SettingsView>;
+  introDone(): Promise<void>;
   /** La langue a changé (depuis n'importe quelle fenêtre). */
   onLanguage(cb: (lang: Lang) => void): Promise<() => void>;
 
@@ -169,6 +170,7 @@ function tauriApi(): Api {
     shellUninstall: () => call("shell_uninstall"),
     settings: () => call("settings"),
     setLanguage: (language) => call("set_language", { language }),
+    introDone: () => call("intro_done"),
     updateStatus: () => call("update_status"),
     updateCheck: (manual) => call("update_check", { manual }),
     updateSetAuto: (enabled) => call("update_set_auto", { enabled }),
