@@ -193,3 +193,217 @@ fn real_ffmpeg_audio_is_bit_exact() {
     assert!(vtt.contains("Café crème à volonté"), "{vtt}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+fn audio_codec(ffprobe: &Path, file: &Path) -> String {
+    let spec = ProcessSpec::new(ffprobe)
+        .args(["-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "default=nw=1:nk=1"])
+        .arg(file);
+    let o = chud_process::run_capture(&spec, 4096).unwrap();
+    assert!(o.success(), "{}", o.stderr_tail);
+    o.stdout_text().trim().to_owned()
+}
+
+/// Régressions signalées sur un vrai FLAC de 3 minutes :
+/// - « Ogg Vorbis » contenait le FLAC copié tel quel, annoncé « sans perte » ;
+/// - AAC (ADTS) et AMR déclarés en échec : ffprobe estime leur durée d'après le débit
+///   (198,7 s et 192,9 s pour 186,9 s) ; c'est la durée décodée qui doit compter.
+#[test]
+fn real_ffmpeg_raw_streams_and_ogg_vorbis() {
+    let Some((ffmpeg, ffprobe)) = tools() else { return };
+    let e = Ffmpeg::new(ffmpeg.clone(), Some(ffprobe.clone()), None, EngineOrigin::System).unwrap();
+    let dir = workdir("raw");
+    let flac = dir.join("source.flac");
+    make_media(
+        &ffmpeg,
+        &["-f", "lavfi", "-i", "sine=frequency=440:duration=90:sample_rate=44100", "-ac", "2", "-c:a", "flac", "-sample_fmt", "s16"],
+        &flac,
+    );
+
+    let ogg = dir.join("a.ogg");
+    let r = convert(&e, &flac, "flac", "ogg", &ogg, OptionValues::new());
+    assert_eq!(r.fidelity, Fidelity::Lossy, "Vorbis est un format avec perte");
+    assert!(r.verification.is_ok(), "{:?}", r.verification);
+    assert_eq!(audio_codec(&ffprobe, &ogg), "vorbis");
+
+    for (to, file) in [("aac", "a.aac"), ("amr", "a.amr"), ("eac3", "a.eac3"), ("ac3", "a.ac3"), ("mp3", "a.mp3")] {
+        let r = convert(&e, &flac, "flac", to, &dir.join(file), OptionValues::new());
+        match &r.verification {
+            Verification::Decoded(d) => assert!(d.contains("90.0") || d.contains("89.9") || d.contains("90.1"), "{to} : {d}"),
+            other => panic!("{to} : {other:?}"),
+        }
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn probe_entry(ffprobe: &Path, file: &Path, entries: &str) -> String {
+    let spec = ProcessSpec::new(ffprobe).args(["-v", "error", "-show_entries", entries, "-of", "default=nw=1:nk=1"]).arg(file);
+    let o = chud_process::run_capture(&spec, 4096).unwrap();
+    assert!(o.success(), "{}", o.stderr_tail);
+    o.stdout_text().trim().to_owned()
+}
+
+/// Régressions de l'audit des formats audio : chaque cas échouait avant correction.
+#[test]
+fn real_ffmpeg_audio_regressions() {
+    let Some((ffmpeg, ffprobe)) = tools() else { return };
+    let e = Ffmpeg::new(ffmpeg.clone(), Some(ffprobe.clone()), None, EngineOrigin::System).unwrap();
+    let dir = workdir("audioreg");
+
+    // Balises Ogg : rangées par flux, elles étaient perdues vers MP3.
+    let ogg = dir.join("tags.ogg");
+    make_media(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=duration=2",
+            "-c:a",
+            "libvorbis",
+            "-metadata:s:a:0",
+            "title=Chanson été",
+            "-metadata:s:a:0",
+            "artist=Groupe",
+        ],
+        &ogg,
+    );
+    let mp3 = dir.join("tags.mp3");
+    let r = convert(&e, &ogg, "ogg", "mp3", &mp3, OptionValues::new());
+    assert!(r.verification.is_ok(), "{:?}", r.verification);
+    assert_eq!(probe_entry(&ffprobe, &mp3, "format_tags=title"), "Chanson été");
+
+    // Opus se décode toujours à 48 kHz : une source à 8 kHz n'est pas un écart de format.
+    let low = dir.join("8k.wav");
+    make_media(&ffmpeg, &["-f", "lavfi", "-i", "sine=duration=2:sample_rate=8000", "-ac", "1"], &low);
+    let r = convert(&e, &low, "wav", "opus", &dir.join("8k.opus"), OptionValues::new());
+    assert!(r.verification.is_ok(), "{:?}", r.verification);
+    // AMR : 8 kHz mono imposé, la vérification attend ce format-là.
+    let r = convert(&e, &dir.join("8k.wav"), "wav", "amr", &dir.join("8k.amr"), OptionValues::new());
+    assert!(r.verification.is_ok(), "{:?}", r.verification);
+
+    // CAF : PCM exact, y compris depuis du 8 bits non signé (refusé tel quel par le multiplexeur).
+    let u8 = dir.join("u8.wav");
+    make_media(&ffmpeg, &["-f", "lavfi", "-i", "sine=duration=2", "-c:a", "pcm_u8"], &u8);
+    for (src, name) in [(&u8, "u8.caf"), (&low, "8k.caf")] {
+        let r = convert(&e, src, "wav", "caf", &dir.join(name), OptionValues::new());
+        assert_eq!(r.fidelity, Fidelity::Lossless, "{name}");
+        assert!(r.verification.is_ok(), "{name} : {:?}", r.verification);
+    }
+
+    // Débit MP2 invalide aux fréquences basses (MPEG-2 LSF) : une vidéo 3GP à 22,05 kHz vers MPEG.
+    let gp = dir.join("lsf.3gp");
+    make_media(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=2:size=176x144:rate=15",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=duration=2:sample_rate=22050",
+            "-c:v",
+            "mpeg4",
+            "-c:a",
+            "aac",
+            "-ac",
+            "1",
+        ],
+        &gp,
+    );
+    let r = convert(&e, &gp, "3gp", "mpeg", &dir.join("lsf.mpg"), OptionValues::new());
+    assert!(r.verification.is_ok(), "{:?}", r.verification);
+
+    // Ré-encodage sans perte prouvé : WavPack depuis du FLAC, échantillons identiques.
+    let flac = dir.join("src.flac");
+    make_media(&ffmpeg, &["-f", "lavfi", "-i", "sine=duration=3:sample_rate=44100", "-ac", "2", "-c:a", "flac"], &flac);
+    let r = convert(&e, &flac, "flac", "wv", &dir.join("a.wv"), OptionValues::new());
+    assert_eq!(r.fidelity, Fidelity::Lossless);
+    match &r.verification {
+        Verification::Decoded(d) => assert!(d.contains("identi"), "{d}"),
+        other => panic!("{other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Source tronquée : l'en-tête annonce plus que ce qui est lisible. Ce n'est pas une erreur de
+/// conversion si tout ce qui est lisible a été converti, et le résultat doit le dire.
+#[test]
+fn real_ffmpeg_truncated_source_is_diagnosed() {
+    let Some((ffmpeg, ffprobe)) = tools() else { return };
+    let e = Ffmpeg::new(ffmpeg.clone(), Some(ffprobe), None, EngineOrigin::System).unwrap();
+    let dir = workdir("trunc");
+    let full = dir.join("full.flac");
+    make_media(&ffmpeg, &["-f", "lavfi", "-i", "sine=duration=10:sample_rate=44100", "-c:a", "flac"], &full);
+    let data = std::fs::read(&full).unwrap();
+    let cut = dir.join("cut.flac");
+    std::fs::write(&cut, &data[..data.len() / 2]).unwrap();
+    let r = convert(&e, &cut, "flac", "mp3", &dir.join("cut.mp3"), OptionValues::new());
+    match &r.verification {
+        Verification::Decoded(d) => assert!(d.contains("incompl"), "{d}"),
+        Verification::Failed(f) => assert!(f.contains("source"), "le message doit désigner la source : {f}"),
+        other => panic!("{other:?}"),
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Régressions vidéo et image de l'audit.
+#[test]
+fn real_ffmpeg_video_regressions() {
+    let Some((ffmpeg, ffprobe)) = tools() else { return };
+    let e = Ffmpeg::new(ffmpeg.clone(), Some(ffprobe.clone()), None, EngineOrigin::System).unwrap();
+    let dir = workdir("videoreg");
+    let mkv = dir.join("h264.mkv");
+    make_media(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=3:size=320x240:rate=25",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=duration=3",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "mp3",
+        ],
+        &mkv,
+    );
+    // H.264 copié de MKV vers AVI : il faut le flux « Annex B ».
+    let avi = dir.join("copy.avi");
+    let r = convert(&e, &mkv, "mkv", "avi", &avi, OptionValues::new());
+    assert!(r.verification.is_ok(), "{:?}", r.verification);
+    assert_eq!(probe_entry(&ffprobe, &avi, "stream=codec_name").lines().next(), Some("h264"));
+
+    // Cadence imposée : retrouvée dans le résultat ; l'audio reste synchrone.
+    let r = convert(&e, &mkv, "mkv", "mp4", &dir.join("15fps.mp4"), OptionValues::new().with("fps", OptionValue::Float(15.0)));
+    assert!(r.verification.is_ok(), "{:?}", r.verification);
+    let rate = probe_entry(&ffprobe, &dir.join("15fps.mp4"), "stream=avg_frame_rate");
+    assert!(rate.lines().any(|l| l == "15/1"), "{rate}");
+
+    // Image extraite d'un MPEG-TS : la recherche avant l'entrée ne donnait aucune image.
+    let ts = dir.join("a.ts");
+    let r = convert(&e, &mkv, "mkv", "ts", &ts, OptionValues::new());
+    assert!(r.verification.is_ok(), "{:?}", r.verification);
+    let r = convert(&e, &ts, "ts", "png", &dir.join("frame.png"), OptionValues::new().with("time", OptionValue::Text("1.5".into())));
+    assert!(r.verification.is_ok(), "{:?}", r.verification);
+
+    // Dimensions impaires : arrondies au pair pour H.264, et la vérification l'accepte.
+    let odd = dir.join("odd.mkv");
+    make_media(&ffmpeg, &["-f", "lavfi", "-i", "testsrc=duration=2:size=321x241:rate=25", "-c:v", "ffv1"], &odd);
+    let r = convert(&e, &odd, "mkv", "mp4", &dir.join("odd.mp4"), OptionValues::new());
+    assert!(r.verification.is_ok(), "{:?}", r.verification);
+
+    // WebP fixe vers vidéo : le démultiplexeur d'animation le refusait.
+    let webp = dir.join("still.webp");
+    make_media(&ffmpeg, &["-f", "lavfi", "-i", "testsrc=size=128x96", "-frames:v", "1", "-c:v", "libwebp"], &webp);
+    let r = convert(&e, &webp, "webp", "mp4", &dir.join("still.mp4"), OptionValues::new());
+    assert!(r.verification.is_ok(), "{:?}", r.verification);
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -84,6 +84,22 @@ def samples(dest: Path) -> list[str]:
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "30", "-pix_fmt", "yuv420p", "-c:a", "aac",
     ])
     ffmpeg("musique.wav", ["-f", "lavfi", "-i", "sine=frequency=523:duration=12", "-ac", "2", "-ar", "48000"])
+    # Trois minutes à 44,1 kHz avec balises : FLAC → AAC ou AMR échouaient à la vérification.
+    ffmpeg("album.flac", [
+        "-f", "lavfi", "-i", "sine=frequency=440:duration=187:sample_rate=44100", "-ac", "2", "-c:a", "flac",
+        "-metadata", "title=Chanson d'essai", "-metadata", "artist=Chud", "-metadata", "album=Exemples",
+    ])
+    # Ogg Vorbis : les balises sont rangées dans le flux, elles étaient perdues.
+    ffmpeg("chanson.ogg", [
+        "-f", "lavfi", "-i", "sine=frequency=660:duration=20", "-c:a", "libvorbis",
+        "-metadata:s:a:0", "title=Été", "-metadata:s:a:0", "artist=Chud",
+    ])
+    if (dest / "album.flac").exists():
+        data = (dest / "album.flac").read_bytes()
+        (dest / "coupee.flac").write_bytes(data[: len(data) // 2])
+        made.append("coupee.flac")
+    (dest / "pas-une-video.mp4").write_bytes(bytes(range(256)) * 64)
+    made.append("pas-une-video.mp4")
     ffmpeg("photo.png", ["-f", "lavfi", "-i", "testsrc2=size=1600x1200", "-frames:v", "1"])
     if (dest / "photo.png").exists():
         shutil.copyfile(dest / "photo.png", dest / "faux.jpg")

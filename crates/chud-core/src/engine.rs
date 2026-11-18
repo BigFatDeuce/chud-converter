@@ -124,6 +124,9 @@ pub struct StreamInfo {
     pub sample_format: Option<String>,
     pub frame_rate: Option<f64>,
     pub bitrate: Option<u64>,
+    /// Durée propre à la piste, si le conteneur l'indique (synchronisation audio/vidéo).
+    #[serde(default)]
+    pub duration: Option<f64>,
 }
 
 /// Résultat d'une sonde rapide du fichier source.
@@ -297,6 +300,13 @@ pub trait Engine: Send + Sync {
 
     /// Sonde rapide du fichier : flux, durée, dimensions, caractéristiques présentes.
     fn probe(&self, _path: &Path, _format: &FormatId) -> Option<SourceInfo> {
+        None
+    }
+
+    /// Impossibilité qui tient au **contenu** de la source et vaut pour tout chemin vers `target`,
+    /// détours compris (ex. des données dont la racine est une liste ne deviennent jamais du TOML,
+    /// quel que soit le format intermédiaire). `info` est la sonde de la source.
+    fn content_veto(&self, _source: &FormatId, _info: Option<&SourceInfo>, _target: &FormatId) -> Option<String> {
         None
     }
 

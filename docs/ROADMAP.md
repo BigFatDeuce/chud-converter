@@ -18,7 +18,8 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [x] Moteurs : image natif, données natif (JSON/YAML/TOML/CSV/TSV/NDJSON), FFmpeg, 7-Zip
 - [x] Détection des moteurs installés (gérés, emplacements connus, PATH) et sonde de capacités
 - [x] CLI `chud` : `formats`, `engines`, `detect`, `targets`, `plan`, `convert`, `matrix`, sortie JSON, motifs `*.ext` sous Windows
-- [x] Tests unitaires et d'intégration sur fichiers réels générés (103 tests ; conflits, annulation, fichier tronqué, attaques d'archives, file d'attente, application, préréglages, menu clic droit, langues)
+- [x] Tests unitaires et d'intégration sur fichiers réels générés (127 tests, dont une matrice permanente de 840 conversions réelles vérifiées ; conflits, annulation, fichier tronqué, attaques d'archives, file d'attente, application, préréglages, menu clic droit, langues)
+- [ ] Lecture testée automatiquement pour ARJ, LZH, RAR/CBR, ISO, DMG, VHD, SquashFS, RPM et LZMA : confiée à 7-Zip (test d'intégrité et contrôle de l'index à chaque conversion), mais aucun exemple n'est encore générable localement pour la matrice
 - [x] Qualité : `clippy` sans avertissement, `rustfmt`, documentation utilisateur (README, BUILDING)
 
 ### 2b. Gestionnaire de moteurs complet

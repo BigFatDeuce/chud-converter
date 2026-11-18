@@ -27,6 +27,10 @@
 
   const finished = $derived(store.jobs.length - store.active);
   const failed = $derived(store.jobs.filter((j) => j.status === "failed").length);
+  // Seules les conversions réussies comptent comme « terminées » ; échecs, annulations et
+  // fichiers ignorés sont comptés à part (jamais « 3 terminées · 1 en échec » pour 2 réussites).
+  const succeeded = $derived(store.jobs.filter((j) => j.status === "done").length);
+  const others = $derived(finished - succeeded - failed);
 
   async function reveal(path: string) {
     try {
@@ -34,6 +38,16 @@
     } catch (e) {
       store.say(errorText(e));
     }
+  }
+
+  // Un échec de vérification n'est pas un échec de conversion : le moteur a produit un fichier,
+  // mais il n'a pas passé les contrôles et n'a donc pas été conservé.
+  function failLabel(j: Job): string {
+    if (j.status !== "failed") return statusText[j.status];
+    if (j.errorCode === "verification_failed") return L("Vérification échouée, aucun fichier conservé", "Verification failed, no file kept");
+    if (j.errorCode === "invalid_input") return L("Source illisible ou endommagée", "Source unreadable or damaged");
+    if (j.errorCode === "unavailable" || j.errorCode === "no_path") return L("Conversion impossible pour ce fichier", "Conversion impossible for this file");
+    return L("Échec de la conversion", "Conversion failed");
   }
 
   // Niveau de vérification le plus faible atteint : on n'annonce jamais plus que la réalité.
@@ -67,8 +81,9 @@
     <span class="muted summary">
       {#if store.active}{L(`${store.active} en cours ou en attente`, `${store.active} running or waiting`)}{/if}
       {#if store.active && finished}·{/if}
-      {#if finished}{L(`${finished} terminée${finished > 1 ? "s" : ""}`, `${finished} done`)}{/if}
-      {#if failed}<span class="bad">{L(`· ${failed} en échec`, `· ${failed} failed`)}</span>{/if}
+      {#if succeeded}{L(`${succeeded} réussie${succeeded > 1 ? "s" : ""}`, `${succeeded} succeeded`)}{/if}
+      {#if failed}<span class="bad">{L(`${succeeded ? "· " : ""}${failed} en échec`, `${succeeded ? "· " : ""}${failed} failed`)}</span>{/if}
+      {#if others > 0}{L(`${succeeded || failed ? "· " : ""}${others} annulée${others > 1 ? "s" : ""} ou ignorée${others > 1 ? "s" : ""}`, `${succeeded || failed ? "· " : ""}${others} cancelled or skipped`)}{/if}
     </span>
     <div class="actions">
       {#if store.active}
@@ -99,7 +114,7 @@
               <div class="sub faint">{progressLabel(j) || L("démarrage…", "starting…")}</div>
             {:else}
               <div class="sub">
-                <span class="label">{statusText[j.status]}</span>
+                <span class="label">{failLabel(j)}</span>
                 {#if j.status === "done" && checkedLabel(j)}<span class="ok">· {checkedLabel(j)}</span>{/if}
                 {#if j.status === "done" && j.output}
                   <span class="faint selectable" title={j.output}>→ {baseName(j.output)}</span>

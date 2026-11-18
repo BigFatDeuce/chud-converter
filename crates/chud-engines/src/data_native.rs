@@ -8,7 +8,7 @@ use crate::text;
 use chud_core::feature::features;
 use chud_core::{
     ConversionCap, Engine, EngineError, EngineId, EngineInfo, EngineOrigin, ExecContext, Fidelity, FormatId, OptionSpec, OptionValues,
-    Progress, StepAssessment, StepOutput, StepQuery, StepTask, Verification,
+    Progress, SourceInfo, StepAssessment, StepOutput, StepQuery, StepTask, Verification,
 };
 use chud_core::{tr, trf};
 use serde_json::{Map, Value};
@@ -17,6 +17,90 @@ use std::path::Path;
 const FORMATS: &[&str] = &["json", "ndjson", "yaml", "toml", "csv", "tsv"];
 /// Au-delà, le moteur natif refuse (tout est chargé en mémoire) ; DuckDB prendra le relais.
 const MAX_INPUT: u64 = 512 * 1024 * 1024;
+/// Analyse préalable (forme des données) limitée aux fichiers raisonnables.
+const MAX_PROBE: u64 = 64 * 1024 * 1024;
+
+/// Forme de la racine, établie par la sonde.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Root {
+    List,
+    Object,
+    Scalar,
+}
+
+impl Root {
+    fn of(v: &Value) -> Self {
+        match v {
+            Value::Array(_) => Root::List,
+            Value::Object(_) => Root::Object,
+            _ => Root::Scalar,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Root::List => tr!("liste", "list"),
+            Root::Object => tr!("objet", "object"),
+            Root::Scalar => tr!("valeur simple", "single value"),
+        }
+    }
+
+    fn key() -> &'static str {
+        tr!("Racine", "Root")
+    }
+
+    /// Relue dans le résumé de la sonde.
+    fn from_source(src: Option<&SourceInfo>) -> Option<Self> {
+        let v = &src?.summary.iter().find(|(k, _)| k == Self::key())?.1;
+        [Root::List, Root::Object, Root::Scalar].into_iter().find(|r| r.label() == v)
+    }
+}
+
+/// Caractéristiques réellement présentes : imbrication (au-delà d'une liste d'enregistrements
+/// plats), valeurs nulles, types autres que texte.
+fn present_features(v: &Value) -> Vec<&'static str> {
+    fn walk(v: &Value, depth: usize, root: Root, f: &mut (bool, bool, bool)) {
+        match v {
+            Value::Null => f.1 = true,
+            Value::Bool(_) | Value::Number(_) => f.2 = true,
+            Value::String(_) => {}
+            Value::Array(a) => {
+                if depth >= 2 || (depth == 1 && root == Root::Object) {
+                    f.0 = true;
+                }
+                a.iter().for_each(|x| walk(x, depth + 1, root, f));
+            }
+            Value::Object(o) => {
+                if depth >= 2 || (depth == 1 && root == Root::Object) {
+                    f.0 = true;
+                }
+                o.values().for_each(|x| walk(x, depth + 1, root, f));
+            }
+        }
+    }
+    let mut f = (false, false, false);
+    walk(v, 0, Root::of(v), &mut f);
+    let mut out = Vec::new();
+    if f.0 {
+        out.push("nesting");
+    }
+    if f.1 {
+        out.push("null");
+    }
+    if f.2 {
+        out.push("types");
+    }
+    out
+}
+
+fn has_null(v: &Value) -> bool {
+    match v {
+        Value::Null => true,
+        Value::Array(a) => a.iter().any(has_null),
+        Value::Object(o) => o.values().any(has_null),
+        _ => false,
+    }
+}
 
 pub struct DataNative {
     info: EngineInfo,
@@ -253,11 +337,23 @@ fn cell(v: &Value) -> String {
 }
 
 fn write_table(v: &Value, delim: u8, flatten: bool, notes: &mut Vec<String>) -> Result<String, EngineError> {
-    let Value::Array(items) = v else {
-        return Err(EngineError::Unsupported(
-            tr!("un tableau CSV nécessite une liste d'enregistrements à la racine", "a CSV table needs a list of records at the root")
+    let single;
+    let items = match v {
+        Value::Array(items) => items,
+        Value::Object(_) => {
+            notes.push(tr!("objet unique écrit comme une seule ligne", "single object written as one row").into());
+            single = vec![v.clone()];
+            &single
+        }
+        _ => {
+            return Err(EngineError::Unsupported(
+                tr!(
+                    "un tableau CSV nécessite une liste d'enregistrements ou un objet à la racine",
+                    "a CSV table needs a list of records or an object at the root"
+                )
                 .into(),
-        ));
+            ));
+        }
     };
     let mut rows: Vec<Map<String, Value>> = Vec::with_capacity(items.len());
     let mut nested = false;
@@ -416,9 +512,70 @@ impl Engine for DataNative {
         o
     }
 
+    fn can_probe(&self, format: &FormatId) -> bool {
+        FORMATS.contains(&format.as_str())
+    }
+
+    fn content_veto(&self, source: &FormatId, info: Option<&SourceInfo>, target: &FormatId) -> Option<String> {
+        if !FORMATS.contains(&source.as_str()) {
+            return None;
+        }
+        let root = Root::from_source(info);
+        let nulls = info.and_then(|s| s.features.as_ref()).is_some_and(|f| f.contains(&chud_core::Feature::new("null")));
+        let why: Option<&str> = match (target.as_str(), root) {
+            ("toml", Some(Root::List)) => Some(tr!(
+                "la racine de ces données est une liste : TOML exige un objet à la racine",
+                "the root of this data is a list: TOML requires an object at the root"
+            )),
+            ("toml", Some(Root::Scalar)) | ("csv" | "tsv", Some(Root::Scalar)) => Some(tr!(
+                "ces données ne sont qu'une valeur simple, sans structure à convertir",
+                "this data is a single value, with no structure to convert"
+            )),
+            ("toml", _) if nulls => Some(tr!(
+                "ces données contiennent des valeurs nulles, que TOML ne sait pas représenter",
+                "this data contains null values, which TOML cannot represent"
+            )),
+            _ => None,
+        };
+        why.map(Into::into)
+    }
+
+    fn probe(&self, path: &Path, format: &FormatId) -> Option<SourceInfo> {
+        if std::fs::metadata(path).ok()?.len() > MAX_PROBE {
+            // Trop gros pour une analyse préalable : rien n'est affirmé, la conversion décidera.
+            return Some(SourceInfo::default());
+        }
+        let bytes = std::fs::read(path).ok()?;
+        let decoded = text::decode(&bytes);
+        let v = parse(format.as_str(), &decoded.text, &OptionValues::new(), &mut Vec::new()).ok()?;
+        let root = Root::of(&v);
+        let mut feats = present_features(&v);
+        if format.as_str() == "toml" {
+            // Les dates TOML sont converties en texte : on les suppose présentes, par prudence.
+            feats.push("datetime");
+        }
+        let mut summary = vec![(Root::key().to_string(), root.label().to_string())];
+        match &v {
+            Value::Array(a) => summary.push((tr!("Éléments", "Items").into(), a.len().to_string())),
+            Value::Object(o) => summary.push((tr!("Clés", "Keys").into(), o.len().to_string())),
+            _ => {}
+        }
+        if has_null(&v) {
+            summary.push((tr!("Valeurs nulles", "Null values").into(), tr!("oui", "yes").into()));
+        }
+        Some(SourceInfo { features: Some(features(&feats)), summary, ..Default::default() })
+    }
+
     fn assess(&self, q: &StepQuery<'_>) -> StepAssessment {
         let mut fidelity = declared(q.from.as_str(), q.to.as_str());
         let mut notes = Vec::new();
+        let root = Root::from_source(q.source);
+        if let Some(why) = self.content_veto(q.from, q.source, q.to) {
+            return StepAssessment { fidelity, notes, unavailable: Some(why), preserves: None };
+        }
+        if is_table(q.to.as_str()) && root == Some(Root::Object) {
+            notes.push(tr!("objet unique écrit comme une seule ligne", "single object written as one row").into());
+        }
         if q.options.bool_or("infer_types", false) {
             fidelity = Fidelity::Lossy;
             notes.push(
@@ -614,5 +771,47 @@ mod tests {
     fn invalid_input_is_reported() {
         let err = run("json", "yaml", b"{ pas du json", OptionValues::new()).unwrap_err();
         assert!(matches!(err, EngineError::InvalidInput(_)));
+    }
+
+    fn probe_of(format: &str, content: &str) -> SourceInfo {
+        let dir = std::env::temp_dir().join(format!("chud-data-probe-{}-{format}-{}", std::process::id(), content.len()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join(format!("in.{format}"));
+        std::fs::write(&p, content).unwrap();
+        let info = DataNative::new().probe(&p, &format.into()).expect("sonde");
+        let _ = std::fs::remove_dir_all(&dir);
+        info
+    }
+
+    #[test]
+    fn impossible_targets_are_vetoed_from_the_content() {
+        let e = DataNative::new();
+        let veto = |from: &str, content: &str, to: &str| e.content_veto(&from.into(), Some(&probe_of(from, content)), &to.into());
+        // Liste à la racine, null, valeur simple : jamais du TOML, quel que soit le détour.
+        assert!(veto("json", r#"[{"a": 1}]"#, "toml").is_some());
+        assert!(veto("csv", "a,b\n1,2\n", "toml").is_some());
+        assert!(veto("yaml", "a: ~\nb: 2\n", "toml").is_some());
+        assert!(veto("json", "42", "csv").is_some());
+        // Ce qui est possible reste proposé.
+        assert!(veto("json", r#"{"a": 1}"#, "toml").is_none());
+        assert!(veto("json", r#"{"a": 1}"#, "csv").is_none());
+        assert!(veto("json", r#"[{"a": null}]"#, "yaml").is_none());
+        // Sans sonde, rien n'est affirmé.
+        assert!(e.content_veto(&"json".into(), None, &"toml".into()).is_none());
+    }
+
+    #[test]
+    fn probe_reports_only_features_really_present() {
+        let flat = probe_of("json", r#"[{"a": "x", "b": "y"}]"#);
+        assert_eq!(flat.features, Some(features(&[])), "liste d'enregistrements plats : rien d'imbriqué");
+        let nested = probe_of("json", r#"{"a": {"b": [1, null]}}"#);
+        assert_eq!(nested.features, Some(features(&["nesting", "null", "types"])));
+    }
+
+    #[test]
+    fn single_object_becomes_one_csv_row() {
+        let (csv, out) = run("json", "csv", r#"{"nom": "Café", "n": {"x": 1}}"#.as_bytes(), OptionValues::new()).unwrap();
+        assert_eq!(csv, "nom,n.x\nCafé,1\n");
+        assert!(out.notes.iter().any(|n| n.contains("ligne") || n.contains("row")));
     }
 }

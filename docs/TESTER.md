@@ -43,6 +43,17 @@ nécessaires pour la vidéo, l'audio et les archives (`winget install Gyan.FFmpe
 | 15 | Écran **Moteurs** | FFmpeg et 7-Zip « Prêt » avec version et emplacement ; commande d'installation pour les autres |
 | 16 | Fermer la fenêtre pendant une conversion longue | Fermeture propre, aucun fichier partiel laissé |
 
+## Audio et vérifications (0.1.1)
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 16a | `Exemples\album.flac` (3 min) en **AAC**, puis en **AMR** | **Terminé**, « vérifié par décodage complet » ; le rapport donne la durée décodée (≈ 187 s) ; AMR annonce le passage en mono 8 kHz |
+| 16b | `album.flac` en **Opus**, **CAF**, **WavPack**, **WMA** | Tout réussit ; WavPack et CAF « Sans perte », avec « échantillons identiques à la source (MD5) » dans le rapport |
+| 16c | `Exemples\chanson.ogg` en **MP3** | Le titre « Été » et l'artiste sont conservés (propriétés du fichier) ; vers **AAC** ou **AMR**, la perte des balises est annoncée **avant** |
+| 16d | `Exemples\coupee.flac` (moitié d'un FLAC) en **MP3** | Terminé avec la remarque « source incomplète : seules … s sur les … s annoncées sont lisibles » ; en **FLAC**, échec qui dit que **la source** est endommagée |
+| 16e | `Exemples\pas-une-video.mp4` | Aucun format proposé : « ce fichier ne peut pas être analysé… » ; jamais une liste de conversions vouées à l'échec |
+| 16f | Une conversion qui échoue | Le libellé distingue « Vérification échouée, aucun fichier conservé », « Source illisible ou endommagée » et « Échec de la conversion », avec la cause exacte dessous |
+
 ## Préréglages et menu clic droit
 
 | # | Action | Résultat attendu |

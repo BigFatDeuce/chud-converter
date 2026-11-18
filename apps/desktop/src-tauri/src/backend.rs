@@ -522,7 +522,7 @@ impl Engines {
         let d = detect_path(&path, catalog()).map_err(|e| format!("{} : {e}", path.display()))?;
         let source = d.format.clone().ok_or(chud_core::tr!("format non reconnu", "unrecognized format"))?;
         let registry = self.runner.registry();
-        let info = registry.probe(&path, &source);
+        let info = registry.probe_checked(&path, &source)?;
         let targets = registry
             .targets(&source, info.as_ref(), &OptionValues::new())
             .into_iter()

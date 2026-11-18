@@ -88,9 +88,31 @@ impl Registry {
         p
     }
 
+    /// Comme `probe`, mais un fichier qu'**aucun** des moteurs capables de lire son format ne
+    /// parvient à analyser est signalé comme illisible : endommagé, incomplet, ou pas vraiment
+    /// au format que son extension annonce. Sans cela, on proposerait des dizaines de
+    /// conversions vouées à l'échec.
+    pub fn probe_checked(&self, path: &Path, format: &FormatId) -> Result<Option<SourceInfo>, String> {
+        if !self.active().any(|e| e.can_probe(format)) {
+            return Ok(None);
+        }
+        self.probe(path, format).map(Some).ok_or_else(|| {
+            let name = self.catalog.get(format.as_str()).map_or(format.as_str(), |d| d.label());
+            crate::trf!(
+                "ce fichier ne peut pas être analysé : il est sans doute endommagé, incomplet, ou n'est pas réellement au format {name}",
+                "this file cannot be analyzed: it is probably damaged, incomplete, or not really in the {name} format"
+            )
+        })
+    }
+
     /// Sonde le fichier avec le premier moteur actif capable de le faire.
     pub fn probe(&self, path: &Path, format: &FormatId) -> Option<SourceInfo> {
         self.active().filter(|e| e.can_probe(format)).find_map(|e| e.probe(path, format))
+    }
+
+    /// Premier refus d'un moteur fondé sur le contenu de la source (voir `Engine::content_veto`).
+    fn veto(&self, source: &FormatId, info: Option<&SourceInfo>, target: &FormatId) -> Option<String> {
+        self.active().find_map(|e| e.content_veto(source, info, target))
     }
 
     /// Cibles atteignables, triées par catégorie puis nom, avec meilleur plan et alternatives.
@@ -98,6 +120,9 @@ impl Registry {
         let features = info.and_then(|i| i.features.as_ref());
         let mut out = Vec::new();
         for (target, candidates) in self.planner().plan_all(source, features) {
+            if self.veto(source, info, &target).is_some() {
+                continue;
+            }
             let mut refined: Vec<Plan> = candidates.iter().filter_map(|p| self.refine(p, info, options).ok()).collect();
             if refined.is_empty() {
                 continue;
@@ -125,6 +150,9 @@ impl Registry {
         }
         if self.catalog.get(target.as_str()).is_none() {
             return Err(PlanError::UnknownTarget(target.to_string()));
+        }
+        if let Some(reason) = self.veto(source, info, target) {
+            return Err(PlanError::Unavailable { from: source.to_string(), to: target.to_string(), reasons: vec![reason] });
         }
         let features = info.and_then(|i| i.features.as_ref());
         let candidates = self.planner().plan(source, features, target);

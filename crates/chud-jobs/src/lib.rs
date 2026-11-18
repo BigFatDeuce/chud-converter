@@ -106,6 +106,9 @@ pub enum JobError {
     NotFound(PathBuf),
     #[error("{}", chud_core::trf!("format non reconnu : {}", "unrecognized format: {}", .0))]
     Unrecognized(String),
+    /// Format reconnu, mais contenu que les moteurs ne parviennent pas à analyser.
+    #[error("{0}")]
+    Unreadable(String),
     #[error(transparent)]
     Plan(#[from] PlanError),
     #[error("{}", chud_core::trf!("étape {} ({engine}) : {error}", "step {} ({engine}): {error}", .step + 1))]
@@ -126,6 +129,7 @@ impl JobError {
         match self {
             JobError::NotFound(_) => "not_found",
             JobError::Unrecognized(_) => "unrecognized",
+            JobError::Unreadable(_) => "invalid_input",
             JobError::Plan(PlanError::NoPath { .. }) => "no_path",
             JobError::Plan(PlanError::Unavailable { .. }) => "unavailable",
             JobError::Plan(PlanError::InvalidOption { .. }) => "invalid_option",
@@ -252,7 +256,7 @@ impl JobRunner {
             .format
             .clone()
             .ok_or_else(|| JobError::Unrecognized(detection.note.clone().unwrap_or_else(|| input.display().to_string())))?;
-        let info = self.registry.probe(&input, &source);
+        let info = self.registry.probe_checked(&input, &source).map_err(JobError::Unreadable)?;
         let plan = self.registry.plan(&source, info.as_ref(), &spec.target, &spec.options, spec.prefer_engine.as_ref())?;
         let output = self.output_path(&input, spec)?;
         Ok(Prepared { input, detection, source, plan, output })

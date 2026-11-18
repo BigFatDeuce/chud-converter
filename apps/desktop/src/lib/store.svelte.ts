@@ -53,6 +53,8 @@ export interface Job {
   verifications: Verification[];
   notes: string[];
   error: string | null;
+  /** Code stable de l'échec (« verification_failed », « invalid_input »…). */
+  errorCode: string | null;
   skipReason: string | null;
   durationMs: number | null;
 }
@@ -411,6 +413,7 @@ class Store {
         verifications: [],
         notes: [],
         error: null,
+        errorCode: null,
         skipReason: null,
         durationMs: null,
       }));
@@ -486,6 +489,7 @@ class Store {
       case "failed":
         j.status = e.code === "cancelled" ? "cancelled" : "failed";
         j.error = e.message;
+        j.errorCode = e.code;
         break;
     }
   }

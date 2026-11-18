@@ -45,6 +45,10 @@ const WRITE: &[&str] = &["png", "jpeg", "gif", "webp", "bmp", "ico", "tiff", "tg
 
 /// Taille maximale d'une icône.
 const ICO_MAX: u32 = 256;
+/// Au-delà (en pixels), la preuve « pixels identiques » est omise : deux copies 16 bits en mémoire.
+const PIXEL_CHECK_MAX: u64 = 64_000_000;
+/// Taille décodée maximale (octets) pour une analyse complète de la source.
+const PROBE_DECODE_MAX: u64 = 256 * 1024 * 1024;
 
 type Decoded = (DynamicImage, Option<Vec<u8>>, Vec<String>);
 
@@ -269,7 +273,11 @@ impl Engine for ImageNative {
         let color = dec.color_type();
         let icc = dec.icc_profile().ok().flatten().is_some();
         let exif = dec.exif_metadata().ok().flatten().is_some();
-        drop(dec);
+        // Une image tronquée ou abîmée a souvent un en-tête intact : on la décode entièrement
+        // (sauf si elle est très grande) pour ne pas proposer des conversions vouées à l'échec.
+        if dec.total_bytes() <= PROBE_DECODE_MAX {
+            image::DynamicImage::from_decoder(dec).ok()?;
+        }
         let animated = match format.as_str() {
             "gif" => File::open(path).ok().and_then(|f| {
                 use image::AnimationDecoder;
@@ -347,7 +355,7 @@ impl Engine for ImageNative {
             }
             let feats = src.features.as_ref();
             if feats.is_some_and(|f| f.contains(&chud_core::Feature::new("high_bit_depth")))
-                && !matches!(to, "png" | "tiff" | "pnm" | "farbfeld" | "exr" | "hdr")
+                && !matches!(to, "png" | "tiff" | "farbfeld" | "exr" | "hdr")
             {
                 fidelity = Fidelity::Lossy;
                 notes.push(
@@ -459,7 +467,9 @@ impl Engine for ImageNative {
             other => {
                 let fmt = format_of(other).ok_or_else(|| EngineError::Unsupported(trf!("écriture {other}", "writing {other}")))?;
                 let img = match other {
-                    "bmp" | "tga" | "qoi" | "gif" | "ico" | "pnm" => {
+                    // ICO : le décodeur exige des PNG internes en RGBA, même sans transparence.
+                    "ico" => DynamicImage::ImageRgba8(img.to_rgba8()),
+                    "bmp" | "tga" | "qoi" | "gif" | "pnm" => {
                         if img.color().has_alpha() {
                             DynamicImage::ImageRgba8(img.to_rgba8())
                         } else {
@@ -494,13 +504,44 @@ impl Engine for ImageNative {
     fn verify(&self, output: &Path, task: &StepTask, _ctx: &ExecContext) -> Verification {
         let to = task.to.as_str();
         let Some(_) = format_of(to) else { return Verification::SignatureOnly };
-        match Self::open(output, to).and_then(|r| r.decode().map_err(input_err)) {
-            Ok(img) if img.width() > 0 && img.height() > 0 => {
-                Verification::Decoded(trf!("image décodée : {} × {} px", "image decoded: {} × {} px", img.width(), img.height()))
+        let img = match Self::open(output, to).and_then(|r| r.decode().map_err(input_err)) {
+            Ok(img) if img.width() > 0 && img.height() > 0 => img,
+            Ok(_) => return Verification::Failed(tr!("image vide", "empty image").into()),
+            Err(e) => {
+                return Verification::Failed(trf!("le fichier produit ne se décode pas : {e}", "the output file does not decode: {e}"));
             }
-            Ok(_) => Verification::Failed("image vide".into()),
-            Err(e) => Verification::Failed(trf!("le fichier produit ne se décode pas : {e}", "the output file does not decode: {e}")),
+        };
+        let (w, h) = (img.width(), img.height());
+        let mut detail = trf!("image décodée : {w} × {h} px", "image decoded: {w} × {h} px");
+        // Dimensions attendues, puis « sans perte » prouvé pixel par pixel quand il est annoncé.
+        let Ok((src, _, _)) = Self::decode(&task.input, task.from.as_str()) else { return Verification::Decoded(detail) };
+        let expected = self.target_size(src.width(), src.height(), &task.options, to).unwrap_or((src.width(), src.height()));
+        if (w, h) != expected {
+            return Verification::Failed(trf!(
+                "dimensions {w} × {h} au lieu de {} × {}",
+                "dimensions {w} × {h} instead of {} × {}",
+                expected.0,
+                expected.1
+            ));
         }
+        let q = StepQuery { from: &task.from, to: &task.to, source: task.source.as_ref(), options: &task.options };
+        if self.assess(&q).fidelity == Fidelity::Lossless && (w, h) == (src.width(), src.height()) {
+            if u64::from(w) * u64::from(h) > PIXEL_CHECK_MAX {
+                detail
+                    .push_str(tr!(" ; comparaison des pixels omise (image très grande)", "; pixel comparison skipped (very large image)"));
+            } else if src.to_rgba16().as_raw() == img.to_rgba16().as_raw() {
+                detail.push_str(tr!(" ; pixels identiques à la source", "; pixels identical to the source"));
+            } else {
+                return Verification::Failed(
+                    tr!(
+                        "conversion annoncée sans perte, mais les pixels diffèrent de la source",
+                        "conversion announced as lossless, but the pixels differ from the source"
+                    )
+                    .into(),
+                );
+            }
+        }
+        Verification::Decoded(detail)
     }
 }
 
@@ -511,6 +552,20 @@ mod tests {
 
     fn ctx(dir: &Path) -> ExecContext {
         ExecContext::new(dir.to_path_buf())
+    }
+
+    #[test]
+    fn truncated_image_is_not_probed_as_valid() {
+        let d = tmpdir("trunc");
+        let full = d.join("full.png");
+        sample(&full, true);
+        let bytes = std::fs::read(&full).unwrap();
+        let cut = d.join("cut.png");
+        std::fs::write(&cut, &bytes[..bytes.len() * 2 / 3]).unwrap();
+        let e = ImageNative::new();
+        assert!(e.probe(&full, &"png".into()).is_some());
+        assert!(e.probe(&cut, &"png".into()).is_none(), "en-tête intact mais données manquantes");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     fn tmpdir(name: &str) -> std::path::PathBuf {
@@ -595,6 +650,51 @@ mod tests {
         assert_eq!(a.fidelity, Fidelity::Lossy, "16 bits → 8 bits n'est pas sans perte");
         let a = e.assess(&StepQuery { from: &png, to: &ico, source: Some(&src), options: &opts });
         assert_eq!(a.fidelity, Fidelity::Lossy, "600 px → 256 px");
+    }
+
+    #[test]
+    fn ico_from_an_opaque_image_reads_back() {
+        // Régression : l'ICO écrit depuis une image RGB contenait un PNG RGB que le décodeur ICO refuse.
+        let d = tmpdir("ico-opaque");
+        let e = ImageNative::new();
+        sample(&d.join("opaque.png"), false);
+        convert(&e, &d.join("opaque.png"), "png", "ico", &d.join("opaque.ico"), OptionValues::new());
+        let back = ImageNative::open(&d.join("opaque.ico"), "ico").unwrap().decode().unwrap();
+        assert_eq!((back.width(), back.height()), (37, 23));
+    }
+
+    #[test]
+    fn sixteen_bit_to_pnm_is_not_called_lossless() {
+        let e = ImageNative::new();
+        let src = SourceInfo { features: Some(features(&["high_bit_depth"])), width: Some(10), height: Some(10), ..Default::default() };
+        let opts = OptionValues::new();
+        let a = e.assess(&StepQuery { from: &"png".into(), to: &"pnm".into(), source: Some(&src), options: &opts });
+        assert_eq!(a.fidelity, Fidelity::Lossy, "le PNM écrit par ce moteur est en 8 bits");
+    }
+
+    #[test]
+    fn lossless_claim_is_checked_pixel_by_pixel() {
+        let d = tmpdir("pixels");
+        let e = ImageNative::new();
+        sample(&d.join("a.png"), true);
+        let task = StepTask {
+            input: d.join("a.png"),
+            output: d.join("a.bmp"),
+            from: "png".into(),
+            to: "bmp".into(),
+            options: OptionValues::new(),
+            source: None,
+        };
+        e.execute(&task, &ctx(&d)).unwrap();
+        assert!(matches!(e.verify(&task.output, &task, &ctx(&d)), Verification::Decoded(ref s) if s.contains("identi")));
+        // Un résultat altéré d'un seul pixel n'est plus « sans perte » : la vérification échoue.
+        let mut img = image::open(&task.output).unwrap().to_rgba8();
+        img.put_pixel(3, 4, Rgba([1, 2, 3, 255]));
+        img.save_with_format(&task.output, ImageFormat::Bmp).unwrap();
+        assert!(matches!(e.verify(&task.output, &task, &ctx(&d)), Verification::Failed(_)));
+        // Mauvaises dimensions : échec également.
+        RgbaImage::new(5, 5).save_with_format(&task.output, ImageFormat::Bmp).unwrap();
+        assert!(matches!(e.verify(&task.output, &task, &ctx(&d)), Verification::Failed(ref s) if s.contains("37")));
     }
 
     #[test]

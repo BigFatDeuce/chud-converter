@@ -171,7 +171,16 @@ pub fn detect_reader<R: Read + Seek>(mut reader: R, file_name: Option<&str>, siz
                 media_type: ff.media_type().to_string(),
                 extension: ff.extension().to_string(),
             };
-            let sig_def = map_signature(ff, catalog);
+            let mut sig_def = map_signature(ff, catalog);
+            // AC-3 et E-AC-3 ont la même signature (0B 77) : le champ « bsid » (6e octet) les
+            // distingue — 0 à 10 pour l'AC-3, 11 à 16 pour l'E-AC-3.
+            if sig_def.is_some_and(|s| s.id == "ac3") {
+                let mut head = [0u8; 6];
+                if reader.read_exact(&mut head).is_ok() && head[..2] == [0x0B, 0x77] && head[5] >> 3 > 10 {
+                    sig_def = catalog.get("eac3").or(sig_def);
+                }
+                reader.seek(SeekFrom::Start(0))?;
+            }
             d.signature = Some(sig.clone());
             match sig_def {
                 Some(s) => apply_signature(&mut d, s, ext_def, catalog),
@@ -461,6 +470,28 @@ mod tests {
         0xF8, 0xCF, 0xC0, 0xF0, 0x1F, 0x00, 0x05, 0x00, 0x01, 0xFF, 0x89, 0x99, 0x3D, 0x1D, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44,
         0xAE, 0x42, 0x60, 0x82,
     ];
+
+    /// Débuts de vrais fichiers produits par FFmpeg : même signature 0B 77, « bsid » 8 et 16.
+    #[test]
+    fn ac3_and_eac3_are_told_apart() {
+        let ac3 = [
+            0x0B, 0x77, 0x87, 0x58, 0x54, 0x40, 0x43, 0xE1, 0x06, 0xF5, 0x75, 0xF1, 0x25, 0x26, 0x19, 0x99, 0xFF, 0xF7, 0xAE, 0xF9, 0xF3,
+            0xE7, 0xCF, 0x9F, 0xB0, 0xEF, 0x70, 0xDF, 0xBE, 0x86, 0xF9, 0xF5,
+        ];
+        let eac3 = [
+            0x0B, 0x77, 0x01, 0xA0, 0x74, 0x87, 0xC0, 0x00, 0x20, 0x84, 0x21, 0x08, 0x32, 0x80, 0xAE, 0x09, 0x29, 0x21, 0x99, 0x9F, 0xBD,
+            0x77, 0xCF, 0x9F, 0x3E, 0x7C, 0xFD, 0x87, 0x7B, 0x86, 0xFD, 0xF4,
+        ];
+        let a = detect_bytes(&ac3, Some("a.ac3"), cat());
+        assert_eq!(a.format.as_ref().map(|f| f.as_str()), Some("ac3"));
+        assert!(!a.extension_mismatch);
+        let e = detect_bytes(&eac3, Some("a.eac3"), cat());
+        assert_eq!(e.format.as_ref().map(|f| f.as_str()), Some("eac3"));
+        assert!(!e.extension_mismatch, "{e:?}");
+        // Le contenu décide, pas l'extension.
+        let e = detect_bytes(&eac3, Some("faux.ac3"), cat());
+        assert_eq!(e.format.as_ref().map(|f| f.as_str()), Some("eac3"));
+    }
 
     #[test]
     fn png_by_signature() {

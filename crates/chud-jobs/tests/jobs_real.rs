@@ -148,6 +148,49 @@ fn corrupted_input_is_never_reported_as_success() {
     assert_eq!(jobs_left(&e), 0);
 }
 
+/// Un fichier qui porte une extension connue sans en avoir le contenu est signalé comme illisible,
+/// au lieu de proposer des dizaines de conversions vouées à l'échec.
+#[test]
+fn unreadable_input_is_reported_as_such() {
+    let e = env("unreadable");
+    if e.ffmpeg.is_none() {
+        skip("FFmpeg absent");
+        return;
+    }
+    let junk = e.dir.join("faux.mp4");
+    let bytes: Vec<u8> = (0..64).flat_map(|_| 0..=255u8).collect();
+    std::fs::write(&junk, &bytes).unwrap();
+    let r = e.runner.run(&JobSpec::new(&junk, "mkv"), &CancelToken::new(), &no_events);
+    match r {
+        Err(JobError::Unreadable(msg)) => assert!(msg.contains("MP4") || msg.contains("mp4"), "{msg}"),
+        Err(JobError::Unrecognized(_)) => {}
+        other => panic!("attendu « illisible » : {other:?}"),
+    }
+    assert!(!e.dir.join("faux.mkv").exists());
+    assert_eq!(jobs_left(&e), 0);
+}
+
+/// Conversions enchaînées : chaque résultat sert de source à la suivante et reste vérifié.
+#[test]
+fn chained_conversions_stay_valid() {
+    let e = env("chain");
+    let Some(ffmpeg) = e.ffmpeg.clone() else {
+        skip("FFmpeg absent");
+        return;
+    };
+    let mut cur = e.dir.join("depart.wav");
+    make_media(&ffmpeg, &["-f", "lavfi", "-i", "sine=duration=4:sample_rate=48000", "-ac", "2"], &cur);
+    for (i, to) in ["flac", "opus", "mp3", "aac", "ogg", "wav", "alac", "wv", "caf"].iter().enumerate() {
+        let dir = e.dir.join(format!("{i}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut spec = JobSpec::new(&cur, *to);
+        spec.output_dir = Some(dir);
+        let r = e.runner.run(&spec, &CancelToken::new(), &no_events).unwrap_or_else(|err| panic!("étape {i} → {to} : {err}"));
+        assert!(r.verifications.iter().all(|v| v.is_ok()), "étape {i} → {to} : {:?}", r.verifications);
+        cur = r.output.expect("fichier produit");
+    }
+}
+
 #[test]
 fn queue_accepts_cancels_and_reports_each_job() {
     let e = env("queue");

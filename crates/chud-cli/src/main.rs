@@ -13,6 +13,17 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// `println!` qui ne panique pas quand le lecteur ferme la sortie (`chud … | head`) : le
+/// programme s'arrête alors sans message, comme les outils Unix (code 141, « SIGPIPE »).
+macro_rules! out {
+    ($($t:tt)*) => {{
+        use std::io::Write as _;
+        if let Err(e) = writeln!(std::io::stdout().lock(), $($t)*) {
+            std::process::exit(if e.kind() == std::io::ErrorKind::BrokenPipe { 141 } else { 1 });
+        }
+    }};
+}
+
 #[derive(Parser)]
 #[command(name = "chud", version, about = "Chud Converter : conversion de fichiers locale, honnête et vérifiée")]
 struct Cli {
@@ -231,7 +242,7 @@ fn catalog() -> &'static FormatCatalog {
 }
 
 fn print_json<T: serde::Serialize>(v: &T) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(v)?);
+    out!("{}", serde_json::to_string_pretty(v)?);
     Ok(())
 }
 
@@ -285,13 +296,13 @@ fn fmt_name(id: &FormatId) -> String {
 }
 
 fn print_plan(plan: &Plan) {
-    println!("{}", trf!("Plan : {} → {}", "Plan: {} → {}", fmt_name(&plan.source), fmt_name(&plan.target)));
+    out!("{}", trf!("Plan : {} → {}", "Plan: {} → {}", fmt_name(&plan.source), fmt_name(&plan.target)));
     for (i, s) in plan.steps.iter().enumerate() {
-        println!("{}", trf!("  {}. {} → {} avec {} — {}", "  {}. {} → {} with {} — {}", i + 1, s.from, s.to, s.engine, s.fidelity.label()));
+        out!("{}", trf!("  {}. {} → {} avec {} — {}", "  {}. {} → {} with {} — {}", i + 1, s.from, s.to, s.engine, s.fidelity.label()));
     }
-    println!("{}", trf!("Fidélité : {}", "Fidelity: {}", plan.report.headline()));
+    out!("{}", trf!("Fidélité : {}", "Fidelity: {}", plan.report.headline()));
     for d in plan.report.details(catalog()) {
-        println!("  • {d}");
+        out!("  • {d}");
     }
 }
 
@@ -365,9 +376,9 @@ fn run(cli: Cli) -> Result<i32> {
             for d in list {
                 if current != Some(d.category) {
                     current = Some(d.category);
-                    println!("\n{}", d.category.label());
+                    out!("\n{}", d.category.label());
                 }
-                println!("  {:<12} {:<40} .{}", d.id.as_str(), d.label(), d.extensions.join(" ."));
+                out!("  {:<12} {:<40} .{}", d.id.as_str(), d.label(), d.extensions.join(" ."));
             }
             Ok(0)
         }
@@ -376,7 +387,7 @@ fn run(cli: Cli) -> Result<i32> {
             if cli.json {
                 return print_json(&env.statuses).map(|_| 0);
             }
-            println!(
+            out!(
                 "{}",
                 trf!(
                     "Données : {}{}",
@@ -385,10 +396,7 @@ fn run(cli: Cli) -> Result<i32> {
                     if env.manager.paths().portable { " (portable)" } else { "" }
                 )
             );
-            println!(
-                "{}",
-                trf!("Moteurs intégrés : images (natif), données (natif)\n", "Built-in engines: images (native), data (native)\n")
-            );
+            out!("{}", trf!("Moteurs intégrés : images (natif), données (natif)\n", "Built-in engines: images (native), data (native)\n"));
             for s in &env.statuses {
                 let state = match &s.state {
                     EngineState::Ready => tr!("prêt", "ready").to_string(),
@@ -403,18 +411,18 @@ fn run(cli: Cli) -> Result<i32> {
                     Some(chud_core::EngineOrigin::System) => tr!(" [système]", " [system]"),
                     _ => "",
                 };
-                println!("{:<26} {}{}", s.name, state, s.version.as_ref().map(|v| format!(" — {v}")).unwrap_or_default());
+                out!("{:<26} {}{}", s.name, state, s.version.as_ref().map(|v| format!(" — {v}")).unwrap_or_default());
                 if let Some(p) = &s.path {
-                    println!("{:<26} {}{origin}", "", p.display());
+                    out!("{:<26} {}{origin}", "", p.display());
                 }
                 if s.state == EngineState::Missing
                     && let Some(h) = &s.hint
                 {
-                    println!("{}", trf!("{:<26} installation : {h}", "{:<26} install: {h}", ""));
+                    out!("{}", trf!("{:<26} installation : {h}", "{:<26} install: {h}", ""));
                 }
             }
             let n: usize = env.registry.engines().iter().map(|e| e.conversions().len()).sum();
-            println!("{}", trf!("\n{} conversions directes disponibles.", "\n{} direct conversions available.", n));
+            out!("{}", trf!("\n{} conversions directes disponibles.", "\n{} direct conversions available.", n));
             Ok(0)
         }
         Cmd::Detect { files } => {
@@ -426,7 +434,7 @@ fn run(cli: Cli) -> Result<i32> {
                     Ok(d) => {
                         if !cli.json {
                             let name = d.format.as_ref().map_or(tr!("inconnu", "unknown").into(), fmt_name);
-                            println!(
+                            out!(
                                 "{}",
                                 trf!(
                                     "{} : {} — confiance {}, méthode : {}",
@@ -438,13 +446,13 @@ fn run(cli: Cli) -> Result<i32> {
                                 )
                             );
                             if d.extension_mismatch {
-                                println!(
+                                out!(
                                     "{}",
                                     trf!("  ⚠ l'extension ne correspond pas au contenu", "  ⚠ the extension does not match the content")
                                 );
                             }
                             if let Some(n) = &d.note {
-                                println!("  {n}");
+                                out!("  {n}");
                             }
                         }
                         out.push(serde_json::json!({ "file": f, "detection": d }));
@@ -465,25 +473,25 @@ fn run(cli: Cli) -> Result<i32> {
             let env = load_engines()?;
             let d = detect_path(&file, catalog())?;
             let src = d.format.clone().context(tr!("format non reconnu", "unrecognized format"))?;
-            let info = env.registry.probe(&std::path::absolute(&file)?, &src);
+            let info = env.registry.probe_checked(&std::path::absolute(&file)?, &src).map_err(anyhow::Error::msg)?;
             let targets = env.registry.targets(&src, info.as_ref(), &OptionValues::new());
             if cli.json {
                 return print_json(&serde_json::json!({ "source": src, "probe": info, "targets": targets })).map(|_| 0);
             }
-            println!("{}", trf!("{} : {}", "{}: {}", file.display(), fmt_name(&src)));
+            out!("{}", trf!("{} : {}", "{}: {}", file.display(), fmt_name(&src)));
             if let Some(i) = &info {
                 for (k, v) in &i.summary {
-                    println!("{}", trf!("  {k} : {v}", "  {k}: {v}"));
+                    out!("{}", trf!("  {k} : {v}", "  {k}: {v}"));
                 }
             }
             let mut current = None;
             for t in &targets {
                 if current != Some(t.category) {
                     current = Some(t.category);
-                    println!("\n{}", t.category.label());
+                    out!("\n{}", t.category.label());
                 }
                 let via: Vec<String> = t.best.steps.iter().map(|s| s.engine.to_string()).collect();
-                println!("  {:<12} {:<34} {:<18} via {}", t.format.as_str(), t.name, t.best.report.headline(), via.join(" + "));
+                out!("  {:<12} {:<34} {:<18} via {}", t.format.as_str(), t.name, t.best.report.headline(), via.join(" + "));
             }
             Ok(0)
         }
@@ -502,14 +510,14 @@ fn run(cli: Cli) -> Result<i32> {
                 if let Some(e) = env.registry.engine(&s.engine) {
                     let opts = e.options(&s.from, &s.to);
                     if !opts.is_empty() {
-                        println!("{}", trf!("Options de l'étape {} → {} ({}) :", "Options for step {} → {} ({}):", s.from, s.to, s.engine));
+                        out!("{}", trf!("Options de l'étape {} → {} ({}) :", "Options for step {} → {} ({}):", s.from, s.to, s.engine));
                         for o in opts {
-                            println!("  --set {}=…  {}{}", o.key, o.label, if o.advanced { tr!(" (avancé)", " (advanced)") } else { "" });
+                            out!("  --set {}=…  {}{}", o.key, o.label, if o.advanced { tr!(" (avancé)", " (advanced)") } else { "" });
                         }
                     }
                 }
             }
-            println!("{}", trf!("Sortie prévue : {}", "Planned output: {}", p.output.display()));
+            out!("{}", trf!("Sortie prévue : {}", "Planned output: {}", p.output.display()));
             Ok(0)
         }
         Cmd::Convert { files, to, preset, output, set, name, on_conflict, jobs, keep_date, engine, timeout } => {
@@ -590,7 +598,7 @@ fn run(cli: Cli) -> Result<i32> {
             let results = run_batch(&runner, &specs, workers, cores as u32, &cancel, &|idx, ev| {
                 if json {
                     let _g = stdout.lock();
-                    println!("{}", serde_json::json!({ "job": idx, "data": ev }));
+                    out!("{}", serde_json::json!({ "job": idx, "data": ev }));
                     return;
                 }
                 let b = &bars[idx];
@@ -626,13 +634,13 @@ fn run(cli: Cli) -> Result<i32> {
                             continue;
                         }
                         match &o.output {
-                            Some(out) => println!("✔ {input} → {}", out.display()),
-                            None => println!("{}", trf!("↷ {input} : ignoré", "↷ {input}: skipped")),
+                            Some(out) => out!("✔ {input} → {}", out.display()),
+                            None => out!("{}", trf!("↷ {input} : ignoré", "↷ {input}: skipped")),
                         }
                         if let Some(p) = &o.plan {
-                            println!("{}", trf!("    Fidélité : {}", "    Fidelity: {}", p.report.headline()));
+                            out!("{}", trf!("    Fidélité : {}", "    Fidelity: {}", p.report.headline()));
                             for d in p.report.details(catalog()) {
-                                println!("    • {d}");
+                                out!("    • {d}");
                             }
                         }
                         for v in &o.verifications {
@@ -642,25 +650,25 @@ fn run(cli: Cli) -> Result<i32> {
                                 Verification::SignatureOnly => tr!("signature contrôlée seulement", "signature checked only").into(),
                                 Verification::Failed(d) => trf!("ÉCHEC : {d}", "FAILED: {d}"),
                             };
-                            println!("    ✓ {t}");
+                            out!("    ✓ {t}");
                         }
                         let shown: Vec<&String> = o.plan.iter().flat_map(|p| p.steps.iter().flat_map(|s| s.notes.iter())).collect();
                         for n in o.notes.iter().filter(|n| !shown.contains(n)) {
-                            println!("    · {n}");
+                            out!("    · {n}");
                         }
                     }
                     Err(e) => {
                         failed += 1;
                         if json {
-                            println!("{}", serde_json::json!({ "job": i, "error": { "code": e.code(), "message": e.to_string() } }));
+                            out!("{}", serde_json::json!({ "job": i, "error": { "code": e.code(), "message": e.to_string() } }));
                         } else {
-                            println!("{}", trf!("✘ {input} : {e}", "✘ {input}: {e}"));
+                            out!("{}", trf!("✘ {input} : {e}", "✘ {input}: {e}"));
                         }
                     }
                 }
             }
             if !json && specs.len() > 1 {
-                println!("{}", trf!("\n{} réussie(s), {failed} échec(s).", "\n{} succeeded, {failed} failed.", specs.len() - failed));
+                out!("{}", trf!("\n{} réussie(s), {failed} échec(s).", "\n{} succeeded, {failed} failed.", specs.len() - failed));
             }
             Ok(if failed > 0 { 1 } else { 0 })
         }
@@ -690,9 +698,9 @@ fn run(cli: Cli) -> Result<i32> {
             } else {
                 tr!("valeurs par défaut, fichier non créé", "defaults, file not created")
             };
-            println!("{}", trf!("Préréglages ({origin}) : {}", "Presets ({origin}): {}", file.display()));
+            out!("{}", trf!("Préréglages ({origin}) : {}", "Presets ({origin}): {}", file.display()));
             if !files.is_empty() && shown.is_empty() {
-                println!(
+                out!(
                     "{}",
                     trf!(
                         "Aucun préréglage pour cette sélection (type inconnu ou sans préréglage commun).",
@@ -703,10 +711,10 @@ fn run(cli: Cli) -> Result<i32> {
             for p in shown {
                 let name = catalog().get(p.target.as_str()).map(|f| f.label()).unwrap_or(p.target.as_str());
                 let state = if p.enabled { "" } else { tr!("  (désactivé)", "  (disabled)") };
-                println!("  {:<14} {:<26} → {:<26} [{}]{state}", p.id, p.display_name(), name, p.applies_to.join(", "));
+                out!("  {:<14} {:<26} → {:<26} [{}]{state}", p.id, p.display_name(), name, p.applies_to.join(", "));
                 if !p.options.is_empty() {
                     let opts: Vec<String> = p.options.iter().map(|(k, v)| format!("{k}={v}")).collect();
-                    println!("{}", trf!("  {:<14} options : {}", "  {:<14} options: {}", "", opts.join(", ")));
+                    out!("{}", trf!("  {:<14} options : {}", "  {:<14} options: {}", "", opts.join(", ")));
                 }
             }
             Ok(0)
@@ -734,7 +742,7 @@ fn run(cli: Cli) -> Result<i32> {
                 LangChoice::Fr => "français",
                 LangChoice::En => "English",
             };
-            println!("{}", trf!("Langue : {setting} ({}) — {}", "Language: {setting} ({}) — {}", effective.code(), file.display()));
+            out!("{}", trf!("Langue : {setting} ({}) — {}", "Language: {setting} ({}) — {}", effective.code(), file.display()));
             Ok(0)
         }
         Cmd::Matrix { from } => {
@@ -761,9 +769,9 @@ fn run(cli: Cli) -> Result<i32> {
                     .push(r["to"].as_str().unwrap_or("").to_owned());
             }
             for (engine, m) in by_engine {
-                println!("{engine} ({} conversions)", m.values().map(Vec::len).sum::<usize>());
+                out!("{engine} ({} conversions)", m.values().map(Vec::len).sum::<usize>());
                 for (f, tos) in m {
-                    println!("  {f:<10} → {}", tos.join(", "));
+                    out!("  {f:<10} → {}", tos.join(", "));
                 }
             }
             Ok(0)
@@ -810,7 +818,7 @@ fn shell(action: ShellAction, json: bool) -> Result<i32> {
                         .collect();
                     return print_json(&serde_json::json!({ "exe": exe, "menus": v })).map(|_| 0);
                 }
-                println!("{}", trf!("Programme lancé : {}", "Program launched: {}", exe.display()));
+                out!("{}", trf!("Programme lancé : {}", "Program launched: {}", exe.display()));
                 for m in &menus {
                     let names: Vec<&str> = m.items.iter().map(|i| i.name.as_str()).collect();
                     let target = if m.folder {
@@ -818,16 +826,16 @@ fn shell(action: ShellAction, json: bool) -> Result<i32> {
                     } else {
                         m.extensions.iter().map(|e| format!(".{e}")).collect::<Vec<_>>().join(" ")
                     };
-                    println!("  {target}\n    → {}", names.join(", "));
+                    out!("  {target}\n    → {}", names.join(", "));
                 }
-                println!("{}", trf!("(simulation : rien n'a été modifié)", "(dry run: nothing was changed)"));
+                out!("{}", trf!("(simulation : rien n'a été modifié)", "(dry run: nothing was changed)"));
                 return Ok(0);
             }
             let st = chud_shell::install(&exe, &menus)?;
             if json {
                 return print_status(&st, true);
             }
-            println!(
+            out!(
                 "{}",
                 trf!(
                     "Menu clic droit installé : {} types de fichiers, programme {}",
@@ -836,9 +844,9 @@ fn shell(action: ShellAction, json: bool) -> Result<i32> {
                     exe.display()
                 )
             );
-            println!("{}", trf!("Emplacement : {}", "Location: {}", st.location));
+            out!("{}", trf!("Emplacement : {}", "Location: {}", st.location));
             if cfg!(windows) {
-                println!(
+                out!(
                     "{}",
                     trf!(
                         "Sous Windows 11, il apparaît dans « Afficher plus d'options » (ou Maj+F10).",
@@ -846,7 +854,7 @@ fn shell(action: ShellAction, json: bool) -> Result<i32> {
                     )
                 );
             }
-            println!("{}", trf!("Pour le retirer : chud shell uninstall", "To remove it: chud shell uninstall"));
+            out!("{}", trf!("Pour le retirer : chud shell uninstall", "To remove it: chud shell uninstall"));
             Ok(0)
         }
         ShellAction::Uninstall => {
@@ -854,7 +862,7 @@ fn shell(action: ShellAction, json: bool) -> Result<i32> {
             if json {
                 return print_json(&serde_json::json!({ "removed": n })).map(|_| 0);
             }
-            println!(
+            out!(
                 "{}",
                 if n == 0 {
                     tr!("Le menu n'était pas installé.", "The menu was not installed.").to_owned()
@@ -875,15 +883,12 @@ fn print_status(st: &chud_shell::Status, json: bool) -> Result<i32> {
         return Ok(0);
     }
     if !st.installed {
-        println!(
-            "{}",
-            trf!("Menu clic droit : non installé (chud shell install).", "Right-click menu: not installed (chud shell install).")
-        );
+        out!("{}", trf!("Menu clic droit : non installé (chud shell install).", "Right-click menu: not installed (chud shell install)."));
         return Ok(0);
     }
-    println!("{}", trf!("Menu clic droit : installé, {} types de fichiers.", "Right-click menu: installed, {} file types.", st.entries));
+    out!("{}", trf!("Menu clic droit : installé, {} types de fichiers.", "Right-click menu: installed, {} file types.", st.entries));
     if let Some(e) = &st.exe {
-        println!(
+        out!(
             "{}",
             trf!(
                 "Programme : {}{}",
@@ -893,7 +898,7 @@ fn print_status(st: &chud_shell::Status, json: bool) -> Result<i32> {
             )
         );
     }
-    println!("{}", trf!("Emplacement : {}", "Location: {}", st.location));
+    out!("{}", trf!("Emplacement : {}", "Location: {}", st.location));
     Ok(if st.exe_missing { 1 } else { 0 })
 }
 

@@ -144,19 +144,25 @@ fn parse_formats(text: &str) -> (HashSet<String>, HashSet<String>) {
 
 /// Analyse la sortie `7z l -slt -ba`.
 fn parse_listing(text: &str) -> Vec<Entry> {
+    // Une entrée par bloc « clé = valeur », blocs séparés par une ligne vide. La ligne « Path »
+    // manque pour un flux compressé seul dont le nom n'est pas stocké (xz, bzip2, zstd) : le
+    // bloc compte quand même, sinon l'extraction paraîtrait contenir un fichier de trop.
     let mut out = Vec::new();
     let mut cur: Option<Entry> = None;
-    for line in text.lines() {
-        if let Some(p) = line.strip_prefix("Path = ") {
+    for line in text.lines().map(|l| l.trim_end_matches('\r')) {
+        if line.trim().is_empty() {
             if let Some(e) = cur.take() {
                 out.push(e);
             }
-            cur = Some(Entry { path: p.to_owned(), ..Default::default() });
             continue;
         }
-        let Some(e) = cur.as_mut() else { continue };
-        let Some((k, v)) = line.split_once(" = ") else { continue };
+        let Some((k, v)) = line.split_once(" = ").or_else(|| line.strip_suffix(" =").map(|k| (k, ""))) else { continue };
+        if k == "Path" && cur.as_ref().is_some_and(|e| !e.path.is_empty()) {
+            out.extend(cur.take());
+        }
+        let e = cur.get_or_insert_with(Entry::default);
         match k {
+            "Path" => e.path = v.to_owned(),
             "Folder" => e.is_dir = v.trim() == "+",
             "Size" => e.size = v.trim().parse().ok(),
             "Encrypted" => e.encrypted = v.trim() == "+",
@@ -517,7 +523,15 @@ impl SevenZip {
             }
             return Err(EngineError::InvalidInput(format!("archive illisible : {err}")));
         }
-        Ok(parse_listing(&out.stdout_text()))
+        let mut entries = parse_listing(&out.stdout_text());
+        // Flux compressé seul sans nom stocké : 7-Zip l'extrait sous le nom de l'archive sans
+        // son extension (« notes.txt.xz » → « notes.txt »).
+        if let [only] = entries.as_mut_slice()
+            && only.path.is_empty()
+        {
+            only.path = archive.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "contenu".into());
+        }
+        Ok(entries)
     }
 
     fn max_unpacked(o: &OptionValues) -> u64 {
@@ -991,6 +1005,20 @@ mod tests {
         assert_eq!(e.len(), 3);
         assert!(e[0].is_dir && !e[1].is_dir && e[1].size == Some(6));
         assert!(e[2].link && e[2].unix_mode);
+    }
+
+    #[test]
+    fn parses_nameless_stream_and_crlf() {
+        // xz, bzip2, zstd : pas de ligne « Path » ; sortie Windows en CRLF.
+        let e = parse_listing("Size = 520\r\nPacked Size = 96\r\nMethod = LZMA2:12 CRC32\r\n\r\n");
+        assert_eq!(e.len(), 1);
+        assert_eq!(e[0].size, Some(520));
+        assert!(e[0].path.is_empty(), "nom fourni ensuite par `list` d'après l'archive");
+        let e = parse_listing("Size = \r\nPacked Size = \r\n\r\n");
+        assert_eq!(e.len(), 1);
+        assert_eq!(e[0].size, None);
+        let e = parse_listing("Path = é.txt\r\nSize = 4\r\n");
+        assert_eq!(e[0].path, "é.txt", "sans retour chariot final");
     }
 
     #[test]

@@ -101,7 +101,8 @@ static FORMATS: &[Fmt] = &[
     },
     Fmt {
         mux_args: FASTSTART,
-        video: &["h264", "h265", "prores", "mpeg4", "av1"],
+        // Pas d'AV1 : « av1 only supported in MP4 and AVIF ».
+        video: &["h264", "h265", "prores", "mpeg4"],
         vcopy: &["mjpeg", "dnxhd", "rawvideo", "qtrle", "png"],
         audio: &["aac", "alac", "pcm_le", "mp3", "ac3", "eac3"],
         acopy: &["pcm_s16be", "pcm_s24be", "pcm_s32be", "pcm_f32be"],
@@ -118,7 +119,8 @@ static FORMATS: &[Fmt] = &[
     Fmt { video: &["h264", "flv1"], audio: &["aac", "mp3"], ..fmt("flv", Kind::Video, &["flv"], "flv") },
     Fmt { video: &["mpeg2", "mpeg1"], audio: &["mp2", "ac3", "mp3"], ..fmt("mpeg", Kind::Video, &["mpeg"], "mpeg") },
     Fmt {
-        video: &["h264", "h265", "mpeg2", "av1"],
+        // Pas d'AV1 : FFmpeg le relit depuis MPEG-TS avec des paramètres faux (dimensions…).
+        video: &["h264", "h265", "mpeg2"],
         audio: &["aac", "ac3", "eac3", "mp2", "mp3", "opus"],
         subs: &["dvb_subtitle"],
         ..fmt("ts", Kind::Video, &["mpegts"], "mpegts")
@@ -159,7 +161,9 @@ static FORMATS: &[Fmt] = &[
     Fmt { audio: &["aac"], ..fmt("aac", Kind::Audio, &["aac"], "adts") },
     Fmt { mux_args: FASTSTART, audio: &["aac", "alac"], ..fmt("m4a", Kind::Audio, &["mov"], "ipod") },
     Fmt { mux_args: FASTSTART, audio: &["alac"], ..fmt("alac", Kind::Audio, &["mov"], "ipod") },
-    Fmt { audio: &["vorbis", "opus", "flac"], ..fmt("ogg", Kind::Audio, &["ogg"], "ogg") },
+    // « Ogg Vorbis » : Vorbis seulement (Opus et FLAC ont leurs propres formats ; un FLAC copié
+    // dans un .ogg ne serait pas ce qui est demandé, et bien des lecteurs ne le liraient pas).
+    Fmt { audio: &["vorbis"], ..fmt("ogg", Kind::Audio, &["ogg"], "ogg") },
     Fmt { audio: &["opus"], ..fmt("opus", Kind::Audio, &["ogg"], "opus") },
     Fmt { audio: &["wma"], acopy: &["wmav1", "wmapro", "wmalossless"], ..fmt("wma", Kind::Audio, &["asf"], "asf") },
     Fmt { audio: &["pcm_be"], ..fmt("aiff", Kind::Audio, &["aiff"], "aiff") },
@@ -172,8 +176,11 @@ static FORMATS: &[Fmt] = &[
     Fmt { audio: MKV_AUDIO, any: true, ..fmt("mka", Kind::Audio, &["matroska"], "matroska") },
     Fmt { audio: &["amr"], acopy: &["amr_wb"], ..fmt("amr", Kind::Audio, &["amr"], "amr") },
     Fmt {
-        audio: &["alac", "pcm_le", "aac", "opus"],
-        acopy: &["pcm_s16be", "pcm_s24be", "pcm_s32be", "pcm_f32be", "mp3", "ac3", "flac"],
+        // Multiplexeur CAF de FFmpeg : ni AAC ni Opus (« not yet implemented ») ; l'ALAC y est
+        // complété de silence jusqu'à la fin du dernier bloc (plus sans perte) et le FLAC copié
+        // ne se relit que sur quelques dixièmes de seconde. Le PCM, lui, est exact.
+        audio: &["pcm_le"],
+        acopy: &["pcm_s16be", "pcm_s24be", "pcm_s32be", "pcm_f32be", "mp3", "ac3"],
         ..fmt("caf", Kind::Audio, &["caf"], "caf")
     },
     Fmt { audio: &["pcm_be"], acopy: &["pcm_mulaw", "pcm_alaw"], ..fmt("au", Kind::Audio, &["au"], "au") },
@@ -199,6 +206,26 @@ static FORMATS: &[Fmt] = &[
     fmt("tiff", Kind::Image, &["tiff_pipe"], "image2"),
     fmt("avif", Kind::Image, &["mov"], "avif"),
 ];
+
+/// WebP animé : « RIFF….WEBPVP8X » avec le bit d'animation (0x02) dans les drapeaux.
+fn webp_is_animated(path: &Path) -> bool {
+    use std::io::Read;
+    let mut head = [0u8; 21];
+    std::fs::File::open(path).and_then(|mut f| f.read_exact(&mut head)).is_ok()
+        && &head[0..4] == b"RIFF"
+        && &head[8..12] == b"WEBP"
+        && &head[12..16] == b"VP8X"
+        && head[20] & 0x02 != 0
+}
+
+/// Verdict d'un décodage intégral (erreur ou remarque éventuelle) et durée réellement décodée.
+type DecodeResult = (Result<Option<String>, String>, Option<f64>);
+
+/// Durée maximale d'une vidéo copiée (sans ré-encodage) décodée intégralement à la vérification.
+const COPY_DECODE_MAX_SECS: f64 = 1800.0;
+
+/// Sans durée connue, décodage intégral de la vérification jusqu'à cette taille.
+const DECODE_BY_SIZE: u64 = 256 * 1024 * 1024;
 
 fn fmt_by_id(id: &str) -> Option<&'static Fmt> {
     FORMATS.iter().find(|f| f.id == id)
@@ -236,25 +263,53 @@ struct AFam {
     encoders: &'static [&'static str],
     lossless: bool,
     max_channels: u32,
+    /// Fréquences acceptées par l'encodeur (vide = toutes).
+    rates: &'static [u32],
     label: &'static str,
 }
 
+const R_ANY: &[u32] = &[];
+const R_MPEG: &[u32] = &[8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000];
+const R_MP2: &[u32] = &[16000, 22050, 24000, 32000, 44100, 48000];
+const R_AC3: &[u32] = &[32000, 44100, 48000];
+const R_AAC: &[u32] = &[7350, 8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000, 64000, 88200, 96000];
+const R_OPUS: &[u32] = &[8000, 12000, 16000, 24000, 48000];
+const R_WMA: &[u32] = &[8000, 11025, 16000, 22050, 32000, 44100, 48000];
+const R_AMR: &[u32] = &[8000];
+
+/// Fréquence de sortie : celle de la source si l'encodeur l'accepte, sinon la plus proche
+/// au-dessus (pas de perte de bande passante inutile), à défaut la plus haute acceptée.
+fn pick_rate(rates: &[u32], src: u32) -> u32 {
+    if rates.is_empty() || rates.contains(&src) {
+        return src;
+    }
+    rates.iter().copied().find(|&r| r >= src).unwrap_or_else(|| *rates.last().expect("liste non vide"))
+}
+
 static AFAMS: &[AFam] = &[
-    AFam { name: "aac", codec: "aac", encoders: &["aac"], lossless: false, max_channels: 8, label: "AAC" },
-    AFam { name: "mp3", codec: "mp3", encoders: &["libmp3lame"], lossless: false, max_channels: 2, label: "MP3" },
-    AFam { name: "opus", codec: "opus", encoders: &["libopus"], lossless: false, max_channels: 8, label: "Opus" },
-    AFam { name: "vorbis", codec: "vorbis", encoders: &["libvorbis"], lossless: false, max_channels: 8, label: "Vorbis" },
-    AFam { name: "flac", codec: "flac", encoders: &["flac"], lossless: true, max_channels: 8, label: "FLAC" },
-    AFam { name: "alac", codec: "alac", encoders: &["alac"], lossless: true, max_channels: 8, label: "ALAC" },
-    AFam { name: "ac3", codec: "ac3", encoders: &["ac3"], lossless: false, max_channels: 6, label: "Dolby Digital (AC-3)" },
-    AFam { name: "eac3", codec: "eac3", encoders: &["eac3"], lossless: false, max_channels: 6, label: "Dolby Digital Plus" },
-    AFam { name: "mp2", codec: "mp2", encoders: &["mp2"], lossless: false, max_channels: 2, label: "MP2" },
-    AFam { name: "wma", codec: "wmav2", encoders: &["wmav2"], lossless: false, max_channels: 2, label: "WMA" },
-    AFam { name: "wavpack", codec: "wavpack", encoders: &["wavpack"], lossless: true, max_channels: 8, label: "WavPack" },
-    AFam { name: "tta", codec: "tta", encoders: &["tta"], lossless: true, max_channels: 8, label: "TTA" },
-    AFam { name: "amr", codec: "amr_nb", encoders: &["libopencore_amrnb"], lossless: false, max_channels: 1, label: "AMR-NB" },
-    AFam { name: "pcm_le", codec: "", encoders: &["pcm_s16le"], lossless: true, max_channels: 64, label: "PCM" },
-    AFam { name: "pcm_be", codec: "", encoders: &["pcm_s16be"], lossless: true, max_channels: 64, label: "PCM" },
+    AFam { name: "aac", codec: "aac", encoders: &["aac"], lossless: false, max_channels: 8, rates: R_AAC, label: "AAC" },
+    AFam { name: "mp3", codec: "mp3", encoders: &["libmp3lame"], lossless: false, max_channels: 2, rates: R_MPEG, label: "MP3" },
+    AFam { name: "opus", codec: "opus", encoders: &["libopus"], lossless: false, max_channels: 8, rates: R_OPUS, label: "Opus" },
+    AFam { name: "vorbis", codec: "vorbis", encoders: &["libvorbis"], lossless: false, max_channels: 8, rates: R_ANY, label: "Vorbis" },
+    AFam { name: "flac", codec: "flac", encoders: &["flac"], lossless: true, max_channels: 8, rates: R_ANY, label: "FLAC" },
+    AFam { name: "alac", codec: "alac", encoders: &["alac"], lossless: true, max_channels: 8, rates: R_ANY, label: "ALAC" },
+    AFam { name: "ac3", codec: "ac3", encoders: &["ac3"], lossless: false, max_channels: 6, rates: R_AC3, label: "Dolby Digital (AC-3)" },
+    AFam { name: "eac3", codec: "eac3", encoders: &["eac3"], lossless: false, max_channels: 6, rates: R_AC3, label: "Dolby Digital Plus" },
+    AFam { name: "mp2", codec: "mp2", encoders: &["mp2"], lossless: false, max_channels: 2, rates: R_MP2, label: "MP2" },
+    AFam { name: "wma", codec: "wmav2", encoders: &["wmav2"], lossless: false, max_channels: 2, rates: R_WMA, label: "WMA" },
+    AFam { name: "wavpack", codec: "wavpack", encoders: &["wavpack"], lossless: true, max_channels: 8, rates: R_ANY, label: "WavPack" },
+    AFam { name: "tta", codec: "tta", encoders: &["tta"], lossless: true, max_channels: 8, rates: R_ANY, label: "TTA" },
+    AFam {
+        name: "amr",
+        codec: "amr_nb",
+        encoders: &["libopencore_amrnb"],
+        lossless: false,
+        max_channels: 1,
+        rates: R_AMR,
+        label: "AMR-NB",
+    },
+    AFam { name: "pcm_le", codec: "", encoders: &["pcm_s16le"], lossless: true, max_channels: 64, rates: R_ANY, label: "PCM" },
+    AFam { name: "pcm_be", codec: "", encoders: &["pcm_s16be"], lossless: true, max_channels: 64, rates: R_ANY, label: "PCM" },
 ];
 
 fn afam(name: &str) -> Option<&'static AFam> {
@@ -337,6 +392,36 @@ const BENIGN_DECODE_MESSAGES: &[(&str, &str, &str)] = &[(
 struct DecodeLog {
     errors: Vec<String>,
     decode_errors: Option<u64>,
+}
+
+/// Durée décodée, lue dans la sortie `-progress` de FFmpeg (`out_time_us=…`).
+#[derive(Default)]
+struct DecodedTime {
+    max_us: Option<u64>,
+}
+
+impl DecodedTime {
+    fn feed(&mut self, line: &str) {
+        if let Some(v) = line.trim().strip_prefix("out_time_us=")
+            && let Ok(us) = v.trim().parse::<u64>()
+        {
+            self.max_us = Some(self.max_us.map_or(us, |m| m.max(us)));
+        }
+    }
+
+    fn seconds(&self) -> Option<f64> {
+        self.max_us.filter(|us| *us > 0).map(|us| us as f64 / 1e6)
+    }
+}
+
+/// Durée obtenue comparée à la durée attendue : 2 % ou 1,5 s de marge (bourrage des encodeurs,
+/// trames incomplètes en fin de flux).
+fn duration_ok(want: f64, got: f64) -> Result<(), String> {
+    let tol = (want * 0.02).max(1.5);
+    if (want - got).abs() > tol {
+        return Err(trf!("durée {got:.1} s au lieu de {want:.1} s", "duration {got:.1} s instead of {want:.1} s"));
+    }
+    Ok(())
 }
 
 impl DecodeLog {
@@ -517,6 +602,18 @@ struct Recipe {
     duration: Option<f64>,
     /// Durée non vérifiable précisément (copie avec découpe, image unique…).
     loose_duration: bool,
+    /// Canaux et fréquence attendus pour chaque piste audio produite (dans l'ordre).
+    audio_out: Vec<(Option<u32>, Option<u32>)>,
+    /// Au moins une piste audio ré-encodée (et non copiée).
+    audio_encoded: bool,
+    /// Dimensions attendues pour chaque piste vidéo produite, avec la tolérance en pixels
+    /// (redimensionnement « -2 ») et l'acceptation d'une rotation appliquée aux pixels.
+    video_out: Vec<Option<(u32, u32, u32)>>,
+    /// Cadence imposée par l'utilisateur, à retrouver dans le résultat.
+    fps_out: Option<f64>,
+    /// Au moins une piste vidéo ré-encodée : le décodage de contrôle coûte alors bien moins
+    /// que l'encodage, il est fait quelle que soit la durée.
+    video_encoded: bool,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
@@ -594,6 +691,20 @@ fn alpha_pix(pix: &str) -> bool {
         || pix.contains("abgr")
 }
 
+/// Positionnement à `t` secondes. Avant l'entrée (rapide) quand le conteneur a un index ;
+/// après l'entrée (décodage depuis le début) pour MPEG-TS et MPEG-PS : sans index, FFmpeg y
+/// atterrit souvent hors image clé et ne produit alors **aucune** image.
+fn seek(from: &Fmt, t: f64, r: &mut Recipe) {
+    if t <= 0.0 {
+        return;
+    }
+    if from.demux.iter().any(|d| matches!(*d, "mpegts" | "mpeg")) {
+        r.out(["-ss".to_string(), num(t)]);
+    } else {
+        r.pre_input.extend(["-ss".into(), num(t)]);
+    }
+}
+
 fn num(v: f64) -> String {
     let s = format!("{v:.3}");
     s.trim_end_matches('0').trim_end_matches('.').to_owned()
@@ -661,6 +772,12 @@ impl Ffmpeg {
                 b"FRM8" => "iff",
                 _ => return None,
             };
+            return self.avail.demuxers.contains(d).then_some(d);
+        }
+        if f.id == "webp" {
+            // « webp_anim » refuse les WebP fixes, « webp_pipe » ne lit que la première image :
+            // l'indicateur d'animation du bloc VP8X décide.
+            let d = if webp_is_animated(path) { "webp_anim" } else { "webp_pipe" };
             return self.avail.demuxers.contains(d).then_some(d);
         }
         self.demuxer(f)
@@ -869,7 +986,7 @@ impl Ffmpeg {
             (Video, Subtitle) => self.sub_extract_recipe(to, src, o)?,
             (Subtitle, Subtitle) => self.sub_convert_recipe(from, to)?,
             (Video | Anim, Anim) => self.anim_recipe(from, to, src, o)?,
-            (Video, Image) => self.frame_recipe(to, src, o)?,
+            (Video, Image) => self.frame_recipe(from, to, src, o)?,
             (Image, Image | Anim) => self.still_recipe(from, to, src, o)?,
             _ => return Err(trf!("conversion {} → {} non gérée par FFmpeg", "{} → {} conversion not handled by FFmpeg", from.id, to.id)),
         };
@@ -878,6 +995,11 @@ impl Ffmpeg {
             r.notes.push(tr!("métadonnées et chapitres supprimés à la demande", "metadata and chapters removed as requested").into());
             r.preserves.retain(|f| !matches!(*f, "tags" | "chapters"));
         } else if matches!(to.kind, Video | Audio) {
+            // Ogg (Vorbis, Opus, FLAC Ogg) range les balises dans la piste et non dans le
+            // conteneur : sans cela, titre, artiste et album disparaîtraient vers MP3, M4A, FLAC…
+            if from.demux.contains(&"ogg") && src.is_none_or(|i| i.streams_of(StreamKind::Audio).next().is_some()) {
+                r.out(["-map_metadata", "0:s:a:0"]);
+            }
             r.keep("tags");
             r.keep("chapters");
         }
@@ -887,7 +1009,7 @@ impl Ffmpeg {
         Ok(r)
     }
 
-    fn trim(&self, o: &OptionValues, src: Option<&SourceInfo>, r: &mut Recipe) -> Result<(), String> {
+    fn trim(&self, from: &Fmt, o: &OptionValues, src: Option<&SourceInfo>, r: &mut Recipe) -> Result<(), String> {
         let parse = |key: &str| -> Result<Option<f64>, String> {
             let s = o.str_or(key, "").trim();
             if s.is_empty() {
@@ -912,7 +1034,7 @@ impl Ffmpeg {
             if total.is_some_and(|t| s >= t) {
                 return Err(tr!("le début demandé dépasse la durée du fichier", "the requested start is past the end of the file").into());
             }
-            r.pre_input.extend(["-ss".into(), num(s)]);
+            seek(from, s, r);
         }
         if let Some(e) = end {
             r.out(["-t".to_string(), num(e - start.unwrap_or(0.0))]);
@@ -935,8 +1057,8 @@ impl Ffmpeg {
 
     fn av_recipe(&self, from: &Fmt, to: &Fmt, src: Option<&SourceInfo>, o: &OptionValues) -> Result<Recipe, String> {
         let mut r = Recipe::default();
-        self.trim(o, src, &mut r)?;
-        let trimming = !r.pre_input.is_empty() || o.str_or("end", "").trim() != "";
+        self.trim(from, o, src, &mut r)?;
+        let trimming = o.str_or("start", "").trim() != "" || o.str_or("end", "").trim() != "";
         let mut ov = 0usize;
         let mut oa = 0usize;
         let mut os = 0usize;
@@ -1145,8 +1267,16 @@ impl Ffmpeg {
                 if s.codec == "hevc" && matches!(to.id, "mp4" | "mov") {
                     r.out([format!("-tag:v:{ov}"), "hvc1".into()]);
                 }
+                // AVI attend du H.264/H.265 « Annex B » ; venu de Matroska (avcC), FFmpeg ne le
+                // convertit pas de lui-même et le multiplexage échoue. Sans effet sur un flux déjà
+                // en Annex B.
+                if to.id == "avi" && matches!(s.codec.as_str(), "h264" | "hevc") {
+                    let bsf = if s.codec == "h264" { "h264_mp4toannexb" } else { "hevc_mp4toannexb" };
+                    r.out([format!("-bsf:v:{ov}"), bsf.into()]);
+                }
                 r.worsen(Fidelity::Lossless);
                 r.keep("video");
+                r.video_out.push(s.width.zip(s.height).map(|(w, h)| (w, h, 0)));
                 if src_hdr {
                     r.keep("hdr");
                 }
@@ -1241,10 +1371,21 @@ impl Ffmpeg {
         let mut chain: Vec<String> = Vec::new();
         if fps > 0.0 {
             chain.push(format!("fps={}", num(fps)));
+            r.fps_out = Some(fps);
             r.notes.push(trf!("cadence convertie à {} images/s", "frame rate converted to {} fps", num(fps)));
         }
         let (w, h) = (s.and_then(|s| s.width), s.and_then(|s| s.height));
         let even_needed = pix_out.starts_with("yuv420");
+        let even = |v: u32| if even_needed { (v & !1).max(2) } else { v };
+        r.video_encoded = true;
+        r.video_out.push(match (w, h) {
+            (Some(w), Some(h)) if max_h > 0 && h > max_h => {
+                let t = (max_h & !1).max(2);
+                Some(((w as f64 * t as f64 / h as f64).round() as u32, t, 2))
+            }
+            (Some(w), Some(h)) => Some((even(w), even(h), 0)),
+            _ => None,
+        });
         if max_h > 0 && h.is_none_or(|h| h > max_h) {
             let target = (max_h & !1).max(2);
             chain.push(match h {
@@ -1309,12 +1450,15 @@ impl Ffmpeg {
             let codec_ok = to.acopy.contains(&s.codec.as_str())
                 || to.audio.iter().filter_map(|n| afam(n)).any(|f| family_accepts_audio(f, &s.codec))
                 || (to.any && !s.codec.is_empty());
+            // Le multiplexeur CAF refuse le PCM 8 bits non signé : il est converti en signé (exact).
+            let codec_ok = codec_ok && !(to.id == "caf" && s.codec == "pcm_u8");
             let choice_ok = wanted == "auto" || wanted == "copy" || afam(wanted).is_some_and(|f| family_accepts_audio(f, &s.codec));
             let pcm_forced = depth != "auto" && s.codec.starts_with("pcm_");
             if codec_ok && choice_ok && !changes_rate && !changes_ch && !normalize && bitrate == 0 && !pcm_forced {
                 r.out([format!("-c:a:{oa}"), "copy".into()]);
                 r.worsen(Fidelity::Lossless);
                 r.keep("audio");
+                r.audio_out.push((s.channels, s.sample_rate));
                 r.keep("surround");
                 r.keep("high_bit_depth");
                 r.notes.push(trf!("audio {} copié sans ré-encodage", "{} audio copied without re-encoding", s.codec));
@@ -1360,7 +1504,8 @@ impl Ffmpeg {
                 },
             };
             let codec = match (bits, float, le) {
-                (8, _, true) => "pcm_u8".to_string(),
+                (8, _, true) if to.id == "wav" => "pcm_u8".to_string(),
+                (8, _, true) => "pcm_s8".to_string(),
                 (8, _, false) => "pcm_s8".to_string(),
                 (b, true, le) => format!("pcm_f{b}{}", if le { "le" } else { "be" }),
                 (b, false, le) => format!("pcm_s{b}{}", if le { "le" } else { "be" }),
@@ -1468,6 +1613,9 @@ impl Ffmpeg {
                         "libopus" => a.extend([format!("-b:a:{oa}"), "160k".into()]),
                         "ac3" | "eac3" => a.extend([format!("-b:a:{oa}"), "448k".into()]),
                         "libopencore_amrnb" => a.extend([format!("-b:a:{oa}"), "12.2k".into()]),
+                        "mp2" if pick_rate(fam.rates, s.and_then(|s| s.sample_rate).unwrap_or(48000)) < 32000 => {
+                            a.extend([format!("-b:a:{oa}"), "96k".into()])
+                        }
                         _ => a.extend([format!("-b:a:{oa}"), "192k".into()]),
                     }
                 }
@@ -1505,27 +1653,50 @@ impl Ffmpeg {
         }
         let surround_kept = out_ch.or(src_ch).is_some_and(|c| c > 2) || out_ch.is_none();
         // Fréquence.
+        let src_rate = s.and_then(|s| s.sample_rate);
         let mut out_rate = if rate > 0 { Some(rate) } else { None };
-        if fam.name == "amr" {
-            out_rate = Some(8000);
-        }
-        if let Some(hz) = out_rate {
-            if s.and_then(|s| s.sample_rate) != Some(hz) {
-                a.extend([format!("-ar:a:{oa}"), hz.to_string()]);
-                if let Some(sr) = s.and_then(|s| s.sample_rate) {
-                    fid = Fidelity::Lossy;
-                    r.notes.push(trf!("rééchantillonnage de {sr} à {hz} Hz", "resampling from {sr} to {hz} Hz"));
+        // Fréquence imposée par l'encodeur (AMR 8 kHz, AC-3 ≤ 48 kHz, WMA, MP3…) : sans cela,
+        // l'encodeur refuse de démarrer ou FFmpeg rééchantillonne sans le dire.
+        if let Some(hz) = out_rate.or(src_rate) {
+            let ok = pick_rate(fam.rates, hz);
+            if ok != hz {
+                if rate > 0 {
+                    return Err(trf!(
+                        "{} n'accepte pas {hz} Hz (fréquences possibles : {})",
+                        "{} does not accept {hz} Hz (possible rates: {})",
+                        fam.label,
+                        fam.rates.iter().map(|r| r.to_string()).collect::<Vec<_>>().join(", ")
+                    ));
                 }
+                out_rate = Some(ok);
             }
-        } else if fam.name == "opus" && s.and_then(|s| s.sample_rate).is_some_and(|sr| sr != 48000) {
-            r.notes
-                .push(tr!("Opus fonctionne à 48 kHz : l'audio est rééchantillonné", "Opus works at 48 kHz: the audio is resampled").into());
+        } else if let [only] = fam.rates {
+            out_rate = Some(*only);
+        }
+        if let Some(hz) = out_rate
+            && s.and_then(|s| s.sample_rate) != Some(hz)
+        {
+            a.extend([format!("-ar:a:{oa}"), hz.to_string()]);
+            if let Some(sr) = s.and_then(|s| s.sample_rate) {
+                fid = Fidelity::Lossy;
+                r.notes.push(trf!("rééchantillonnage de {sr} à {hz} Hz", "resampling from {sr} to {hz} Hz"));
+            }
+        }
+        if fam.name == "wavpack" {
+            // L'encodeur WavPack fixe la taille de bloc d'après la première trame reçue : après un
+            // décodeur MP3/AAC (délai d'encodeur retiré), elle fait quelques dizaines d'échantillons
+            // et l'encodeur refuse de démarrer (« invalid block size »). Bloc d'une demi-seconde.
+            let hz = out_rate.or(src_rate).unwrap_or(44100);
+            a.extend([format!("-frame_size:a:{oa}"), (hz / 2).max(128).to_string()]);
         }
         if normalize {
             a.extend([format!("-filter:a:{oa}"), "loudnorm=I=-16:TP=-1.5:LRA=11".into()]);
             fid = Fidelity::Lossy;
             r.notes.push(tr!("volume normalisé (EBU R128, −16 LUFS)", "loudness normalized (EBU R128, −16 LUFS)").into());
         }
+        let decoded_rate = if fam.name == "opus" { Some(48000) } else { out_rate.or(src_rate) };
+        r.audio_out.push((out_ch.or(src_ch), decoded_rate));
+        r.audio_encoded = true;
         r.out(a);
         r.worsen(fid);
         r.keep("audio");
@@ -1639,7 +1810,7 @@ impl Ffmpeg {
 
     fn anim_recipe(&self, from: &Fmt, to: &Fmt, src: Option<&SourceInfo>, o: &OptionValues) -> Result<Recipe, String> {
         let mut r = Recipe::default();
-        self.trim(o, src, &mut r)?;
+        self.trim(from, o, src, &mut r)?;
         let from_video = from.kind == Kind::Video;
         let v = match src.filter(|i| !i.streams.is_empty()) {
             Some(info) => Some(
@@ -1733,7 +1904,7 @@ impl Ffmpeg {
         Ok(r)
     }
 
-    fn frame_recipe(&self, to: &Fmt, src: Option<&SourceInfo>, o: &OptionValues) -> Result<Recipe, String> {
+    fn frame_recipe(&self, from: &Fmt, to: &Fmt, src: Option<&SourceInfo>, o: &OptionValues) -> Result<Recipe, String> {
         let mut r = Recipe::default();
         let v = match src.filter(|i| !i.streams.is_empty()) {
             Some(info) => Some(
@@ -1758,7 +1929,7 @@ impl Ffmpeg {
         if total.is_some_and(|d| t >= d) {
             return Err(tr!("l'instant demandé dépasse la durée de la vidéo", "the requested time is past the end of the video").into());
         }
-        r.pre_input.extend(["-ss".into(), num(t)]);
+        seek(from, t, &mut r);
         let enc = self.anim_encoder(to.id, false).ok_or(tr!("encodeur indisponible", "encoder unavailable"))?;
         r.out(["-map".to_string(), v.map_or("0:v:0".into(), |v| format!("0:{}", v.index))]);
         r.out(["-frames:v", "1", "-update", "1", "-c:v", enc]);
@@ -1845,6 +2016,60 @@ impl Ffmpeg {
     // Sonde (ffprobe)
     // -----------------------------------------------------------------------------------------
 
+    /// Décodage intégral : verdict (erreurs éventuelles, remarque) et durée réellement décodée.
+    fn full_decode(&self, path: &Path, demux: &str, text_subs: bool, ctx: &ExecContext) -> Result<DecodeResult, EngineError> {
+        let mut target = std::ffi::OsString::from("file:");
+        target.push(path.as_os_str());
+        // Sous-titres texte : décodés puis ré-encodés en ASS (la sortie « null » exige un
+        // encodeur) ; sous-titres image : relus en copie. Journal « verbose » avec niveaux :
+        // messages d'erreur et bilan « N decode errors » par flux.
+        let spec = ProcessSpec::new(&self.ffmpeg)
+            .args(["-hide_banner", "-nostdin", "-loglevel", "repeat+level+verbose", "-xerror", "-protocol_whitelist", "file,pipe"])
+            .args(["-f", demux, "-i"])
+            .arg(target)
+            .args(["-map", "0:v?", "-map", "0:a?", "-map", "0:s?", "-c:s", if text_subs { "ass" } else { "copy" }])
+            // Durée réellement décodée : « out_time_us=… » sur la sortie standard.
+            .args(["-nostats", "-progress", "pipe:1", "-f", "null", "-"]);
+        let mut log = DecodeLog::default();
+        let mut decoded = DecodedTime::default();
+        let out = run_tool(spec, ctx, &mut |l| decoded.feed(l), &mut |l| log.feed(l))?;
+        Ok((log.verdict(out.success()), decoded.seconds()))
+    }
+
+    /// Empreinte MD5 des échantillons décodés de la première piste audio, en flottants 64 bits.
+    fn audio_md5(&self, path: &Path, demux: &str, ctx: &ExecContext) -> Result<String, String> {
+        let mut target = std::ffi::OsString::from("file:");
+        target.push(path.as_os_str());
+        let spec = ProcessSpec::new(&self.ffmpeg)
+            .args(["-hide_banner", "-nostdin", "-loglevel", "error", "-protocol_whitelist", "file,pipe", "-f", demux, "-i"])
+            .arg(target)
+            .args(["-map", "0:a:0", "-c:a", "pcm_f64le", "-f", "hash", "-hash", "md5", "-"]);
+        let mut sum = None;
+        let mut err = String::new();
+        let out = run_tool(
+            spec,
+            ctx,
+            &mut |l| {
+                if let Some(h) = l.trim().strip_prefix("MD5=") {
+                    sum = Some(h.to_owned());
+                }
+            },
+            &mut |l| {
+                if err.len() < 400 {
+                    err.push_str(l);
+                    err.push(' ');
+                }
+            },
+        )
+        .map_err(|e| e.to_string())?;
+        match sum {
+            Some(h) if out.success() => Ok(h),
+            _ => {
+                Err(if err.trim().is_empty() { tr!("empreinte non calculée", "checksum not computed").into() } else { err.trim().into() })
+            }
+        }
+    }
+
     fn ffprobe_json(&self, path: &Path, demux: Option<&str>, timeout: Duration) -> Option<Value> {
         let probe = self.ffprobe.as_ref()?;
         let mut spec = ProcessSpec::new(probe)
@@ -1873,6 +2098,15 @@ fn parse_rate(s: &str) -> Option<f64> {
 
 fn jstr<'a>(v: &'a Value, k: &str) -> Option<&'a str> {
     v.get(k).and_then(Value::as_str)
+}
+
+/// « 00:01:02.500000000 » → 62,5 s.
+fn parse_hms(s: &str) -> Option<f64> {
+    let mut parts = s.trim().split(':').rev();
+    let sec: f64 = parts.next()?.parse().ok()?;
+    let min: f64 = parts.next().map_or(Some(0.0), |m| m.parse().ok())?;
+    let hour: f64 = parts.next().map_or(Some(0.0), |h| h.parse().ok())?;
+    Some(hour * 3600.0 + min * 60.0 + sec)
 }
 
 fn jnum(v: &Value, k: &str) -> Option<f64> {
@@ -1931,6 +2165,14 @@ fn parse_probe(v: &Value, fkind: Kind) -> SourceInfo {
             sample_format,
             frame_rate: jstr(s, "avg_frame_rate").and_then(parse_rate).or_else(|| jstr(s, "r_frame_rate").and_then(parse_rate)),
             bitrate: jnum(s, "bit_rate").map(|b| b as u64),
+            // Matroska n'indique la durée d'une piste que dans la balise « DURATION ».
+            duration: jnum(s, "duration")
+                .or_else(|| {
+                    tags.and_then(|t| {
+                        t.as_object()?.iter().find(|(k, _)| k.eq_ignore_ascii_case("duration"))?.1.as_str().and_then(parse_hms)
+                    })
+                })
+                .filter(|d| d.is_finite() && *d > 0.0),
         };
         info.streams.push(st);
     }
@@ -1991,7 +2233,15 @@ fn parse_probe(v: &Value, fkind: Kind) -> SourceInfo {
         feats.push("chapters");
     }
     let tags = fmt.and_then(|f| f.get("tags")).and_then(Value::as_object);
-    if tags.is_some_and(|t| t.keys().any(|k| !TECH_TAGS.contains(&k.to_ascii_lowercase().as_str()))) {
+    // Ogg (Vorbis, Opus, FLAC) range les balises dans le flux audio, pas dans le conteneur.
+    const SONG_TAGS: &[&str] = &["title", "artist", "album", "album_artist", "genre", "date", "track", "composer", "comment"];
+    let stream_tags = v.get("streams").and_then(Value::as_array).is_some_and(|ss| {
+        ss.iter()
+            .filter(|s| jstr(s, "codec_type") == Some("audio"))
+            .filter_map(|s| s.get("tags").and_then(Value::as_object))
+            .any(|t| t.keys().any(|k| SONG_TAGS.contains(&k.to_ascii_lowercase().as_str())))
+    });
+    if stream_tags || tags.is_some_and(|t| t.keys().any(|k| !TECH_TAGS.contains(&k.to_ascii_lowercase().as_str()))) {
         feats.push("tags");
     }
 
@@ -2047,6 +2297,70 @@ fn parse_probe(v: &Value, fkind: Kind) -> SourceInfo {
     // on laisse le catalogue décrire les caractéristiques (non confirmées).
     info.features = if fkind == Kind::Subtitle { None } else { Some(features(&feats)) };
     info
+}
+
+/// Canaux, fréquences et dimensions du résultat comparés à ce que la recette a demandé.
+fn check_formats(recipe: &Recipe, info: &SourceInfo) -> Result<(), String> {
+    for (i, (s, (ch, hz))) in info.streams_of(StreamKind::Audio).zip(&recipe.audio_out).enumerate() {
+        let n = i + 1;
+        if let (Some(want), Some(got)) = (ch, s.channels)
+            && *want != got
+        {
+            return Err(trf!(
+                "piste audio {n} : {want} canaux attendus, {got} trouvés",
+                "audio track {n}: {want} channels expected, {got} found"
+            ));
+        }
+        if let (Some(want), Some(got)) = (hz, s.sample_rate)
+            && *want != got
+        {
+            return Err(trf!(
+                "piste audio {n} : {want} Hz attendus, {got} Hz trouvés",
+                "audio track {n}: {want} Hz expected, {got} Hz found"
+            ));
+        }
+    }
+    if let (Some(want), Some(got)) = (recipe.fps_out, info.streams_of(StreamKind::Video).next().and_then(|v| v.frame_rate))
+        && (want - got).abs() > want * 0.01
+    {
+        return Err(trf!("cadence de {} images/s attendue, {} trouvée", "{} fps expected, {} found", num(want), num(got)));
+    }
+    for (i, (s, want)) in info.streams_of(StreamKind::Video).zip(&recipe.video_out).enumerate() {
+        let (Some((w, h, tol)), Some(gw), Some(gh)) = (want, s.width, s.height) else { continue };
+        let close = |a: u32, b: u32| a.abs_diff(b) <= *tol;
+        // Une rotation (vidéo de téléphone) est appliquée aux pixels lors du ré-encodage.
+        if !(close(*w, gw) && close(*h, gh)) && !(close(*w, gh) && close(*h, gw)) {
+            return Err(trf!(
+                "piste vidéo {} : {w} × {h} attendus, {gw} × {gh} trouvés",
+                "video track {}: {w} × {h} expected, {gw} × {gh} found",
+                i + 1
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Écart de durée entre la première piste vidéo et la première piste audio (vidéo − audio).
+fn av_gap(info: &SourceInfo) -> Option<(f64, f64, f64)> {
+    let v = info.streams_of(StreamKind::Video).next()?.duration?;
+    let a = info.streams_of(StreamKind::Audio).next()?.duration?;
+    Some((v - a, v, a))
+}
+
+/// Synchronisation audio/vidéo : l'écart entre les pistes ne doit pas s'être creusé par rapport
+/// à la source (audio tronqué, décalé, ou vidéo amputée par le multiplexage).
+fn check_av_sync(source: Option<&SourceInfo>, out: &SourceInfo) -> Result<(), String> {
+    let (Some((src_gap, ..)), Some((gap, v, a))) = (source.and_then(av_gap), av_gap(out)) else { return Ok(()) };
+    let tol = (0.03 * v.max(a)).max(0.5);
+    if (gap - src_gap).abs() > tol {
+        return Err(trf!(
+            "désynchronisation : la vidéo dure {v:.2} s et l'audio {a:.2} s (écart de {:.2} s, contre {:.2} s dans la source)",
+            "out of sync: video lasts {v:.2} s and audio {a:.2} s (gap of {:.2} s, versus {:.2} s in the source)",
+            gap.abs(),
+            src_gap.abs()
+        ));
+    }
+    Ok(())
 }
 
 fn counts(info: &SourceInfo) -> (usize, usize, usize) {
@@ -2254,6 +2568,20 @@ impl Engine for Ffmpeg {
         o
     }
 
+    fn content_veto(&self, source: &FormatId, info: Option<&SourceInfo>, target: &FormatId) -> Option<String> {
+        // Un APNG d'une seule image n'est qu'un PNG ordinaire : le proposer pour une image fixe
+        // serait trompeur (et sa relecture comme animation échoue).
+        let still = info.and_then(|i| i.features.as_ref()).is_some_and(|f| !f.contains(&chud_core::Feature::new("animation")));
+        let image_src = fmt_by_id(source.as_str()).is_none_or(|f| matches!(f.kind, Kind::Image | Kind::Anim));
+        (target.as_str() == "apng" && still && image_src).then(|| {
+            tr!(
+                "image fixe : un APNG d'une seule image est un simple PNG, choisissez plutôt PNG",
+                "still image: a single-frame APNG is just a PNG, choose PNG instead"
+            )
+            .into()
+        })
+    }
+
     fn can_probe(&self, format: &FormatId) -> bool {
         self.ffprobe.is_some()
             && fmt_by_id(format.as_str()).is_some_and(|f| matches!(f.kind, Kind::Video | Kind::Audio | Kind::Subtitle) && self.readable(f))
@@ -2399,13 +2727,20 @@ impl Engine for Ffmpeg {
         let (Some(from), Some(to)) = (fmt_by_id(task.from.as_str()), fmt_by_id(task.to.as_str())) else {
             return Verification::SignatureOnly;
         };
-        let Some(demux) = self.demuxer(to) else { return Verification::SignatureOnly };
+        let Some(demux) = self.demuxer_for(to, output) else { return Verification::SignatureOnly };
         let Ok(recipe) = self.recipe(from, to, task.source.as_ref(), &task.options) else {
             return Verification::Failed(
                 tr!("impossible de recalculer la recette de conversion", "cannot recompute the conversion recipe").into(),
             );
         };
         let mut level: Vec<String> = Vec::new();
+        // Décodage intégral : audio, sous-titres, images, vidéo ré-encodée ; vidéo simplement
+        // copiée jusqu'à 30 min (au-delà, contrôle de structure et de durée, annoncé comme tel).
+        let video_out = recipe.expect.video.unwrap_or(1) > 0 && to.kind == Kind::Video;
+        let short = recipe.duration.is_some_and(|d| d <= COPY_DECODE_MAX_SECS);
+        let mut decode = !video_out || short || recipe.video_encoded;
+        let want_duration = recipe.duration.filter(|_| !recipe.loose_duration);
+        let mut probed_duration = None;
         if self.ffprobe.is_some() {
             let Some(v) = self.ffprobe_json(output, Some(demux), Duration::from_secs(120)) else {
                 return Verification::Failed(
@@ -2432,41 +2767,114 @@ impl Engine for Ffmpeg {
             if nv + na + ns == 0 {
                 return Verification::Failed(tr!("le fichier produit ne contient aucun flux", "the output file has no streams").into());
             }
-            if let (Some(want), Some(got), false) = (recipe.duration, info.duration, recipe.loose_duration) {
-                let tol = (want * 0.02).max(1.5);
-                if (want - got).abs() > tol {
-                    return Verification::Failed(trf!(
-                        "durée {got:.1} s au lieu de {want:.1} s",
-                        "duration {got:.1} s instead of {want:.1} s"
-                    ));
-                }
+            if let Err(e) = check_formats(&recipe, &info) {
+                return Verification::Failed(e);
             }
-            level.push(tr!("flux et durée contrôlés par ffprobe", "streams and duration checked with ffprobe").into());
+            let cut = ["start", "end"].iter().any(|k| !task.options.str_or(k, "").trim().is_empty());
+            if !cut && let Err(e) = check_av_sync(task.source.as_ref(), &info) {
+                return Verification::Failed(e);
+            }
+            // Sans décodage intégral, la durée annoncée par ffprobe est le seul contrôle possible.
+            // Avec décodage, c'est la durée réellement décodée qui compte : pour les flux bruts
+            // (AAC ADTS, AMR…), ffprobe ne fait que l'estimer d'après le débit, parfois à 5 % près.
+            probed_duration = info.duration;
+            // Durée attendue inconnue (GIF, flux sans en-tête de durée) : la durée lue dans le
+            // résultat décide s'il est raisonnable de tout décoder.
+            if recipe.duration.is_none() && info.duration.is_some_and(|d| d <= COPY_DECODE_MAX_SECS) {
+                decode = true;
+            }
+            // Ni durée attendue ni durée lue (MPEG-PS, VOB…) : la taille du fichier décide.
+            if recipe.duration.is_none() && info.duration.is_none() && std::fs::metadata(output).is_ok_and(|m| m.len() <= DECODE_BY_SIZE) {
+                decode = true;
+            }
+            if !decode
+                && let (Some(want), Some(got)) = (want_duration, info.duration)
+                && let Err(e) = duration_ok(want, got)
+            {
+                return Verification::Failed(e);
+            }
+            level.push(if decode {
+                tr!("flux contrôlés par ffprobe", "streams checked with ffprobe").into()
+            } else {
+                tr!("flux et durée contrôlés par ffprobe", "streams and duration checked with ffprobe").into()
+            });
         }
-        // Décodage intégral quand c'est raisonnable (audio, sous-titres, images, vidéos courtes).
-        let video_out = recipe.expect.video.unwrap_or(1) > 0 && to.kind == Kind::Video;
-        let short = recipe.duration.is_some_and(|d| d <= 600.0);
-        if !video_out || short {
-            let mut target = std::ffi::OsString::from("file:");
-            target.push(output.as_os_str());
-            // Sous-titres texte : décodés puis ré-encodés en ASS (le sortie « null » exige un encodeur) ;
-            // sous-titres image : relus en copie.
+        if decode {
             let text_subs = to.kind == Kind::Subtitle && to.id != "sup";
-            // Journal « verbose » avec niveaux : messages d'erreur et bilan « N decode errors » par flux.
-            let spec = ProcessSpec::new(&self.ffmpeg)
-                .args(["-hide_banner", "-nostdin", "-loglevel", "repeat+level+verbose", "-xerror", "-protocol_whitelist", "file,pipe"])
-                .args(["-f", demux, "-i"])
-                .arg(target)
-                .args(["-map", "0:v?", "-map", "0:a?", "-map", "0:s?", "-c:s", if text_subs { "ass" } else { "copy" }, "-f", "null", "-"]);
-            let mut log = DecodeLog::default();
-            match run_tool(spec, ctx, &mut |_| {}, &mut |l| log.feed(l)) {
-                Ok(out) => match log.verdict(out.success()) {
-                    Ok(None) => level.push(tr!("décodage intégral sans erreur", "fully decoded without errors").into()),
-                    Ok(Some(note)) => level.push(trf!("décodage intégral sans erreur ({note})", "fully decoded without errors ({note})")),
-                    Err(e) => return Verification::Failed(trf!("erreurs au décodage : {e}", "decoding errors: {e}")),
-                },
+            let trimmed = ["start", "end"].iter().any(|k| !task.options.str_or(k, "").trim().is_empty());
+            // En cas d'écart, la source est décodée à son tour : un défaut qu'elle contient déjà
+            // (fichier tronqué, trames abîmées) n'est pas une erreur de conversion, et le message
+            // doit le dire.
+            let source_check = || -> Option<DecodeResult> {
+                let d = self.demuxer_for(from, &task.input)?;
+                self.full_decode(&task.input, d, false, ctx).ok()
+            };
+            let (verdict, decoded) = match self.full_decode(output, demux, text_subs, ctx) {
+                Ok(v) => v,
                 Err(EngineError::Cancelled) => return Verification::Failed(tr!("vérification annulée", "verification cancelled").into()),
                 Err(e) => return Verification::Failed(trf!("vérification impossible : {e}", "verification impossible: {e}")),
+            };
+            match verdict {
+                Ok(None) => level.push(tr!("décodage intégral sans erreur", "fully decoded without errors").into()),
+                Ok(Some(note)) => level.push(trf!("décodage intégral sans erreur ({note})", "fully decoded without errors ({note})")),
+                Err(e) => {
+                    if let Some((Err(src_err), _)) = source_check() {
+                        return Verification::Failed(trf!(
+                            "la source est elle-même endommagée et le résultat en hérite (erreurs de décodage de la source : {src_err})",
+                            "the source itself is damaged and the result inherits it (source decoding errors: {src_err})"
+                        ));
+                    }
+                    return Verification::Failed(trf!("erreurs au décodage : {e}", "decoding errors: {e}"));
+                }
+            }
+            if let Some(want) = want_duration {
+                match decoded.or(probed_duration) {
+                    Some(got) => {
+                        if let Err(e) = duration_ok(want, got) {
+                            // Source tronquée : l'en-tête annonce `want`, mais seule la partie
+                            // lisible existe ; si le résultat la contient entièrement, la conversion
+                            // a fait tout ce qui était possible, et on le dit clairement.
+                            match (!trimmed).then(source_check).flatten() {
+                                Some((_, Some(real))) if duration_ok(real, got).is_ok() && real < want => level.push(trf!(
+                                    "source incomplète : seules {real:.1} s sur les {want:.1} s annoncées sont lisibles, et toutes ont été converties",
+                                    "incomplete source: only {real:.1} s of the {want:.1} s announced are readable, and all of them were converted"
+                                )),
+                                _ => return Verification::Failed(e),
+                            }
+                        } else {
+                            level.push(trf!("durée décodée {got:.1} s", "decoded duration {got:.1} s"));
+                        }
+                    }
+                    None => level.push(tr!("durée non mesurée", "duration not measured").into()),
+                }
+            }
+            // « Sans perte » prouvé, pas seulement déclaré : les échantillons décodés de la source
+            // et du résultat doivent être identiques (empreinte MD5 en flottants 64 bits, exacte
+            // pour tout PCM entier ou flottant 32 bits).
+            if recipe.fidelity == Some(Fidelity::Lossless) && recipe.audio_encoded && to.kind == Kind::Audio && !trimmed {
+                let Some(src_demux) = self.demuxer_for(from, &task.input) else {
+                    return Verification::Failed(tr!("source illisible pour la comparaison", "source unreadable for comparison").into());
+                };
+                match (self.audio_md5(&task.input, src_demux, ctx), self.audio_md5(output, demux, ctx)) {
+                    (Ok(a), Ok(b)) if a == b => {
+                        level.push(tr!("échantillons identiques à la source (MD5)", "samples identical to the source (MD5)").into())
+                    }
+                    (Ok(_), Ok(_)) => {
+                        return Verification::Failed(
+                            tr!(
+                                "conversion annoncée sans perte, mais les échantillons décodés diffèrent de la source",
+                                "conversion announced as lossless, but the decoded samples differ from the source"
+                            )
+                            .into(),
+                        );
+                    }
+                    (Err(e), _) | (_, Err(e)) => {
+                        return Verification::Failed(trf!(
+                            "comparaison avec la source impossible : {e}",
+                            "comparison with the source impossible: {e}"
+                        ));
+                    }
+                }
             }
             return Verification::Decoded(level.join(tr!(" ; ", "; ")));
         }
@@ -2554,6 +2962,7 @@ mod tests {
             sample_format: None,
             frame_rate: None,
             bitrate: None,
+            duration: None,
         }
     }
 
@@ -2743,5 +3152,151 @@ Conversion failed!
         assert!(!has("srt", "srt"));
         // Aucune arête vers un format dont le multiplexeur est absent.
         assert!(!has("mp4", "mov"));
+    }
+
+    fn audio(codec: &str, ch: u32, hz: u32) -> SourceInfo {
+        let mut a = stream(0, StreamKind::Audio, codec);
+        a.channels = Some(ch);
+        a.sample_rate = Some(hz);
+        a.sample_format = Some("s32".into());
+        a.bit_depth = Some(24);
+        SourceInfo { streams: vec![a], duration: Some(5.0), ..Default::default() }
+    }
+
+    fn arg_after<'a>(r: &'a Recipe, key: &str) -> Option<&'a str> {
+        r.output.windows(2).find(|w| w[0] == key).map(|w| w[1].as_str())
+    }
+
+    #[test]
+    fn sample_rate_follows_encoder_limits() {
+        assert_eq!(pick_rate(R_ANY, 96000), 96000);
+        assert_eq!(pick_rate(R_MPEG, 44100), 44100);
+        assert_eq!(pick_rate(R_MPEG, 96000), 48000, "MP3 plafonne à 48 kHz");
+        assert_eq!(pick_rate(R_OPUS, 44100), 48000, "Opus : la fréquence supérieure, pas 24 kHz");
+        assert_eq!(pick_rate(R_AMR, 44100), 8000);
+        let e = engine();
+        let flac = fmt_by_id("flac").unwrap();
+        let mp3 = fmt_by_id("mp3").unwrap();
+        // 96 kHz → MP3 : rééchantillonnage annoncé et attendu à la vérification.
+        let r = e.recipe(flac, mp3, Some(&audio("flac", 2, 96000)), &OptionValues::new()).unwrap();
+        assert_eq!(arg_after(&r, "-ar:a:0"), Some("48000"));
+        assert_eq!(r.audio_out, vec![(Some(2), Some(48000))]);
+        assert!(r.notes.iter().any(|n| n.contains("96000") && n.contains("48000")));
+        // Fréquence acceptée : aucun rééchantillonnage.
+        let r = e.recipe(flac, mp3, Some(&audio("flac", 2, 44100)), &OptionValues::new()).unwrap();
+        assert_eq!(arg_after(&r, "-ar:a:0"), None);
+        // Fréquence imposée par l'utilisateur et refusée par l'encodeur : erreur explicite.
+        let opts = OptionValues::new().with("sample_rate", chud_core::OptionValue::Int(96000));
+        assert!(e.recipe(flac, mp3, Some(&audio("flac", 2, 44100)), &opts).is_err());
+    }
+
+    #[test]
+    fn channels_expected_after_downmix() {
+        let e = engine();
+        let r =
+            e.recipe(fmt_by_id("flac").unwrap(), fmt_by_id("mp3").unwrap(), Some(&audio("flac", 6, 48000)), &OptionValues::new()).unwrap();
+        assert_eq!(arg_after(&r, "-ac:a:0"), Some("2"));
+        assert_eq!(r.audio_out, vec![(Some(2), Some(48000))]);
+        assert_eq!(r.fidelity, Some(Fidelity::Lossy));
+    }
+
+    #[test]
+    fn format_check_catches_wrong_channels_rate_and_size() {
+        let mut r = Recipe::default();
+        r.audio_out.push((Some(2), Some(48000)));
+        r.video_out.push(Some((320, 240, 0)));
+        let mut a = stream(1, StreamKind::Audio, "aac");
+        a.channels = Some(2);
+        a.sample_rate = Some(48000);
+        let mut v = stream(0, StreamKind::Video, "h264");
+        v.width = Some(320);
+        v.height = Some(240);
+        let with = |v: &StreamInfo, a: &StreamInfo| SourceInfo { streams: vec![v.clone(), a.clone()], ..Default::default() };
+        assert!(check_formats(&r, &with(&v, &a)).is_ok());
+        // Vidéo tournée de 90° lors du ré-encodage : acceptée.
+        let mut rot = v.clone();
+        rot.width = Some(240);
+        rot.height = Some(320);
+        assert!(check_formats(&r, &with(&rot, &a)).is_ok());
+        let mut mono = a.clone();
+        mono.channels = Some(1);
+        assert!(check_formats(&r, &with(&v, &mono)).is_err());
+        let mut slow = a.clone();
+        slow.sample_rate = Some(44100);
+        assert!(check_formats(&r, &with(&v, &slow)).is_err());
+        let mut small = v.clone();
+        small.width = Some(160);
+        assert!(check_formats(&r, &with(&small, &a)).is_err());
+    }
+
+    #[test]
+    fn av_sync_and_forced_frame_rate_are_checked() {
+        assert_eq!(parse_hms("00:01:02.500000000"), Some(62.5));
+        assert_eq!(parse_hms("3.25"), Some(3.25));
+        let mut v = stream(0, StreamKind::Video, "h264");
+        v.duration = Some(10.0);
+        v.frame_rate = Some(25.0);
+        let mut a = stream(1, StreamKind::Audio, "aac");
+        a.duration = Some(10.02);
+        let info = |v: &StreamInfo, a: &StreamInfo| SourceInfo { streams: vec![v.clone(), a.clone()], ..Default::default() };
+        let src = info(&v, &a);
+        assert!(check_av_sync(Some(&src), &src).is_ok());
+        let mut short = a.clone();
+        short.duration = Some(6.0);
+        assert!(check_av_sync(Some(&src), &info(&v, &short)).is_err(), "audio amputé de 4 s");
+        // Écart déjà présent dans la source : hérité, pas créé par la conversion.
+        assert!(check_av_sync(Some(&info(&v, &short)), &info(&v, &short)).is_ok());
+        assert!(check_av_sync(None, &info(&v, &short)).is_ok());
+
+        let r = Recipe { fps_out: Some(30.0), ..Default::default() };
+        assert!(check_formats(&r, &src).is_err(), "25 i/s au lieu de 30");
+        let mut v30 = v.clone();
+        v30.frame_rate = Some(24.0);
+        assert!(check_formats(&r, &info(&v30, &a)).is_err());
+        v30.frame_rate = Some(30.0);
+        assert!(check_formats(&r, &info(&v30, &a)).is_ok());
+    }
+
+    #[test]
+    fn wavpack_gets_a_fixed_block_size() {
+        let mut c = full_caps();
+        c.encoders.insert("wavpack".into());
+        c.muxers.insert("wv".into());
+        let e = Ffmpeg::with_capabilities(PathBuf::from("/ffmpeg"), None, None, EngineOrigin::System, c);
+        let mut src = audio("mp3", 2, 44100);
+        src.streams[0].sample_format = Some("fltp".into());
+        let r = e.recipe(fmt_by_id("mp3").unwrap(), fmt_by_id("wv").unwrap(), Some(&src), &OptionValues::new()).unwrap();
+        assert_eq!(arg_after(&r, "-frame_size:a:0"), Some("22050"));
+    }
+
+    #[test]
+    fn unindexed_containers_are_seeked_after_the_input() {
+        let e = engine();
+        let png = fmt_by_id("png").unwrap();
+        let r = e.recipe(fmt_by_id("ts").unwrap(), png, Some(&video_src()), &OptionValues::new()).unwrap();
+        assert!(r.pre_input.is_empty(), "pas de -ss avant l'entrée pour MPEG-TS : {:?}", r.pre_input);
+        assert!(arg_after(&r, "-ss").is_some());
+        let r = e.recipe(fmt_by_id("mp4").unwrap(), png, Some(&video_src()), &OptionValues::new()).unwrap();
+        assert_eq!(r.pre_input.first().map(String::as_str), Some("-ss"));
+    }
+
+    #[test]
+    fn webp_animation_flag_is_read_from_vp8x() {
+        let dir = std::env::temp_dir().join(format!("chud-webp-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut head = b"RIFF\0\0\0\0WEBPVP8X\0\0\0\0".to_vec();
+        head.push(0x02);
+        head.extend([0u8; 16]);
+        let anim = dir.join("a.webp");
+        std::fs::write(&anim, &head).unwrap();
+        head[20] = 0x10;
+        let still = dir.join("s.webp");
+        std::fs::write(&still, &head).unwrap();
+        let simple = dir.join("v.webp");
+        std::fs::write(&simple, b"RIFF\0\0\0\0WEBPVP8 \0\0\0\0\0\0\0\0\0").unwrap();
+        assert!(webp_is_animated(&anim));
+        assert!(!webp_is_animated(&still));
+        assert!(!webp_is_animated(&simple));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

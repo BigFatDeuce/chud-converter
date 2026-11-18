@@ -706,6 +706,7 @@ extensions = ["vob"]
 mime = ["video/dvd"]
 compression = "lossy"
 features = ["video", "audio", "multi_audio", "image_subtitles", "surround"]
+based_on = ["mpeg"]
 
 [[format]]
 id = "ogv"
