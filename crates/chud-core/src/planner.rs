@@ -98,47 +98,63 @@ impl FidelityReport {
         self.overall == Fidelity::Lossless && self.lost_features.is_empty()
     }
 
-    pub fn headline_fr(&self) -> &'static str {
+    pub fn headline(&self) -> &'static str {
         match self.overall {
-            Fidelity::Lossless if self.lost_features.is_empty() => "Sans perte",
-            Fidelity::Lossless => "Contenu sans perte, mais certaines informations ne seront pas conservées",
-            Fidelity::Depends => "Selon le contenu du fichier",
-            Fidelity::Lossy => "Avec perte",
+            Fidelity::Lossless if self.lost_features.is_empty() => crate::tr!("Sans perte", "Lossless"),
+            Fidelity::Lossless => crate::tr!(
+                "Contenu sans perte, mais certaines informations ne seront pas conservées",
+                "Lossless content, but some information will not be kept"
+            ),
+            Fidelity::Depends => crate::tr!("Selon le contenu du fichier", "Depends on the file's content"),
+            Fidelity::Lossy => crate::tr!("Avec perte", "Lossy"),
         }
     }
 
-    pub fn details_fr(&self, catalog: &FormatCatalog) -> Vec<String> {
-        let name = |id: &FormatId| catalog.get(id.as_str()).map(|f| f.name.clone()).unwrap_or(id.to_string());
+    pub fn details(&self, catalog: &FormatCatalog) -> Vec<String> {
+        let name = |id: &FormatId| catalog.get(id.as_str()).map(|f| f.label().to_owned()).unwrap_or(id.to_string());
         let mut out = Vec::new();
         for w in &self.warnings {
             out.push(match w {
                 Warning::LossyStep { step, format } => {
-                    format!("Étape {} : encodage {} avec perte", step + 1, name(format))
+                    crate::trf!("Étape {} : encodage {} avec perte", "Step {}: lossy {} encoding", step + 1, name(format))
                 }
                 Warning::Generational { lossy_steps } => {
-                    format!("{lossy_steps} compressions avec perte successives : dégradation cumulée")
+                    crate::trf!(
+                        "{lossy_steps} compressions avec perte successives : dégradation cumulée",
+                        "{lossy_steps} successive lossy compressions: cumulative degradation"
+                    )
                 }
                 Warning::Intermediate { formats } => {
-                    format!("Conversion directe impossible : passage par {}", formats.iter().map(&name).collect::<Vec<_>>().join(" → "))
+                    let path = formats.iter().map(&name).collect::<Vec<_>>().join(" → ");
+                    crate::trf!("Conversion directe impossible : passage par {path}", "No direct conversion: going through {path}")
                 }
                 Warning::ContentDependent { step } => {
-                    format!("Étape {} : la fidélité dépend du contenu du fichier", step + 1)
+                    crate::trf!(
+                        "Étape {} : la fidélité dépend du contenu du fichier",
+                        "Step {}: fidelity depends on the file's content",
+                        step + 1
+                    )
                 }
-                Warning::SourceAlreadyLossy { format } => format!(
+                Warning::SourceAlreadyLossy { format } => crate::trf!(
                     "La source ({}) est déjà compressée avec perte : la conversion ne restaure pas la qualité d'origine",
+                    "The source ({}) is already lossy-compressed: converting does not restore the original quality",
                     name(format)
                 ),
-                Warning::TargetLimitation { text } => format!("Limite du format cible : {text}"),
-                Warning::Note { step, text } => format!("Étape {} : {text}", step + 1),
+                Warning::TargetLimitation { text } => crate::trf!("Limite du format cible : {text}", "Target format limit: {text}"),
+                Warning::Note { step, text } => crate::trf!("Étape {} : {text}", "Step {}: {text}", step + 1),
             });
         }
         for l in &self.lost_features {
-            let prefix = if l.confirmed { "Perdu" } else { "Perdu si présent" };
+            let label = l.feature.label();
             let cause = match l.cause {
-                LossCause::TargetUnsupported => "non pris en charge par le format cible",
-                LossCause::EngineDrops => "non conservé par le moteur",
+                LossCause::TargetUnsupported => crate::tr!("non pris en charge par le format cible", "not supported by the target format"),
+                LossCause::EngineDrops => crate::tr!("non conservé par le moteur", "not kept by the engine"),
             };
-            out.push(format!("{prefix} : {} ({cause})", l.label));
+            out.push(if l.confirmed {
+                crate::trf!("Perdu : {label} ({cause})", "Lost: {label} ({cause})")
+            } else {
+                crate::trf!("Perdu si présent : {label} ({cause})", "Lost if present: {label} ({cause})")
+            });
         }
         out
     }
@@ -200,7 +216,7 @@ pub fn evaluate(
             };
             if let Some(cause) = cause {
                 remaining.remove(&f);
-                lost.push(FeatureLoss { label: f.label_fr().to_owned(), feature: f, step: i, cause, confirmed });
+                lost.push(FeatureLoss { label: f.label().to_owned(), feature: f, step: i, cause, confirmed });
             }
         }
         match s.fidelity {
@@ -239,7 +255,7 @@ pub fn evaluate(
             warnings.push(Warning::SourceAlreadyLossy { format: source.clone() });
         }
         if let Some(t) = catalog.get(last.to.as_str()) {
-            for l in &t.limitations {
+            for l in t.limits() {
                 warnings.push(Warning::TargetLimitation { text: l.clone() });
             }
         }

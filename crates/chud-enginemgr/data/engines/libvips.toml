@@ -4,6 +4,7 @@ adapter = "none"
 homepage = "https://www.libvips.org"
 license = "LGPL-2.1-or-later"
 description = "Images très grandes, HEIC, AVIF, JPEG XL ; rapide et économe."
+description_en = "Very large images, HEIC, AVIF, JPEG XL; fast and frugal."
 categories = ['image']
 executables = ['vips']
 

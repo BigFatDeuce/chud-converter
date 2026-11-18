@@ -4,6 +4,7 @@ adapter = "none"
 homepage = "https://qpdf.sourceforge.io"
 license = "Apache-2.0"
 description = "PDF : fusion, découpe, réparation, linéarisation, chiffrement."
+description_en = "PDF: merge, split, repair, linearize, encrypt."
 categories = ['pdf']
 executables = ['qpdf']
 

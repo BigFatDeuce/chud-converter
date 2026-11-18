@@ -18,6 +18,7 @@ use chud_core::{
     ConversionCap, Engine, EngineError, EngineId, EngineInfo, EngineOrigin, ExecContext, Fidelity, FormatId, OptionSpec, OptionValues,
     Progress, SourceInfo, StepOutput, StepTask, Verification,
 };
+use chud_core::{tr, trf};
 use chud_process::ProcessSpec;
 use std::cell::Cell;
 use std::collections::{BTreeMap, HashSet};
@@ -207,35 +208,35 @@ fn reserved_windows(name: &str) -> bool {
 pub fn check_entry_path(raw: &str) -> Result<(), String> {
     let p = raw.replace('\\', "/");
     if p.is_empty() {
-        return Err("nom vide".into());
+        return Err(tr!("nom vide", "empty name").into());
     }
     if p.chars().any(|c| (c as u32) < 0x20 || c == '\u{7f}') {
-        return Err(format!("caractère de contrôle dans « {} »", p.escape_debug()));
+        return Err(trf!("caractère de contrôle dans « {} »", "control character in “{}”", p.escape_debug()));
     }
     if p.starts_with('/') {
-        return Err(format!("chemin absolu « {p} »"));
+        return Err(trf!("chemin absolu « {p} »", "absolute path “{p}”"));
     }
     if p.len() > 4096 {
-        return Err("chemin trop long".into());
+        return Err(tr!("chemin trop long", "path too long").into());
     }
     let windows = cfg!(windows);
     if p.as_bytes().get(1) == Some(&b':') || (windows && p.contains(':')) {
-        return Err(format!("lecteur ou flux NTFS dans « {p} »"));
+        return Err(trf!("lecteur ou flux NTFS dans « {p} »", "drive or NTFS stream in “{p}”"));
     }
     for comp in p.split('/') {
         match comp {
             "" | "." => continue,
-            ".." => return Err(format!("remontée de dossier (« .. ») dans « {p} »")),
+            ".." => return Err(trf!("remontée de dossier (« .. ») dans « {p} »", "parent folder reference (“..”) in “{p}”")),
             c => {
                 if windows {
                     if reserved_windows(c) {
-                        return Err(format!("nom réservé par Windows « {c} »"));
+                        return Err(trf!("nom réservé par Windows « {c} »", "name reserved by Windows “{c}”"));
                     }
                     if c.ends_with('.') || c.ends_with(' ') {
-                        return Err(format!("nom terminé par un point ou une espace « {c} »"));
+                        return Err(trf!("nom terminé par un point ou une espace « {c} »", "name ending with a dot or a space “{c}”"));
                     }
                     if c.chars().any(|ch| "<>\"|?*".contains(ch)) {
-                        return Err(format!("caractère interdit par Windows dans « {c} »"));
+                        return Err(trf!("caractère interdit par Windows dans « {c} »", "character forbidden by Windows in “{c}”"));
                     }
                 }
             }
@@ -247,10 +248,17 @@ pub fn check_entry_path(raw: &str) -> Result<(), String> {
 /// Contrôles globaux sur l'index d'une archive avant extraction.
 pub fn check_entries(entries: &[Entry], archive_size: u64, max_unpacked: u64) -> Result<u64, EngineError> {
     if entries.len() > MAX_ENTRIES {
-        return Err(EngineError::Refused(format!("{} entrées : au-delà de la limite de {MAX_ENTRIES}", entries.len())));
+        return Err(EngineError::Refused(trf!(
+            "{} entrées : au-delà de la limite de {MAX_ENTRIES}",
+            "{} entries: over the limit of {MAX_ENTRIES}",
+            entries.len()
+        )));
     }
     if entries.iter().any(|e| e.encrypted) {
-        return Err(EngineError::Refused("archive protégée par mot de passe : non prise en charge pour l'instant".into()));
+        return Err(EngineError::Refused(
+            tr!("archive protégée par mot de passe : non prise en charge pour l'instant", "password-protected archive: not supported yet")
+                .into(),
+        ));
     }
     let mut problems = Vec::new();
     let mut seen = HashSet::new();
@@ -262,29 +270,32 @@ pub fn check_entries(entries: &[Entry], archive_size: u64, max_unpacked: u64) ->
         let key = norm(&e.path).trim_end_matches('/').to_owned();
         let key = if cfg!(windows) { key.to_lowercase() } else { key };
         if !e.is_dir && !seen.insert(key.clone()) {
-            problems.push(format!("entrée en double « {} »", e.path));
+            problems.push(trf!("entrée en double « {} »", "duplicate entry “{}”", e.path));
         }
         total = total.saturating_add(e.size.unwrap_or(0));
     }
     if !problems.is_empty() {
         let n = problems.len();
         problems.truncate(5);
-        return Err(EngineError::Refused(format!(
+        return Err(EngineError::Refused(trf!(
             "chemins dangereux dans l'archive ({n}) : {}{}",
-            problems.join(" ; "),
-            if n > 5 { " ; …" } else { "" }
+            "dangerous paths in the archive ({n}): {}{}",
+            problems.join(tr!(" ; ", "; ")),
+            if n > 5 { tr!(" ; …", "; …") } else { "" }
         )));
     }
     if total > max_unpacked {
-        return Err(EngineError::Refused(format!(
+        return Err(EngineError::Refused(trf!(
             "taille décompressée annoncée {} supérieure à la limite {}",
+            "announced unpacked size {} exceeds the limit {}",
             human(total),
             human(max_unpacked)
         )));
     }
     if total > (1 << 30) && total / archive_size.max(1) > MAX_RATIO {
-        return Err(EngineError::Refused(format!(
+        return Err(EngineError::Refused(trf!(
             "taux de compression anormal ({}:1) : bombe de décompression probable",
+            "abnormal compression ratio ({}:1): probable decompression bomb",
             total / archive_size.max(1)
         )));
     }
@@ -307,13 +318,13 @@ fn walk_files(root: &Path) -> Result<BTreeMap<String, u64>, String> {
     let mut files = BTreeMap::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(d) = stack.pop() {
-        let rd = std::fs::read_dir(&d).map_err(|e| format!("lecture de {} : {e}", d.display()))?;
+        let rd = std::fs::read_dir(&d).map_err(|e| trf!("lecture de {} : {e}", "reading {}: {e}", d.display()))?;
         for ent in rd {
             let ent = ent.map_err(|e| e.to_string())?;
             let p = ent.path();
             let m = std::fs::symlink_metadata(&p).map_err(|e| e.to_string())?;
             if m.file_type().is_symlink() || is_reparse_point(&m) {
-                return Err(format!("lien ou jonction « {} »", p.strip_prefix(root).unwrap_or(&p).display()));
+                return Err(trf!("lien ou jonction « {} »", "link or junction “{}”", p.strip_prefix(root).unwrap_or(&p).display()));
             }
             if m.is_dir() {
                 stack.push(p);
@@ -347,7 +358,7 @@ fn unique_dir(base: &Path, prefix: &str) -> std::io::Result<PathBuf> {
             Err(e) => return Err(e),
         }
     }
-    Err(std::io::Error::other("impossible de créer un dossier de travail"))
+    Err(std::io::Error::other(tr!("impossible de créer un dossier de travail", "cannot create a working folder")))
 }
 
 /// Supprime un dossier de travail à la sortie de portée.
@@ -377,11 +388,11 @@ impl SevenZip {
         let spec = ProcessSpec::new(&exe).arg("i").timeout(Some(Duration::from_secs(20)));
         let out = chud_process::run_capture(&spec, 4 * 1024 * 1024).map_err(|e| e.to_string())?;
         if !out.success() {
-            return Err(format!("7z i a échoué : {}", tail_lines(&out.stderr_tail, 2)));
+            return Err(trf!("7z i a échoué : {}", "7z i failed: {}", tail_lines(&out.stderr_tail, 2)));
         }
         let (readable, creatable) = parse_formats(&out.stdout_text());
         if readable.is_empty() {
-            return Err("liste des formats 7-Zip illisible".into());
+            return Err(tr!("liste des formats 7-Zip illisible", "unreadable 7-Zip format list").into());
         }
         Ok(Self::with_formats(exe, version, origin, readable, creatable))
     }
@@ -398,11 +409,19 @@ impl SevenZip {
                 id: EngineId::new("7zip"),
                 name: "7-Zip".into(),
                 version,
-                license: "LGPL-2.1-or-later (+ restriction unRAR pour le code RAR)".into(),
+                license: tr!(
+                    "LGPL-2.1-or-later (+ restriction unRAR pour le code RAR)",
+                    "LGPL-2.1-or-later (+ unRAR restriction for the RAR code)"
+                )
+                .into(),
                 homepage: "https://www.7-zip.org".into(),
                 origin,
                 path: Some(exe.clone()),
-                description: "Archives : extraction sécurisée, création et conversion.".into(),
+                description: tr!(
+                    "Archives : extraction sécurisée, création et conversion.",
+                    "Archives: safe extraction, creation and conversion."
+                )
+                .into(),
             },
             exe,
             caps: Vec::new(),
@@ -483,12 +502,18 @@ impl SevenZip {
             None => chud_process::run_capture(&spec, 256 * 1024 * 1024).map_err(crate::util::map_process_error)?,
         };
         if out.stdout_truncated {
-            return Err(EngineError::Refused("index de l'archive démesuré".into()));
+            return Err(EngineError::Refused(tr!("index de l'archive démesuré", "oversized archive index").into()));
         }
         if !out.success() {
             let err = tail_lines(&out.stderr_tail, 3);
             if err.to_lowercase().contains("password") {
-                return Err(EngineError::Refused("archive protégée par mot de passe : non prise en charge pour l'instant".into()));
+                return Err(EngineError::Refused(
+                    tr!(
+                        "archive protégée par mot de passe : non prise en charge pour l'instant",
+                        "password-protected archive: not supported yet"
+                    )
+                    .into(),
+                ));
             }
             return Err(EngineError::InvalidInput(format!("archive illisible : {err}")));
         }
@@ -539,8 +564,9 @@ impl SevenZip {
         };
         let res = run_tool_with(spec, ctx, &watchdog, &mut on_out, &mut |_| {});
         if exceeded.get() {
-            return Err(EngineError::Refused(format!(
+            return Err(EngineError::Refused(trf!(
                 "extraction interrompue : plus de {} écrits (bombe de décompression ?)",
+                "extraction stopped: more than {} written (decompression bomb?)",
                 human(limit)
             )));
         }
@@ -548,7 +574,13 @@ impl SevenZip {
         if !out.success() {
             let err = tail_lines(&out.stderr_tail, 3);
             if err.to_lowercase().contains("password") {
-                return Err(EngineError::Refused("archive protégée par mot de passe : non prise en charge pour l'instant".into()));
+                return Err(EngineError::Refused(
+                    tr!(
+                        "archive protégée par mot de passe : non prise en charge pour l'instant",
+                        "password-protected archive: not supported yet"
+                    )
+                    .into(),
+                ));
             }
             return Err(EngineError::Process { code: out.code, detail: err });
         }
@@ -571,8 +603,9 @@ impl SevenZip {
             self.extract_raw(archive, outer, &tmp.0, limit, ctx, (0.0, 0.4))?;
             let files = walk_files(&tmp.0).map_err(EngineError::Refused)?;
             if files.len() != 1 {
-                return Err(EngineError::InvalidInput(format!(
+                return Err(EngineError::InvalidInput(trf!(
                     "le flux compressé contient {} fichiers au lieu d'une archive tar",
+                    "the compressed stream holds {} files instead of a tar archive",
                     files.len()
                 )));
             }
@@ -585,28 +618,36 @@ impl SevenZip {
         let total = check_entries(&entries, file_size(archive), limit)?;
         let links = entries.iter().filter(|e| e.link).count();
         if links > 0 {
-            return Err(EngineError::Refused(format!(
-                "l'archive contient {links} lien(s) symbolique(s) : non extraits par sécurité dans cette version"
+            return Err(EngineError::Refused(trf!(
+                "l'archive contient {links} lien(s) symbolique(s) : non extraits par sécurité dans cette version",
+                "the archive holds {links} symbolic link(s): not extracted for safety in this version"
             )));
         }
         ctx.check_cancelled()?;
         self.extract_raw(archive, ty, dest, limit, ctx, (0.0, 0.6))?;
-        let files = walk_files(dest).map_err(|e| EngineError::Refused(format!("contenu extrait refusé : {e}")))?;
+        let files =
+            walk_files(dest).map_err(|e| EngineError::Refused(trf!("contenu extrait refusé : {e}", "extracted content refused: {e}")))?;
         let expected_files = entries.iter().filter(|e| !e.is_dir).count();
         let got: u64 = files.values().sum();
         let sizes_known = entries.iter().filter(|e| !e.is_dir).all(|e| e.size.is_some());
         if files.len() != expected_files || (sizes_known && got != total) {
             return Err(EngineError::Process {
                 code: None,
-                detail: format!(
+                detail: trf!(
                     "extraction incomplète : {} fichiers ({}) au lieu de {expected_files} ({})",
+                    "incomplete extraction: {} files ({}) instead of {expected_files} ({})",
                     files.len(),
                     human(got),
                     human(total)
                 ),
             });
         }
-        notes.push(format!("{} fichiers extraits ({}) après validation de l'index", files.len(), human(got)));
+        notes.push(trf!(
+            "{} fichiers extraits ({}) après validation de l'index",
+            "{} files extracted ({}) after checking the index",
+            files.len(),
+            human(got)
+        ));
         Ok(files)
     }
 
@@ -630,7 +671,13 @@ impl SevenZip {
             }
             Shape::Single => {
                 if names.len() != 1 || !cwd.join(&names[0]).is_file() {
-                    return Err(EngineError::Unsupported("ce format compresse un seul fichier, pas une arborescence".into()));
+                    return Err(EngineError::Unsupported(
+                        tr!(
+                            "ce format compresse un seul fichier, pas une arborescence",
+                            "this format compresses a single file, not a folder tree"
+                        )
+                        .into(),
+                    ));
                 }
                 let spec = self
                     .base_write()
@@ -700,9 +747,9 @@ impl SevenZip {
 fn write_list(dir: &Path, names: &[OsString]) -> Result<PathBuf, EngineError> {
     let mut text = String::new();
     for n in names {
-        let s = n.to_str().ok_or_else(|| EngineError::InvalidInput("nom de fichier non Unicode".into()))?;
+        let s = n.to_str().ok_or_else(|| EngineError::InvalidInput(tr!("nom de fichier non Unicode", "non-Unicode file name").into()))?;
         if s.contains('\n') || s.contains('\r') {
-            return Err(EngineError::Refused("nom de fichier contenant un saut de ligne".into()));
+            return Err(EngineError::Refused(tr!("nom de fichier contenant un saut de ligne", "file name containing a line break").into()));
         }
         text.push_str(s);
         text.push('\n');
@@ -731,16 +778,28 @@ impl Engine for SevenZip {
         let mut o = Vec::new();
         if let Some(f) = arc(to.as_str()) {
             if f.ty != "tar" || matches!(f.shape, Shape::Layered(_)) {
-                o.push(OptionSpec::int("level", "Niveau de compression (0 = stockage, 9 = maximal)", 0, 9, 5));
+                o.push(OptionSpec::int(
+                    "level",
+                    tr!("Niveau de compression (0 = stockage, 9 = maximal)", "Compression level (0 = store, 9 = maximum)"),
+                    0,
+                    9,
+                    5,
+                ));
             }
             if f.ty == "7z" {
-                o.push(OptionSpec::bool("solid", "Archive solide (plus compacte)", true).advanced());
+                o.push(OptionSpec::bool("solid", tr!("Archive solide (plus compacte)", "Solid archive (more compact)"), true).advanced());
             }
         }
         o.push(
-            OptionSpec::int("max_unpacked_gb", "Taille décompressée maximale acceptée (Gio)", 1, 16384, 64)
-                .advanced()
-                .help("Protection contre les bombes de décompression"),
+            OptionSpec::int(
+                "max_unpacked_gb",
+                tr!("Taille décompressée maximale acceptée (Gio)", "Maximum accepted unpacked size (GiB)"),
+                1,
+                16384,
+                64,
+            )
+            .advanced()
+            .help(tr!("Protection contre les bombes de décompression", "Protection against decompression bombs")),
         );
         o
     }
@@ -762,13 +821,13 @@ impl Engine for SevenZip {
         let encrypted = entries.iter().any(|e| e.encrypted);
         let links = entries.iter().filter(|e| e.link).count();
         let mut summary = vec![
-            ("Entrées".to_string(), format!("{files} fichier(s), {dirs} dossier(s)")),
-            ("Taille décompressée".into(), human(total)),
-            ("Taille de l'archive".into(), human(file_size(path))),
-            ("Chiffrement".into(), if encrypted { "oui" } else { "non" }.into()),
+            (tr!("Entrées", "Entries").to_string(), trf!("{files} fichier(s), {dirs} dossier(s)", "{files} file(s), {dirs} folder(s)")),
+            (tr!("Taille décompressée", "Unpacked size").into(), human(total)),
+            (tr!("Taille de l'archive", "Archive size").into(), human(file_size(path))),
+            (tr!("Chiffrement", "Encryption").into(), if encrypted { tr!("oui", "yes") } else { tr!("non", "no") }.into()),
         ];
         if links > 0 {
-            summary.push(("Liens symboliques".into(), links.to_string()));
+            summary.push((tr!("Liens symboliques", "Symbolic links").into(), links.to_string()));
         }
         let mut feats = vec!["timestamps"];
         if dirs > 0 || entries.iter().any(|e| norm(&e.path).contains('/')) {
@@ -799,12 +858,19 @@ impl Engine for SevenZip {
             (DIR, _) => {
                 let f = arc(to).ok_or_else(|| EngineError::Unsupported(to.into()))?;
                 // Un lien dans le dossier source pourrait faire entrer des fichiers extérieurs.
-                let files = walk_files(&task.input)
-                    .map_err(|e| EngineError::Refused(format!("dossier source : {e} (liens non pris en charge)")))?;
-                let parent = task.input.parent().ok_or_else(|| EngineError::InvalidInput("dossier racine".into()))?;
-                let name = task.input.file_name().ok_or_else(|| EngineError::InvalidInput("dossier sans nom".into()))?;
+                let files = walk_files(&task.input).map_err(|e| {
+                    EngineError::Refused(trf!(
+                        "dossier source : {e} (liens non pris en charge)",
+                        "source folder: {e} (links not supported)"
+                    ))
+                })?;
+                let parent = task.input.parent().ok_or_else(|| EngineError::InvalidInput(tr!("dossier racine", "root folder").into()))?;
+                let name = task
+                    .input
+                    .file_name()
+                    .ok_or_else(|| EngineError::InvalidInput(tr!("dossier sans nom", "folder without a name").into()))?;
                 self.pack(f, parent, &[name.to_os_string()], &task.output, &task.options, ctx)?;
-                notes.push(format!("{} fichiers compressés ({})", files.len(), human(files.values().sum())));
+                notes.push(trf!("{} fichiers compressés ({})", "{} files compressed ({})", files.len(), human(files.values().sum())));
             }
             (_, DIR) => {
                 let f = arc(from).ok_or_else(|| EngineError::Unsupported(from.into()))?;
@@ -822,7 +888,7 @@ impl Engine for SevenZip {
                     return Err(EngineError::InvalidInput("archive vide".into()));
                 }
                 self.pack(dst, &tmp.0, &names, &task.output, &task.options, ctx)?;
-                notes.push(format!("contenu recompressé au format {to}"));
+                notes.push(trf!("contenu recompressé au format {to}", "content recompressed as {to}"));
             }
         }
         ctx.report(Progress { fraction: Some(1.0), ..Default::default() });
@@ -832,9 +898,12 @@ impl Engine for SevenZip {
     fn verify(&self, output: &Path, task: &StepTask, ctx: &ExecContext) -> Verification {
         if task.to.as_str() == DIR {
             return match walk_files(output) {
-                Ok(files) if files.is_empty() && task.from.as_str() != DIR => Verification::Failed("aucun fichier extrait".into()),
-                Ok(files) => Verification::Structural(format!(
+                Ok(files) if files.is_empty() && task.from.as_str() != DIR => {
+                    Verification::Failed(tr!("aucun fichier extrait", "no file extracted").into())
+                }
+                Ok(files) => Verification::Structural(trf!(
                     "{} fichiers ({}) conformes à l'index de l'archive, aucun lien",
+                    "{} files ({}) match the archive index, no links",
                     files.len(),
                     human(files.values().sum())
                 )),
@@ -849,29 +918,52 @@ impl Engine for SevenZip {
         let spec = self.base_read().args(["t", "-bb0", "-bso0", "-bsp0", "-bse1"]).arg(format!("-t{ty}")).arg("--").arg(output);
         match run_tool(spec, ctx, &mut |_| {}, &mut |_| {}) {
             Ok(o) if o.success() => {}
-            Ok(o) => return Verification::Failed(format!("test d'intégrité échoué : {}", tail_lines(&o.stderr_tail, 3))),
-            Err(e) => return Verification::Failed(format!("test d'intégrité impossible : {e}")),
+            Ok(o) => {
+                return Verification::Failed(trf!(
+                    "test d'intégrité échoué : {}",
+                    "integrity test failed: {}",
+                    tail_lines(&o.stderr_tail, 3)
+                ));
+            }
+            Err(e) => return Verification::Failed(trf!("test d'intégrité impossible : {e}", "integrity test impossible: {e}")),
         }
         if f.shape != Shape::Tree {
-            return Verification::Decoded("test d'intégrité 7-Zip réussi (données décompressées, sommes de contrôle vérifiées)".into());
+            return Verification::Decoded(
+                tr!(
+                    "test d'intégrité 7-Zip réussi (données décompressées, sommes de contrôle vérifiées)",
+                    "7-Zip integrity test passed (data unpacked, checksums verified)"
+                )
+                .into(),
+            );
         }
         let Some(expected) = self.expected_files(task) else {
-            return Verification::Decoded("test d'intégrité 7-Zip réussi (données décompressées, sommes de contrôle vérifiées)".into());
+            return Verification::Decoded(
+                tr!(
+                    "test d'intégrité 7-Zip réussi (données décompressées, sommes de contrôle vérifiées)",
+                    "7-Zip integrity test passed (data unpacked, checksums verified)"
+                )
+                .into(),
+            );
         };
         let produced: BTreeMap<String, u64> = match self.list(output, f.ty, Some(ctx)) {
             Ok(entries) => entries.into_iter().filter(|e| !e.is_dir).map(|e| (norm(&e.path), e.size.unwrap_or(0))).collect(),
-            Err(e) => return Verification::Failed(format!("relecture de l'index impossible : {e}")),
+            Err(e) => return Verification::Failed(trf!("relecture de l'index impossible : {e}", "cannot read the index back: {e}")),
         };
         if produced != expected {
             let missing: Vec<&String> = expected.keys().filter(|k| !produced.contains_key(*k)).take(3).collect();
-            return Verification::Failed(format!(
+            return Verification::Failed(trf!(
                 "contenu différent de la source ({} fichiers attendus, {} produits ; absents : {:?})",
+                "content differs from the source ({} files expected, {} produced; missing: {:?})",
                 expected.len(),
                 produced.len(),
                 missing
             ));
         }
-        Verification::Decoded(format!("test d'intégrité réussi et {} fichiers identiques en nom et en taille à la source", produced.len()))
+        Verification::Decoded(trf!(
+            "test d'intégrité réussi et {} fichiers identiques en nom et en taille à la source",
+            "integrity test passed and {} files identical in name and size to the source",
+            produced.len()
+        ))
     }
 
     fn weight(&self, _from: &FormatId, _to: &FormatId) -> u32 {

@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="884" height="599" viewBox="0 0 884 599" role="img" aria-label="Sortie réelle de la commande chud plan">
+<svg xmlns="http://www.w3.org/2000/svg" width="884" height="620" viewBox="0 0 884 620" role="img" aria-label="Real output of the chud plan command">
 <title>chud plan vacances.mkv --to mp4</title>
 <style>text{font-family:ui-monospace,'Cascadia Mono','SF Mono',Menlo,Consolas,'Liberation Mono',monospace;font-size:14px;white-space:pre}.t{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}</style>
-<rect x="0.5" y="0.5" width="883" height="598" rx="10" fill="#011128" stroke="#123f7d"/>
+<rect x="0.5" y="0.5" width="883" height="619" rx="10" fill="#011128" stroke="#123f7d"/>
 <path d="M0.5 36V10.5a10 10 0 0 1 10-10h863a10 10 0 0 1 10 10V36Z" fill="#0a1f3f"/>
 <line x1="0.5" y1="36" x2="883.5" y2="36" stroke="#123f7d"/>
 <circle cx="20" cy="18.0" r="6" fill="#ff5f57"/>
@@ -9,28 +9,29 @@
 <circle cx="60" cy="18.0" r="6" fill="#28c840"/>
 <text class="t" x="442.0" y="22.5" text-anchor="middle" fill="#8fa8c8">Windows PowerShell — chud</text>
 <text x="22" y="68" xml:space="preserve"><tspan fill="#38d6ff" font-weight="600">PS D:\Videos&gt; </tspan><tspan fill="#ffffff" font-weight="600">chud plan vacances.mkv --to mp4</tspan></text>
-<text x="22" y="89" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Plan :</tspan><tspan fill="#d6e2f5"> Matroska (MKV) (mkv) → MP4 (mp4)</tspan></text>
-<text x="22" y="110" xml:space="preserve"><tspan fill="#d6e2f5">  1. mkv → mp4 avec ffmpeg — selon le contenu</tspan></text>
-<text x="22" y="131" xml:space="preserve"><tspan fill="#f9c83a" font-weight="600">Fidélité :</tspan><tspan fill="#f9c83a" font-weight="600"> Selon le contenu du fichier</tspan></text>
-<text x="22" y="152" xml:space="preserve"><tspan fill="#6ea8ff" font-weight="600">  •</tspan><tspan fill="#d6e2f5"> Étape 1 : la fidélité dépend du contenu du fichier</tspan></text>
-<text x="22" y="173" xml:space="preserve"><tspan fill="#6ea8ff" font-weight="600">  •</tspan><tspan fill="#d6e2f5"> Étape 1 : vidéo h264 copiée sans ré-encodage</tspan></text>
-<text x="22" y="194" xml:space="preserve"><tspan fill="#6ea8ff" font-weight="600">  •</tspan><tspan fill="#d6e2f5"> Étape 1 : audio aac copié sans ré-encodage</tspan></text>
-<text x="22" y="215" xml:space="preserve"><tspan fill="#6ea8ff" font-weight="600">  •</tspan><tspan fill="#d6e2f5"> Étape 1 : sous-titres ASS convertis en mov_text : texte et temps conservés, styles avancés</tspan></text>
-<text x="22" y="236" xml:space="preserve"><tspan fill="#d6e2f5">    (polices, couleurs, positions, effets) perdus s&#x27;il y en a</tspan></text>
-<text x="22" y="257" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Options de l&#x27;étape mkv → mp4 (ffmpeg) :</tspan></text>
-<text x="22" y="278" xml:space="preserve"><tspan fill="#38d6ff">  --set video_codec=…</tspan><tspan fill="#d6e2f5">  Codec vidéo</tspan></text>
-<text x="22" y="299" xml:space="preserve"><tspan fill="#38d6ff">  --set video_quality=…</tspan><tspan fill="#d6e2f5">  Qualité vidéo</tspan></text>
-<text x="22" y="320" xml:space="preserve"><tspan fill="#38d6ff">  --set speed=…</tspan><tspan fill="#d6e2f5">  Vitesse d&#x27;encodage (avancé)</tspan></text>
-<text x="22" y="341" xml:space="preserve"><tspan fill="#38d6ff">  --set max_height=…</tspan><tspan fill="#d6e2f5">  Hauteur maximale (0 = inchangée)</tspan></text>
-<text x="22" y="362" xml:space="preserve"><tspan fill="#38d6ff">  --set fps=…</tspan><tspan fill="#d6e2f5">  Images par seconde (0 = inchangé) (avancé)</tspan></text>
-<text x="22" y="383" xml:space="preserve"><tspan fill="#38d6ff">  --set subtitles=…</tspan><tspan fill="#d6e2f5">  Sous-titres</tspan></text>
-<text x="22" y="404" xml:space="preserve"><tspan fill="#38d6ff">  --set audio_codec=…</tspan><tspan fill="#d6e2f5">  Codec audio (avancé)</tspan></text>
-<text x="22" y="425" xml:space="preserve"><tspan fill="#38d6ff">  --set audio_bitrate=…</tspan><tspan fill="#d6e2f5">  Débit audio en kbit/s (0 = automatique)</tspan></text>
-<text x="22" y="446" xml:space="preserve"><tspan fill="#38d6ff">  --set sample_rate=…</tspan><tspan fill="#d6e2f5">  Fréquence d&#x27;échantillonnage (0 = inchangée) (avancé)</tspan></text>
-<text x="22" y="467" xml:space="preserve"><tspan fill="#38d6ff">  --set channels=…</tspan><tspan fill="#d6e2f5">  Nombre de canaux (0 = inchangé) (avancé)</tspan></text>
-<text x="22" y="488" xml:space="preserve"><tspan fill="#38d6ff">  --set normalize=…</tspan><tspan fill="#d6e2f5">  Normaliser le volume (EBU R128) (avancé)</tspan></text>
-<text x="22" y="509" xml:space="preserve"><tspan fill="#38d6ff">  --set start=…</tspan><tspan fill="#d6e2f5">  Début (ex. 1:30)</tspan></text>
-<text x="22" y="530" xml:space="preserve"><tspan fill="#38d6ff">  --set end=…</tspan><tspan fill="#d6e2f5">  Fin (ex. 2:45)</tspan></text>
-<text x="22" y="551" xml:space="preserve"><tspan fill="#38d6ff">  --set strip_metadata=…</tspan><tspan fill="#d6e2f5">  Supprimer les métadonnées (avancé)</tspan></text>
-<text x="22" y="572" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Sortie prévue :</tspan><tspan fill="#d6e2f5"> D:\Videos\vacances.mp4</tspan></text>
+<text x="22" y="89" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Plan:</tspan><tspan fill="#d6e2f5"> Matroska (MKV) (mkv) → MP4 (mp4)</tspan></text>
+<text x="22" y="110" xml:space="preserve"><tspan fill="#d6e2f5">  1. mkv → mp4 with ffmpeg — depends on content</tspan></text>
+<text x="22" y="131" xml:space="preserve"><tspan fill="#f9c83a" font-weight="600">Fidelity:</tspan><tspan fill="#f9c83a" font-weight="600"> Depends on the file&#x27;s content</tspan></text>
+<text x="22" y="152" xml:space="preserve"><tspan fill="#6ea8ff" font-weight="600">  •</tspan><tspan fill="#d6e2f5"> Step 1: fidelity depends on the file&#x27;s content</tspan></text>
+<text x="22" y="173" xml:space="preserve"><tspan fill="#6ea8ff" font-weight="600">  •</tspan><tspan fill="#d6e2f5"> Step 1: h264 video copied without re-encoding</tspan></text>
+<text x="22" y="194" xml:space="preserve"><tspan fill="#6ea8ff" font-weight="600">  •</tspan><tspan fill="#d6e2f5"> Step 1: aac audio copied without re-encoding</tspan></text>
+<text x="22" y="215" xml:space="preserve"><tspan fill="#6ea8ff" font-weight="600">  •</tspan><tspan fill="#d6e2f5"> Step 1: ASS subtitles converted to mov_text: text and timing kept, advanced styles (fonts,</tspan></text>
+<text x="22" y="236" xml:space="preserve"><tspan fill="#d6e2f5">    colors, positions, effects) lost if any</tspan></text>
+<text x="22" y="257" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Options for step mkv → mp4 (ffmpeg):</tspan></text>
+<text x="22" y="278" xml:space="preserve"><tspan fill="#38d6ff">  --set video_codec=…</tspan><tspan fill="#d6e2f5">  Video codec</tspan></text>
+<text x="22" y="299" xml:space="preserve"><tspan fill="#38d6ff">  --set video_quality=…</tspan><tspan fill="#d6e2f5">  Video quality</tspan></text>
+<text x="22" y="320" xml:space="preserve"><tspan fill="#38d6ff">  --set speed=…</tspan><tspan fill="#d6e2f5">  Encoding speed (advanced)</tspan></text>
+<text x="22" y="341" xml:space="preserve"><tspan fill="#38d6ff">  --set reencode=…</tspan><tspan fill="#d6e2f5">  Always re-encode the video (advanced)</tspan></text>
+<text x="22" y="362" xml:space="preserve"><tspan fill="#38d6ff">  --set max_height=…</tspan><tspan fill="#d6e2f5">  Maximum height (0 = unchanged)</tspan></text>
+<text x="22" y="383" xml:space="preserve"><tspan fill="#38d6ff">  --set fps=…</tspan><tspan fill="#d6e2f5">  Frames per second (0 = unchanged) (advanced)</tspan></text>
+<text x="22" y="404" xml:space="preserve"><tspan fill="#38d6ff">  --set subtitles=…</tspan><tspan fill="#d6e2f5">  Subtitles</tspan></text>
+<text x="22" y="425" xml:space="preserve"><tspan fill="#38d6ff">  --set audio_codec=…</tspan><tspan fill="#d6e2f5">  Audio codec (advanced)</tspan></text>
+<text x="22" y="446" xml:space="preserve"><tspan fill="#38d6ff">  --set audio_bitrate=…</tspan><tspan fill="#d6e2f5">  Audio bitrate in kbit/s (0 = automatic)</tspan></text>
+<text x="22" y="467" xml:space="preserve"><tspan fill="#38d6ff">  --set sample_rate=…</tspan><tspan fill="#d6e2f5">  Sample rate (0 = unchanged) (advanced)</tspan></text>
+<text x="22" y="488" xml:space="preserve"><tspan fill="#38d6ff">  --set channels=…</tspan><tspan fill="#d6e2f5">  Number of channels (0 = unchanged) (advanced)</tspan></text>
+<text x="22" y="509" xml:space="preserve"><tspan fill="#38d6ff">  --set normalize=…</tspan><tspan fill="#d6e2f5">  Normalize loudness (EBU R128) (advanced)</tspan></text>
+<text x="22" y="530" xml:space="preserve"><tspan fill="#38d6ff">  --set start=…</tspan><tspan fill="#d6e2f5">  Start (e.g. 1:30)</tspan></text>
+<text x="22" y="551" xml:space="preserve"><tspan fill="#38d6ff">  --set end=…</tspan><tspan fill="#d6e2f5">  End (e.g. 2:45)</tspan></text>
+<text x="22" y="572" xml:space="preserve"><tspan fill="#38d6ff">  --set strip_metadata=…</tspan><tspan fill="#d6e2f5">  Remove metadata (advanced)</tspan></text>
+<text x="22" y="593" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Planned output:</tspan><tspan fill="#d6e2f5"> D:\Videos\vacances.mp4</tspan></text>
 </svg>

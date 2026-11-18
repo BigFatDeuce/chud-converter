@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { L, i18n } from "./lib/i18n.svelte";
   import { onMount } from "svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
   import ConvertView from "./lib/components/ConvertView.svelte";
   import EnginesView from "./lib/components/EnginesView.svelte";
   import PresetsView from "./lib/components/PresetsView.svelte";
   import AboutView from "./lib/components/AboutView.svelte";
+  import SettingsView from "./lib/components/SettingsView.svelte";
   import QuickView from "./lib/components/QuickView.svelte";
   import Icon from "./lib/components/Icon.svelte";
   import { store } from "./lib/store.svelte";
@@ -21,12 +23,14 @@
   });
 </script>
 
+<!-- Nouvelle langue : toute l'interface est reconstruite (textes calculés une fois compris). -->
+{#key i18n.lang}
 {#if kind === "quick"}
   <QuickView />
   {#if store.notice}
     <div class="toast card" role="status">
       <span>{store.notice}</span>
-      <button class="icon-btn" aria-label="Fermer" onclick={() => (store.notice = null)}><Icon name="x" size={14} /></button>
+      <button class="icon-btn" aria-label={L("Fermer", "Close")} onclick={() => (store.notice = null)}><Icon name="x" size={14} /></button>
     </div>
   {/if}
 {:else}
@@ -36,14 +40,14 @@
     {#if store.fake}
       <div class="fake" role="status">
         <Icon name="alert" size={14} />
-        Aperçu de l'interface dans un navigateur : données fictives, aucune conversion réelle.
+        {L("Aperçu de l'interface dans un navigateur : données fictives, aucune conversion réelle.", "Interface preview in a browser: sample data, no real conversion.")}
       </div>
     {/if}
     {#if fatal}
       <div class="fatal card">
         <Icon name="alert" size={20} />
         <div>
-          <h2>Impossible de démarrer</h2>
+          <h2>{L("Impossible de démarrer", "Cannot start")}</h2>
           <p class="selectable">{fatal}</p>
         </div>
       </div>
@@ -53,6 +57,8 @@
       <PresetsView />
     {:else if store.view === "engines"}
       <EnginesView />
+    {:else if store.view === "settings"}
+      <SettingsView />
     {:else}
       <AboutView />
     {/if}
@@ -62,8 +68,8 @@
     <div class="drop">
       <div class="drop-inner">
         <Icon name="upload" size={40} stroke={1.6} />
-        <p>Déposez pour ajouter à la liste</p>
-        <span>Rien n'est converti tant que vous n'avez pas choisi un format.</span>
+        <p>{L("Déposez pour ajouter à la liste", "Drop to add to the list")}</p>
+        <span>{L("Rien n'est converti tant que vous n'avez pas choisi un format.", "Nothing is converted until you choose a format.")}</span>
       </div>
     </div>
   {/if}
@@ -71,11 +77,12 @@
   {#if store.notice}
     <div class="toast card" role="status">
       <span>{store.notice}</span>
-      <button class="icon-btn" aria-label="Fermer" onclick={() => (store.notice = null)}><Icon name="x" size={14} /></button>
+      <button class="icon-btn" aria-label={L("Fermer", "Close")} onclick={() => (store.notice = null)}><Icon name="x" size={14} /></button>
     </div>
   {/if}
 </div>
 {/if}
+{/key}
 
 <style>
   .shell {

@@ -12,6 +12,7 @@ use chud_core::{
     ConversionCap, Engine, EngineError, EngineId, EngineInfo, EngineOrigin, ExecContext, FeatureSet, Fidelity, FormatId, OptionSpec,
     Progress, SourceInfo, StepAssessment, StepOutput, StepQuery, StepTask, Verification,
 };
+use chud_core::{tr, trf};
 use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::{CompressionType, FilterType as PngFilter, PngEncoder};
 use image::codecs::tiff::TiffEncoder;
@@ -95,13 +96,17 @@ impl ImageNative {
         Self {
             info: EngineInfo {
                 id: EngineId::new("image"),
-                name: "Images (natif)".into(),
+                name: tr!("Images (natif)", "Images (native)").into(),
                 version: Some(env!("CARGO_PKG_VERSION").into()),
                 license: "MIT OR Apache-2.0".into(),
                 homepage: "https://github.com/image-rs/image".into(),
                 origin: EngineOrigin::Builtin,
                 path: None,
-                description: "Conversion d'images courantes en Rust pur, sans outil externe.".into(),
+                description: tr!(
+                    "Conversion d'images courantes en Rust pur, sans outil externe.",
+                    "Common image conversions in pure Rust, without an external tool."
+                )
+                .into(),
             },
             caps,
         }
@@ -116,7 +121,7 @@ impl ImageNative {
     }
 
     fn open(path: &Path, from: &str) -> Result<ImageReader<BufReader<File>>, EngineError> {
-        let fmt = format_of(from).ok_or_else(|| EngineError::Unsupported(format!("lecture {from}")))?;
+        let fmt = format_of(from).ok_or_else(|| EngineError::Unsupported(trf!("lecture {from}", "reading {from}")))?;
         let mut r = ImageReader::new(BufReader::new(File::open(path)?));
         r.set_format(fmt);
         r.limits(Self::limits());
@@ -134,7 +139,7 @@ impl ImageNative {
             && o != image::metadata::Orientation::NoTransforms
         {
             img.apply_orientation(o);
-            notes.push("orientation EXIF appliquée aux pixels".into());
+            notes.push(tr!("orientation EXIF appliquée aux pixels", "EXIF orientation applied to the pixels").into());
         }
         Ok((img, icc, notes))
     }
@@ -157,14 +162,17 @@ impl ImageNative {
 
 fn input_err(e: image::ImageError) -> EngineError {
     match e {
-        image::ImageError::Limits(l) => EngineError::Refused(format!("image trop grande pour les limites de sécurité ({l})")),
+        image::ImageError::Limits(l) => EngineError::Refused(trf!(
+            "image trop grande pour les limites de sécurité ({l})",
+            "image too large for the safety limits ({l})"
+        )),
         image::ImageError::Unsupported(u) => EngineError::Unsupported(u.to_string()),
         other => EngineError::InvalidInput(other.to_string()),
     }
 }
 
 fn output_err(e: image::ImageError) -> EngineError {
-    EngineError::Other(format!("encodage impossible : {e}"))
+    EngineError::Other(trf!("encodage impossible : {e}", "encoding impossible: {e}"))
 }
 
 fn has_alpha(c: ColorType) -> bool {
@@ -212,31 +220,37 @@ impl Engine for ImageNative {
         let mut o = Vec::new();
         match to.as_str() {
             "jpeg" => {
-                o.push(OptionSpec::int("quality", "Qualité", 1, 100, 90).help("90 : très bonne qualité ; 75 : fichiers plus légers"));
-                o.push(OptionSpec::text("background", "Couleur de fond (transparence)", 7, "#ffffff").advanced());
+                o.push(
+                    OptionSpec::int("quality", tr!("Qualité", "Quality"), 1, 100, 90)
+                        .help(tr!("90 : très bonne qualité ; 75 : fichiers plus légers", "90: very good quality; 75: smaller files")),
+                );
+                o.push(
+                    OptionSpec::text("background", tr!("Couleur de fond (transparence)", "Background color (transparency)"), 7, "#ffffff")
+                        .advanced(),
+                );
             }
             "png" => o.push(
                 OptionSpec::choice(
                     "png_compression",
-                    "Compression PNG",
-                    &[("fast", "Rapide"), ("default", "Standard"), ("best", "Maximale")],
+                    tr!("Compression PNG", "PNG compression"),
+                    &[("fast", tr!("Rapide", "Fast")), ("default", "Standard"), ("best", tr!("Maximale", "Maximum"))],
                     "default",
                 )
                 .advanced(),
             ),
             _ => {}
         }
-        o.push(OptionSpec::int("max_width", "Largeur maximale (0 = inchangée)", 0, 100_000, 0));
-        o.push(OptionSpec::int("max_height", "Hauteur maximale (0 = inchangée)", 0, 100_000, 0));
+        o.push(OptionSpec::int("max_width", tr!("Largeur maximale (0 = inchangée)", "Maximum width (0 = unchanged)"), 0, 100_000, 0));
+        o.push(OptionSpec::int("max_height", tr!("Hauteur maximale (0 = inchangée)", "Maximum height (0 = unchanged)"), 0, 100_000, 0));
         o.push(
             OptionSpec::choice(
                 "resize_filter",
-                "Filtre de redimensionnement",
+                tr!("Filtre de redimensionnement", "Resize filter"),
                 &[
-                    ("lanczos3", "Lanczos (net)"),
+                    ("lanczos3", tr!("Lanczos (net)", "Lanczos (sharp)")),
                     ("catmullrom", "Catmull-Rom"),
-                    ("triangle", "Bilinéaire"),
-                    ("nearest", "Plus proche voisin (pixel art)"),
+                    ("triangle", tr!("Bilinéaire", "Bilinear")),
+                    ("nearest", tr!("Plus proche voisin (pixel art)", "Nearest neighbor (pixel art)")),
                 ],
                 "lanczos3",
             )
@@ -296,10 +310,21 @@ impl Engine for ImageNative {
             height: Some(h),
             summary: vec![
                 ("Dimensions".into(), format!("{w} × {h} px")),
-                ("Couleurs".into(), format!("{color:?}")),
-                ("Profil ICC".into(), if icc { "oui" } else { "non" }.into()),
-                ("EXIF".into(), if exif { "oui" } else { "non" }.into()),
-                ("Animée".into(), if animated { "oui (seule la première image est convertie par ce moteur)" } else { "non" }.into()),
+                (tr!("Couleurs", "Colors").into(), format!("{color:?}")),
+                (tr!("Profil ICC", "ICC profile").into(), if icc { tr!("oui", "yes") } else { tr!("non", "no") }.into()),
+                ("EXIF".into(), if exif { tr!("oui", "yes") } else { tr!("non", "no") }.into()),
+                (
+                    tr!("Animée", "Animated").into(),
+                    if animated {
+                        tr!(
+                            "oui (seule la première image est convertie par ce moteur)",
+                            "yes (only the first frame is converted by this engine)"
+                        )
+                    } else {
+                        tr!("non", "no")
+                    }
+                    .into(),
+                ),
             ],
             ..Default::default()
         })
@@ -325,16 +350,24 @@ impl Engine for ImageNative {
                 && !matches!(to, "png" | "tiff" | "pnm" | "farbfeld" | "exr" | "hdr")
             {
                 fidelity = Fidelity::Lossy;
-                notes.push("réduction de la profondeur de couleur à 8 bits par canal".into());
+                notes.push(
+                    tr!("réduction de la profondeur de couleur à 8 bits par canal", "color depth reduced to 8 bits per channel").into(),
+                );
             }
             if feats.is_some_and(|f| f.contains(&chud_core::Feature::new("animation"))) {
-                notes.push("image animée : seule la première image est convertie par ce moteur".into());
+                notes.push(
+                    tr!(
+                        "image animée : seule la première image est convertie par ce moteur",
+                        "animated image: only the first frame is converted by this engine"
+                    )
+                    .into(),
+                );
             }
         } else if q.options.int_or("max_width", 0) > 0 || q.options.int_or("max_height", 0) > 0 {
             fidelity = fidelity.max(Fidelity::Depends);
         }
         if to == "gif" {
-            notes.push("réduction à 256 couleurs".into());
+            notes.push(tr!("réduction à 256 couleurs", "reduced to 256 colors").into());
         }
         StepAssessment { fidelity, notes, unavailable: None, preserves: None }
     }
@@ -342,7 +375,7 @@ impl Engine for ImageNative {
     fn execute(&self, task: &StepTask, ctx: &ExecContext) -> Result<StepOutput, EngineError> {
         ctx.check_cancelled()?;
         let to = task.to.as_str();
-        ctx.report(Progress { fraction: Some(0.05), message: Some("décodage".into()), ..Default::default() });
+        ctx.report(Progress { fraction: Some(0.05), message: Some(tr!("décodage", "decoding").into()), ..Default::default() });
         let (mut img, icc, mut notes) = Self::decode(&task.input, task.from.as_str())?;
         ctx.check_cancelled()?;
 
@@ -353,12 +386,12 @@ impl Engine for ImageNative {
                 "catmullrom" => FilterType::CatmullRom,
                 _ => FilterType::Lanczos3,
             };
-            ctx.report(Progress { fraction: Some(0.4), message: Some("redimensionnement".into()), ..Default::default() });
-            notes.push(format!("redimensionné de {}×{} à {nw}×{nh}", img.width(), img.height()));
+            ctx.report(Progress { fraction: Some(0.4), message: Some(tr!("redimensionnement", "resizing").into()), ..Default::default() });
+            notes.push(trf!("redimensionné de {}×{} à {nw}×{nh}", "resized from {}×{} to {nw}×{nh}", img.width(), img.height()));
             img = img.resize_exact(nw, nh, filter);
         }
         ctx.check_cancelled()?;
-        ctx.report(Progress { fraction: Some(0.6), message: Some("encodage".into()), ..Default::default() });
+        ctx.report(Progress { fraction: Some(0.6), message: Some(tr!("encodage", "encoding").into()), ..Default::default() });
 
         let file = File::create(&task.output)?;
         let mut w = BufWriter::new(file);
@@ -374,7 +407,9 @@ impl Engine for ImageNative {
                     message: "couleur attendue au format #rrggbb".into(),
                 })?;
                 if img.color().has_alpha() {
-                    notes.push("transparence aplatie sur la couleur de fond".into());
+                    notes.push(
+                        tr!("transparence aplatie sur la couleur de fond", "transparency flattened onto the background color").into(),
+                    );
                 }
                 let rgb = match flatten(&img, bg) {
                     DynamicImage::ImageLuma8(l) => DynamicImage::ImageLuma8(l),
@@ -422,7 +457,7 @@ impl Engine for ImageNative {
                 w.write_all(&buf.into_inner())?;
             }
             other => {
-                let fmt = format_of(other).ok_or_else(|| EngineError::Unsupported(format!("écriture {other}")))?;
+                let fmt = format_of(other).ok_or_else(|| EngineError::Unsupported(trf!("écriture {other}", "writing {other}")))?;
                 let img = match other {
                     "bmp" | "tga" | "qoi" | "gif" | "ico" | "pnm" => {
                         if img.color().has_alpha() {
@@ -450,7 +485,7 @@ impl Engine for ImageNative {
         }
         w.flush()?;
         if icc.is_some() && !matches!(to, "png" | "jpeg" | "webp" | "tiff") {
-            notes.push("profil ICC non conservé par ce format".into());
+            notes.push(tr!("profil ICC non conservé par ce format", "ICC profile not kept by this format").into());
         }
         ctx.report(Progress { fraction: Some(1.0), ..Default::default() });
         Ok(StepOutput { notes })
@@ -461,10 +496,10 @@ impl Engine for ImageNative {
         let Some(_) = format_of(to) else { return Verification::SignatureOnly };
         match Self::open(output, to).and_then(|r| r.decode().map_err(input_err)) {
             Ok(img) if img.width() > 0 && img.height() > 0 => {
-                Verification::Decoded(format!("image décodée : {} × {} px", img.width(), img.height()))
+                Verification::Decoded(trf!("image décodée : {} × {} px", "image decoded: {} × {} px", img.width(), img.height()))
             }
             Ok(_) => Verification::Failed("image vide".into()),
-            Err(e) => Verification::Failed(format!("le fichier produit ne se décode pas : {e}")),
+            Err(e) => Verification::Failed(trf!("le fichier produit ne se décode pas : {e}", "the output file does not decode: {e}")),
         }
     }
 }

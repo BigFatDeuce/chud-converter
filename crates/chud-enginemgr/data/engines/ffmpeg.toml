@@ -3,7 +3,9 @@ name = "FFmpeg"
 adapter = "ffmpeg"
 homepage = "https://ffmpeg.org"
 license = "LGPL-2.1-or-later ou GPL-3.0-or-later selon la compilation"
+license_en = "LGPL-2.1-or-later or GPL-3.0-or-later depending on the build"
 description = "Audio, vidéo, animations, sous-titres et extraction d'images."
+description_en = "Audio, video, animations, subtitles and frame extraction."
 categories = ['video', 'audio', 'subtitle', 'image']
 executables = ['ffmpeg', 'ffprobe']
 

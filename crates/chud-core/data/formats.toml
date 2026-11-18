@@ -3,6 +3,7 @@
 # Champs :
 #   id           identifiant stable (minuscules)            obligatoire
 #   name         nom affiché                                 obligatoire
+#   name_en      nom anglais, si différent
 #   category     image | audio | video | document | spreadsheet | presentation | pdf | ebook
 #                | archive | data | subtitle | font | model3d | geo | other
 #   extensions   extensions sans point, la première sert à nommer les sorties
@@ -14,6 +15,7 @@
 #   variant_of   variante proposée comme cible mais jamais renvoyée par la détection
 #   pivot        format intermédiaire sans perte privilégié par le planificateur
 #   limitations  limites du format affichées avant conversion
+#   limitations_en  les mêmes, en anglais (obligatoire avec limitations)
 
 # ───────────────────────────── Images ─────────────────────────────
 [[format]]
@@ -29,6 +31,7 @@ pivot = true
 [[format]]
 id = "apng"
 name = "PNG animé (APNG)"
+name_en = "Animated PNG (APNG)"
 category = "image"
 extensions = ["apng", "png"]
 mime = ["image/apng"]
@@ -54,6 +57,7 @@ mime = ["image/webp"]
 compression = "both"
 features = ["alpha", "animation", "icc", "exif", "xmp"]
 limitations = ["Dimensions limitées à 16383 × 16383 pixels"]
+limitations_en = ["Dimensions limited to 16383 × 16383 pixels"]
 
 [[format]]
 id = "avif"
@@ -100,6 +104,7 @@ mime = ["image/gif"]
 compression = "lossless"
 features = ["alpha", "animation"]
 limitations = ["256 couleurs maximum par image", "Transparence binaire (pas de semi-transparence)"]
+limitations_en = ["256 colors maximum per frame", "Binary transparency (no partial transparency)"]
 
 [[format]]
 id = "bmp"
@@ -123,16 +128,19 @@ pivot = true
 [[format]]
 id = "ico"
 name = "Icône Windows (ICO)"
+name_en = "Windows icon (ICO)"
 category = "image"
 extensions = ["ico"]
 mime = ["image/vnd.microsoft.icon", "image/x-icon"]
 compression = "lossless"
 features = ["alpha", "multipage"]
 limitations = ["256 × 256 pixels maximum"]
+limitations_en = ["256 × 256 pixels maximum"]
 
 [[format]]
 id = "cur"
 name = "Curseur Windows (CUR)"
+name_en = "Windows cursor (CUR)"
 category = "image"
 extensions = ["cur"]
 compression = "lossless"
@@ -141,6 +149,7 @@ features = ["alpha"]
 [[format]]
 id = "icns"
 name = "Icône macOS (ICNS)"
+name_en = "macOS icon (ICNS)"
 category = "image"
 extensions = ["icns"]
 mime = ["image/icns"]
@@ -161,6 +170,7 @@ based_on = ["xml"]
 [[format]]
 id = "eps"
 name = "EPS (PostScript encapsulé)"
+name_en = "EPS (Encapsulated PostScript)"
 category = "image"
 extensions = ["eps", "epsf"]
 mime = ["application/postscript"]
@@ -180,6 +190,7 @@ based_on = ["pdf"]
 [[format]]
 id = "emf"
 name = "EMF (métafichier amélioré)"
+name_en = "EMF (Enhanced Metafile)"
 category = "image"
 extensions = ["emf"]
 compression = "none"
@@ -188,6 +199,7 @@ features = ["vector"]
 [[format]]
 id = "wmf"
 name = "WMF (métafichier Windows)"
+name_en = "WMF (Windows Metafile)"
 category = "image"
 extensions = ["wmf"]
 compression = "none"
@@ -389,6 +401,7 @@ compression = "none"
 features = ["audio", "tags", "high_bit_depth"]
 pivot = true
 limitations = ["Taille limitée à 4 Go (RIFF classique)"]
+limitations_en = ["Size limited to 4 GB (classic RIFF)"]
 
 [[format]]
 id = "flac"
@@ -569,10 +582,12 @@ mime = ["audio/midi"]
 compression = "none"
 features = ["notation"]
 limitations = ["Contient des notes, pas du son : la conversion en audio nécessite un synthétiseur (SoundFont)"]
+limitations_en = ["Contains notes, not sound: converting to audio needs a synthesizer (SoundFont)"]
 
 [[format]]
 id = "mod"
 name = "Module tracker (MOD/XM/IT/S3M)"
+name_en = "Tracker module (MOD/XM/IT/S3M)"
 category = "audio"
 extensions = ["mod", "xm", "it", "s3m", "mptm"]
 compression = "none"
@@ -607,6 +622,7 @@ mime = ["video/webm"]
 compression = "lossy"
 features = ["video", "audio", "multi_audio", "subtitles", "chapters", "tags", "alpha", "hdr", "high_bit_depth", "surround"]
 limitations = ["Codecs limités à VP8/VP9/AV1 (vidéo) et Opus/Vorbis (audio)"]
+limitations_en = ["Codecs limited to VP8/VP9/AV1 (video) and Opus/Vorbis (audio)"]
 
 [[format]]
 id = "avi"
@@ -617,6 +633,7 @@ mime = ["video/x-msvideo"]
 compression = "both"
 features = ["video", "audio", "multi_audio", "surround"]
 limitations = ["Pas de sous-titres ni de chapitres", "Codecs modernes (HEVC, AV1) mal pris en charge par les lecteurs"]
+limitations_en = ["No subtitles or chapters", "Modern codecs (HEVC, AV1) are poorly supported by players"]
 
 [[format]]
 id = "mov"
@@ -780,6 +797,7 @@ text = true
 [[format]]
 id = "lrc"
 name = "Paroles synchronisées (LRC)"
+name_en = "Synchronized lyrics (LRC)"
 category = "subtitle"
 extensions = ["lrc"]
 compression = "none"
@@ -789,6 +807,7 @@ text = true
 [[format]]
 id = "sup"
 name = "Sous-titres Blu-ray (PGS/SUP)"
+name_en = "Blu-ray subtitles (PGS/SUP)"
 category = "subtitle"
 extensions = ["sup"]
 compression = "lossless"
@@ -808,6 +827,7 @@ based_on = ["zip"]
 [[format]]
 id = "docm"
 name = "Word avec macros (DOCM)"
+name_en = "Word with macros (DOCM)"
 category = "document"
 extensions = ["docm"]
 compression = "none"
@@ -827,6 +847,7 @@ based_on = ["cfb"]
 [[format]]
 id = "odt"
 name = "OpenDocument Texte (ODT)"
+name_en = "OpenDocument Text (ODT)"
 category = "document"
 extensions = ["odt"]
 mime = ["application/vnd.oasis.opendocument.text"]
@@ -847,6 +868,7 @@ text = true
 [[format]]
 id = "txt"
 name = "Texte brut"
+name_en = "Plain text"
 category = "document"
 extensions = ["txt", "text", "log"]
 mime = ["text/plain"]
@@ -950,6 +972,7 @@ features = ["rich_text", "styles", "images", "tables"]
 [[format]]
 id = "ipynb"
 name = "Notebook Jupyter"
+name_en = "Jupyter Notebook"
 category = "document"
 extensions = ["ipynb"]
 mime = ["application/x-ipynb+json"]
@@ -972,6 +995,7 @@ based_on = ["zip"]
 [[format]]
 id = "xlsm"
 name = "Excel avec macros (XLSM)"
+name_en = "Excel with macros (XLSM)"
 category = "spreadsheet"
 extensions = ["xlsm"]
 compression = "none"
@@ -988,10 +1012,12 @@ compression = "none"
 features = ["multi_sheet", "formulas", "styles", "charts", "images", "comments", "types", "macros"]
 based_on = ["cfb"]
 limitations = ["65 536 lignes et 256 colonnes maximum"]
+limitations_en = ["65,536 rows and 256 columns maximum"]
 
 [[format]]
 id = "ods"
 name = "OpenDocument Tableur (ODS)"
+name_en = "OpenDocument Spreadsheet (ODS)"
 category = "spreadsheet"
 extensions = ["ods"]
 mime = ["application/vnd.oasis.opendocument.spreadsheet"]
@@ -1032,6 +1058,7 @@ based_on = ["cfb"]
 [[format]]
 id = "odp"
 name = "OpenDocument Présentation (ODP)"
+name_en = "OpenDocument Presentation (ODP)"
 category = "presentation"
 extensions = ["odp"]
 mime = ["application/vnd.oasis.opendocument.presentation"]
@@ -1061,12 +1088,14 @@ features = ["multipage", "vector", "text_layer", "images", "fonts_embedded", "fo
 [[format]]
 id = "pdfa"
 name = "PDF/A (archivage)"
+name_en = "PDF/A (archiving)"
 category = "pdf"
 extensions = ["pdf"]
 compression = "both"
 features = ["multipage", "vector", "text_layer", "images", "fonts_embedded", "bookmarks", "metadata", "icc", "cmyk"]
 variant_of = "pdf"
 limitations = ["Chiffrement, JavaScript et contenus externes interdits"]
+limitations_en = ["Encryption, JavaScript and external content are not allowed"]
 
 [[format]]
 id = "ps"
@@ -1116,6 +1145,7 @@ mime = ["application/x-mobipocket-ebook"]
 compression = "none"
 features = ["rich_text", "images", "metadata", "cover_art", "toc"]
 limitations = ["Format obsolète : mise en forme limitée"]
+limitations_en = ["Obsolete format: limited formatting"]
 
 [[format]]
 id = "azw3"
@@ -1164,6 +1194,7 @@ features = ["rich_text", "images", "metadata"]
 [[format]]
 id = "cbz"
 name = "Bande dessinée ZIP (CBZ)"
+name_en = "Comic book ZIP (CBZ)"
 category = "ebook"
 extensions = ["cbz"]
 mime = ["application/vnd.comicbook+zip"]
@@ -1174,6 +1205,7 @@ based_on = ["zip"]
 [[format]]
 id = "cbr"
 name = "Bande dessinée RAR (CBR)"
+name_en = "Comic book RAR (CBR)"
 category = "ebook"
 extensions = ["cbr"]
 mime = ["application/vnd.comicbook-rar"]
@@ -1184,6 +1216,7 @@ based_on = ["rar"]
 [[format]]
 id = "cb7"
 name = "Bande dessinée 7z (CB7)"
+name_en = "Comic book 7z (CB7)"
 category = "ebook"
 extensions = ["cb7"]
 compression = "none"
@@ -1193,6 +1226,7 @@ based_on = ["7z"]
 [[format]]
 id = "cbt"
 name = "Bande dessinée TAR (CBT)"
+name_en = "Comic book TAR (CBT)"
 category = "ebook"
 extensions = ["cbt"]
 compression = "none"
@@ -1228,6 +1262,7 @@ mime = ["application/vnd.rar"]
 compression = "lossless"
 features = ["directories", "timestamps", "encryption", "comments", "recovery"]
 limitations = ["Création réservée à WinRAR (logiciel propriétaire)"]
+limitations_en = ["Only WinRAR (proprietary software) can create it"]
 
 [[format]]
 id = "tar"
@@ -1284,6 +1319,7 @@ mime = ["application/gzip"]
 compression = "lossless"
 features = []
 limitations = ["Compresse un seul fichier"]
+limitations_en = ["Compresses a single file"]
 
 [[format]]
 id = "bz2"
@@ -1294,6 +1330,7 @@ mime = ["application/x-bzip2"]
 compression = "lossless"
 features = []
 limitations = ["Compresse un seul fichier"]
+limitations_en = ["Compresses a single file"]
 
 [[format]]
 id = "xz"
@@ -1304,6 +1341,7 @@ mime = ["application/x-xz"]
 compression = "lossless"
 features = []
 limitations = ["Compresse un seul fichier"]
+limitations_en = ["Compresses a single file"]
 
 [[format]]
 id = "zst"
@@ -1314,6 +1352,7 @@ mime = ["application/zstd"]
 compression = "lossless"
 features = []
 limitations = ["Compresse un seul fichier"]
+limitations_en = ["Compresses a single file"]
 
 [[format]]
 id = "lz4"
@@ -1334,6 +1373,7 @@ features = []
 [[format]]
 id = "iso"
 name = "Image disque ISO"
+name_en = "ISO disk image"
 category = "archive"
 extensions = ["iso"]
 mime = ["application/x-iso9660-image"]
@@ -1351,6 +1391,7 @@ features = ["directories", "timestamps", "permissions"]
 [[format]]
 id = "cab"
 name = "Cabinet Windows (CAB)"
+name_en = "Windows Cabinet (CAB)"
 category = "archive"
 extensions = ["cab"]
 mime = ["application/vnd.ms-cab-compressed"]
@@ -1384,6 +1425,7 @@ features = ["directories", "timestamps", "permissions", "symlinks"]
 [[format]]
 id = "deb"
 name = "Paquet Debian (DEB)"
+name_en = "Debian package (DEB)"
 category = "archive"
 extensions = ["deb"]
 compression = "lossless"
@@ -1392,6 +1434,7 @@ features = ["directories", "permissions"]
 [[format]]
 id = "rpm"
 name = "Paquet RPM"
+name_en = "RPM package"
 category = "archive"
 extensions = ["rpm"]
 compression = "lossless"
@@ -1400,6 +1443,7 @@ features = ["directories", "permissions"]
 [[format]]
 id = "dmg"
 name = "Image disque Apple (DMG)"
+name_en = "Apple disk image (DMG)"
 category = "archive"
 extensions = ["dmg"]
 compression = "lossless"
@@ -1408,6 +1452,7 @@ features = ["directories"]
 [[format]]
 id = "vhd"
 name = "Disque virtuel (VHD/VHDX)"
+name_en = "Virtual disk (VHD/VHDX)"
 category = "archive"
 extensions = ["vhd", "vhdx"]
 compression = "none"
@@ -1424,6 +1469,7 @@ features = ["directories", "permissions", "symlinks"]
 [[format]]
 id = "directory"
 name = "Dossier (extraction)"
+name_en = "Folder (extraction)"
 category = "archive"
 extensions = []
 compression = "none"
@@ -1471,6 +1517,7 @@ compression = "none"
 features = ["nesting", "types", "comments", "datetime"]
 text = true
 limitations = ["Pas de valeur nulle", "La racine doit être un objet (table)"]
+limitations_en = ["No null values", "The root must be an object (table)"]
 
 [[format]]
 id = "xml"
@@ -1492,10 +1539,12 @@ compression = "none"
 features = []
 text = true
 limitations = ["Tableau plat : pas d'imbrication ni de types (tout est texte)"]
+limitations_en = ["Flat table: no nesting and no types (everything is text)"]
 
 [[format]]
 id = "tsv"
 name = "TSV (valeurs séparées par tabulations)"
+name_en = "TSV (tab-separated values)"
 category = "data"
 extensions = ["tsv", "tab"]
 mime = ["text/tab-separated-values"]
@@ -1503,6 +1552,7 @@ compression = "none"
 features = []
 text = true
 limitations = ["Tableau plat : pas d'imbrication ni de types (tout est texte)"]
+limitations_en = ["Flat table: no nesting and no types (everything is text)"]
 
 [[format]]
 id = "ini"
@@ -1516,6 +1566,7 @@ text = true
 [[format]]
 id = "sqlite"
 name = "Base SQLite"
+name_en = "SQLite database"
 category = "data"
 extensions = ["sqlite", "sqlite3", "db", "db3"]
 mime = ["application/vnd.sqlite3"]
@@ -1525,6 +1576,7 @@ features = ["tables", "types", "multi_sheet", "schema"]
 [[format]]
 id = "sql"
 name = "Script SQL"
+name_en = "SQL script"
 category = "data"
 extensions = ["sql"]
 mime = ["application/sql"]
@@ -1579,6 +1631,7 @@ features = ["hinting", "metadata"]
 [[format]]
 id = "ttc"
 name = "Collection TrueType (TTC)"
+name_en = "TrueType Collection (TTC)"
 category = "font"
 extensions = ["ttc", "otc"]
 mime = ["font/collection"]
@@ -1644,6 +1697,7 @@ based_on = ["json"]
 [[format]]
 id = "glb"
 name = "glTF binaire (GLB)"
+name_en = "Binary glTF (GLB)"
 category = "model3d"
 extensions = ["glb"]
 mime = ["model/gltf-binary"]
@@ -1714,6 +1768,7 @@ features = ["mesh", "materials", "uv", "scene", "animation", "skinning"]
 [[format]]
 id = "step"
 name = "STEP (CAO)"
+name_en = "STEP (CAD)"
 category = "model3d"
 extensions = ["step", "stp"]
 mime = ["model/step"]
@@ -1724,6 +1779,7 @@ text = true
 [[format]]
 id = "iges"
 name = "IGES (CAO)"
+name_en = "IGES (CAD)"
 category = "model3d"
 extensions = ["iges", "igs"]
 mime = ["model/iges"]
@@ -1797,6 +1853,7 @@ based_on = ["sqlite"]
 [[format]]
 id = "eml"
 name = "E-mail (EML)"
+name_en = "Email (EML)"
 category = "other"
 extensions = ["eml"]
 mime = ["message/rfc822"]
@@ -1807,6 +1864,7 @@ text = true
 [[format]]
 id = "mbox"
 name = "Boîte mail (MBOX)"
+name_en = "Mailbox (MBOX)"
 category = "other"
 extensions = ["mbox"]
 mime = ["application/mbox"]
@@ -1817,6 +1875,7 @@ text = true
 [[format]]
 id = "msg"
 name = "Message Outlook (MSG)"
+name_en = "Outlook message (MSG)"
 category = "other"
 extensions = ["msg"]
 mime = ["application/vnd.ms-outlook"]
@@ -1827,6 +1886,7 @@ based_on = ["cfb"]
 [[format]]
 id = "cfb"
 name = "Conteneur OLE/CFB (Office ancien)"
+name_en = "OLE/CFB container (legacy Office)"
 category = "other"
 extensions = []
 compression = "none"

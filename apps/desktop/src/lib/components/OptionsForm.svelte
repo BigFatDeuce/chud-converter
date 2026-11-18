@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { L } from "../i18n.svelte";
   import type { OptionSpec, OptionValue } from "../types";
 
   let {
@@ -39,7 +40,7 @@
     </label>
   {:else}
     <label class="field">
-      <span class="label">{s.label}{#if s.key in values}<i title="Modifiée">•</i>{/if}</span>
+      <span class="label">{s.label}{#if s.key in values}<i title={L("Modifiée", "Changed")}>•</i>{/if}</span>
       {#if s.kind.type === "choice"}
         <select value={String(valueOf(s))} onchange={(e) => onchange(s.key, e.currentTarget.value, s.default)}>
           {#each s.kind.choices as c (c.value)}
@@ -69,14 +70,14 @@
 {/snippet}
 
 <div class="opts">
-  <div class="section-title">Options</div>
+  <div class="section-title">{L("Options", "Options")}</div>
   {#each basic as s (s.key)}
     {@render field(s)}
   {/each}
   {#if advanced.length}
     <details>
       <summary>
-        Options avancées ({advanced.length}){#if changedAdvanced}<span class="changed"> · {changedAdvanced} modifiée{changedAdvanced > 1 ? "s" : ""}</span>{/if}
+        {L(`Options avancées (${advanced.length})`, `Advanced options (${advanced.length})`)}{#if changedAdvanced}<span class="changed"> {L(`· ${changedAdvanced} modifiée${changedAdvanced > 1 ? "s" : ""}`, `· ${changedAdvanced} changed`)}</span>{/if}
       </summary>
       <div class="adv">
         {#each advanced as s (s.key)}

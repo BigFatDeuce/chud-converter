@@ -7,7 +7,7 @@
 
 <span class="badge {level}" {title}>
   <span class="dot"></span>
-  {fidelityLabel[level]}
+  {fidelityLabel(level)}
 </span>
 
 <style>

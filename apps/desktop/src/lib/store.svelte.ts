@@ -1,6 +1,7 @@
 // État de l'interface (runes Svelte 5). Le cœur Rust reste la seule source de vérité sur les
 // formats, la fidélité et le résultat des conversions : ici, on ne fait qu'afficher.
 
+import { L, i18n, type Lang, type LangChoice } from "./i18n.svelte";
 import { api, errorText } from "./api";
 import { baseName, fidelityRank } from "./format";
 import type {
@@ -14,13 +15,14 @@ import type {
   OptionValue,
   PresetView,
   QuickBatch,
+  SettingsView,
   ShellView,
   Submitted,
   UiEvent,
   Verification,
 } from "./types";
 
-export type View = "convert" | "presets" | "engines" | "about";
+export type View = "convert" | "presets" | "engines" | "settings" | "about";
 
 export interface FileEntry {
   info: FileInfo;
@@ -149,6 +151,8 @@ class Store {
   enginesLoading = $state(false);
   enginesError = $state<string | null>(null);
   info = $state<AppInfo | null>(null);
+  settings = $state<SettingsView | null>(null);
+  settingsBusy = $state(false);
 
   checked = $derived(this.files.filter((f) => f.checked && f.info.format && !f.info.error));
   loadingTargets = $derived(this.checked.some((f) => f.loading));
@@ -179,9 +183,18 @@ class Store {
     this.keepDate = s.keepDate;
   }
 
+  /** Langue d'abord, avant d'afficher quoi que ce soit ; puis suivi des changements. */
+  async #initLanguage(main: boolean) {
+    const a = await api;
+    this.settings = await a.settings();
+    i18n.lang = this.settings.effective;
+    await a.onLanguage((lang) => void this.#languageChanged(lang, main));
+  }
+
   async init() {
     const a = await api;
     this.fake = a.fake;
+    await this.#initLanguage(true);
     await a.onQueue((e) => this.#onEvent(e));
     await a.onDrop(
       (paths) => {
@@ -204,6 +217,7 @@ class Store {
   async initQuick() {
     const a = await api;
     this.fake = a.fake;
+    await this.#initLanguage(false);
     await a.onQueue((e) => this.#onEvent(e));
     const take = async () => {
       for (const b of await a.takeQuick()) {
@@ -249,7 +263,7 @@ class Store {
     const fresh = infos.filter((i) => !known.has(i.path));
     if (fresh.length < infos.length) {
       const n = infos.length - fresh.length;
-      this.say(n === 1 ? "Ce fichier est déjà dans la liste." : `${n} fichiers étaient déjà dans la liste.`);
+      this.say(n === 1 ? L("Ce fichier est déjà dans la liste.", "This file is already in the list.") : L(`${n} fichiers étaient déjà dans la liste.`, `${n} files were already in the list.`));
     }
     for (const info of fresh) {
       const usable = !!info.format && !info.error;
@@ -289,7 +303,7 @@ class Store {
   async pickFolderAsInput() {
     const a = await api;
     try {
-      const dir = await a.pickFolder("Dossier à convertir (en archive, par exemple)");
+      const dir = await a.pickFolder(L("Dossier à convertir (en archive, par exemple)", "Folder to convert (to an archive, for example)"));
       if (dir) await this.addPaths([dir]);
     } catch (e) {
       this.say(errorText(e));
@@ -299,7 +313,7 @@ class Store {
   async pickOutputDir() {
     const a = await api;
     try {
-      const dir = await a.pickFolder("Dossier de destination");
+      const dir = await a.pickFolder(L("Dossier de destination", "Destination folder"));
       if (dir) {
         this.outputDir = dir;
         this.saveSettings();
@@ -506,7 +520,7 @@ class Store {
       this.presets = r.view.presets;
       this.presetsError = r.view.error;
       const menu = r.view.menuNote ? ` ${r.view.menuNote}` : "";
-      this.say((r.backup ? `Préréglages rétablis. L'ancien fichier est gardé : ${r.backup}` : "Préréglages rétablis.") + menu);
+      this.say((r.backup ? L(`Préréglages rétablis. L'ancien fichier est gardé : ${r.backup}`, `Presets restored. The old file is kept: ${r.backup}`) : L("Préréglages rétablis.", "Presets restored.")) + menu);
     } catch (e) {
       this.say(errorText(e));
     }
@@ -520,7 +534,7 @@ class Store {
     this.conflict = p.conflict;
     this.keepDate = p.keepDate;
     this.outputDir = p.outputDir;
-    this.say(`Préréglage « ${p.name} » appliqué : vérifiez le rapport puis convertissez.`);
+    this.say(L(`Préréglage « ${p.name} » appliqué : vérifiez le rapport puis convertissez.`, `Preset “${p.name}” applied: check the report, then convert.`));
   }
 
   /** Le choix actuel (format, options, destination) devient un préréglage. */
@@ -543,7 +557,7 @@ class Store {
       builtin: false,
     };
     const ok = await this.savePresets([p, ...this.presets]);
-    if (ok) this.say(`Préréglage « ${clean} » enregistré.`);
+    if (ok) this.say(L(`Préréglage « ${clean} » enregistré.`, `Preset “${clean}” saved.`));
     return ok;
   }
 
@@ -563,13 +577,76 @@ class Store {
     this.shellBusy = true;
     try {
       this.shell = install ? await a.shellInstall() : await a.shellUninstall();
-      this.say(install ? `Menu clic droit installé (${this.shell.entries} types de fichiers).` : "Menu clic droit retiré.");
+      this.say(install ? L(`Menu clic droit installé (${this.shell.entries} types de fichiers).`, `Right-click menu installed (${this.shell.entries} file types).`) : L("Menu clic droit retiré.", "Right-click menu removed."));
     } catch (e) {
       this.say(errorText(e));
       await this.loadShell();
     } finally {
       this.shellBusy = false;
     }
+  }
+
+  // ---------------------------------------------------------------- réglages
+
+  async setLanguage(choice: LangChoice) {
+    const a = await api;
+    this.settingsBusy = true;
+    try {
+      const v = await a.setLanguage(choice);
+      this.settings = v;
+      await this.#languageChanged(v.effective, true);
+      if (v.menuNote) this.say(v.menuNote);
+    } catch (e) {
+      this.say(errorText(e));
+    } finally {
+      this.settingsBusy = false;
+    }
+  }
+
+  /** Nouvelle langue : l'interface est reconstruite ({#key} dans App.svelte) et les textes
+   *  produits par le cœur (formats, cibles, rapports, préréglages, moteurs) sont redemandés.
+   *  Les conversions déjà faites gardent leur rapport tel qu'il a été écrit. */
+  async #languageChanged(lang: Lang, main: boolean) {
+    if (i18n.lang === lang) return;
+    i18n.lang = lang;
+    if (!main) return;
+    const a = await api;
+    try {
+      this.settings = await a.settings();
+    } catch {
+      // Affichage seulement.
+    }
+    void this.loadPresets();
+    await this.loadEngines(false);
+    await this.#reloadFiles();
+  }
+
+  /** Analyse et cibles redemandées, en gardant la sélection, le format et les options. */
+  async #reloadFiles() {
+    const paths = this.files.map((f) => f.info.path);
+    if (!paths.length) return;
+    const a = await api;
+    let infos: FileInfo[];
+    try {
+      infos = await a.inspect(paths);
+    } catch (e) {
+      this.say(errorText(e));
+      return;
+    }
+    await Promise.all(
+      infos.map(async (info) => {
+        const entry = this.files.find((f) => f.info.path === info.path);
+        if (!entry) return;
+        entry.info = info;
+        if (!info.format || info.error) return;
+        try {
+          entry.targets = await a.targets(info.path);
+          entry.targetsError = null;
+        } catch (e) {
+          entry.targetsError = errorText(e);
+        }
+      }),
+    );
   }
 
   // ---------------------------------------------------------------- moteurs

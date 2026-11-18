@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { L } from "../i18n.svelte";
   import Icon from "./Icon.svelte";
   import FidelityBadge from "./FidelityBadge.svelte";
   import OptionsForm from "./OptionsForm.svelte";
@@ -105,22 +106,22 @@
 
 <aside>
   <div class="scroll">
-    <h2>Convertir en</h2>
+    <h2>{L("Convertir en", "Convert to")}</h2>
 
     {#if !store.files.length}
-      <p class="hint">Ajoutez des fichiers : les formats possibles s'afficheront ici, avec ce que chaque conversion conserve ou perd.</p>
+      <p class="hint">{L("Ajoutez des fichiers : les formats possibles s'afficheront ici, avec ce que chaque conversion conserve ou perd.", "Add files: the possible formats will show here, with what each conversion keeps or loses.")}</p>
     {:else if !store.checked.length}
-      <p class="hint">Cochez au moins un fichier reconnu.</p>
+      <p class="hint">{L("Cochez au moins un fichier reconnu.", "Check at least one recognized file.")}</p>
     {:else if store.loadingTargets}
-      <p class="hint">Recherche des conversions possibles…</p>
+      <p class="hint">{L("Recherche des conversions possibles…", "Looking for possible conversions…")}</p>
     {:else if !store.common.length}
       <p class="hint warn">
-        Aucun format de sortie commun à ces {store.checked.length} fichiers. Décochez-en certains pour les convertir par groupes.
+        {L(`Aucun format de sortie commun à ces ${store.checked.length} fichiers. Décochez-en certains pour les convertir par groupes.`, `No output format is common to these ${store.checked.length} files. Uncheck some to convert them in groups.`)}
       </p>
     {:else}
       {#if store.suggested.length}
         <div class="presets">
-          <div class="section-title">Préréglages</div>
+          <div class="section-title">{L("Préréglages", "Presets")}</div>
           <div class="pchips">
             {#each store.suggested as p (p.id)}
               <button class="pchip" class:sel={current(p)} onclick={() => usePreset(p)} title="{p.name} → {p.targetName}">
@@ -134,27 +135,27 @@
         <div class="picker">
           <label class="search">
             <Icon name="search" size={14} />
-            <input type="search" placeholder="Rechercher un format…" bind:value={query} aria-label="Rechercher un format" />
+            <input type="search" placeholder={L("Rechercher un format…", "Search for a format…")} bind:value={query} aria-label={L("Rechercher un format", "Search for a format")} />
           </label>
           <div class="formats">
             {#each groups as g (g.category)}
               <div class="group">
-                <div class="section-title">{categoryLabel[g.category]}</div>
+                <div class="section-title">{categoryLabel(g.category)}</div>
                 {#each g.targets as t (t.format)}
                   <button class="fmt" class:sel={t.format === store.target} onclick={() => choose(t)} title={t.headline}>
                     <span class="fmt-name">{t.name}</span>
                     {#if t.extension}<span class="ext">.{t.extension}</span>{/if}
-                    <span class="dot {t.fidelity}" aria-label={fidelityLabel[t.fidelity]}></span>
+                    <span class="dot {t.fidelity}" aria-label={fidelityLabel(t.fidelity)}></span>
                   </button>
                 {/each}
               </div>
             {:else}
-              <p class="hint">Aucun format ne correspond à « {query} ».</p>
+              <p class="hint">{L(`Aucun format ne correspond à « ${query} ».`, `No format matches “${query}”.`)}</p>
             {/each}
           </div>
           <p class="legend faint">
-            <span class="dot lossless"></span> sans perte <span class="dot partial"></span> contenu intact
-            <span class="dot depends"></span> selon le contenu <span class="dot lossy"></span> avec perte
+            <span class="dot lossless"></span> {L("sans perte", "lossless")} <span class="dot partial"></span> {L("contenu intact", "content intact")}
+            <span class="dot depends"></span> {L("selon le contenu", "depends on content")} <span class="dot lossy"></span> {L("avec perte", "lossy")}
           </p>
         </div>
       {:else if store.targetInfo}
@@ -164,13 +165,13 @@
             <strong>{t.name}</strong>
             {#if t.extension}<span class="ext">.{t.extension}</span>{/if}
           </div>
-          <button class="btn small" onclick={() => (picking = true)}>Changer</button>
+          <button class="btn small" onclick={() => (picking = true)}>{L("Changer", "Change")}</button>
         </div>
 
         <div class="report card">
           <div class="report-head">
             <FidelityBadge level={planFits?.fidelity ?? t.fidelity} />
-            {#if planLoading}<span class="faint small">mise à jour…</span>{/if}
+            {#if planLoading}<span class="faint small">{L("mise à jour…", "updating…")}</span>{/if}
           </div>
           <p class="headline">{planFits?.headline ?? t.headline}</p>
           {#if planError}
@@ -187,10 +188,10 @@
               {/each}
             </div>
             <p class="out faint selectable" title={planFits.output}>
-              Aperçu pour {store.checked[0]?.info.name}{others > 0 ? ` (et ${others} autre${others > 1 ? "s" : ""})` : ""}
+              {L(`Aperçu pour ${store.checked[0]?.info.name}${others > 0 ? ` (et ${others} autre${others > 1 ? "s" : ""})` : ""}`, `Preview for ${store.checked[0]?.info.name}${others > 0 ? ` (and ${others} other${others > 1 ? "s" : ""})` : ""}`)}
             </p>
             {#if t.lost.length && others > 0}
-              <p class="faint small">Sur l'ensemble des fichiers, peut être perdu : {t.lost.join(", ")}.</p>
+              <p class="faint small">{L(`Sur l'ensemble des fichiers, peut être perdu : ${t.lost.join(", ")}.`, `Across all files, may be lost: ${t.lost.join(", ")}.`)}</p>
             {/if}
           {/if}
         </div>
@@ -211,7 +212,7 @@
                 store.saveSettings();
               }}
             />
-            À côté de chaque original
+            {L("À côté de chaque original", "Next to each original")}
           </label>
           <label class="radio">
             <input
@@ -224,25 +225,25 @@
                 store.pickOutputDir();
               }}
             />
-            Dans un dossier…
+            {L("Dans un dossier…", "In a folder…")}
           </label>
           {#if store.outputDir}
             <div class="dir">
               <span class="mono selectable" title={store.outputDir}>{store.outputDir}</span>
-              <button class="btn small" onclick={() => store.pickOutputDir()}>Changer</button>
+              <button class="btn small" onclick={() => store.pickOutputDir()}>{L("Changer", "Change")}</button>
             </div>
           {/if}
           <label class="field">
-            <span>Si le fichier existe déjà</span>
+            <span>{L("Si le fichier existe déjà", "If the file already exists")}</span>
             <select value={store.conflict} onchange={setConflict}>
-              <option value="rename">Garder les deux : « nom (1) »</option>
-              <option value="skip">Ne rien faire</option>
-              <option value="overwrite">Remplacer l'ancien résultat</option>
+              <option value="rename">{L("Garder les deux : « nom (1) »", "Keep both: “name (1)”")}</option>
+              <option value="skip">{L("Ne rien faire", "Do nothing")}</option>
+              <option value="overwrite">{L("Remplacer l'ancien résultat", "Replace the old result")}</option>
             </select>
           </label>
           <label class="check">
             <input type="checkbox" bind:checked={store.keepDate} onchange={() => store.saveSettings()} />
-            Garder la date de modification de l'original
+            {L("Garder la date de modification de l'original", "Keep the original's modification date")}
           </label>
         </div>
 
@@ -250,17 +251,17 @@
           {#if naming}
             <input
               type="text"
-              placeholder="Nom du préréglage"
+              placeholder={L("Nom du préréglage", "Preset name")}
               maxlength="60"
-              aria-label="Nom du préréglage"
+              aria-label={L("Nom du préréglage", "Preset name")}
               bind:value={presetName}
               onkeydown={(e) => {
                 if (e.key === "Enter") void saveAs();
                 if (e.key === "Escape") naming = false;
               }}
             />
-            <button class="btn small primary" disabled={!presetName.trim()} onclick={saveAs}>Enregistrer</button>
-            <button class="btn small" onclick={() => (naming = false)}>Annuler</button>
+            <button class="btn small primary" disabled={!presetName.trim()} onclick={saveAs}>{L("Enregistrer", "Save")}</button>
+            <button class="btn small" onclick={() => (naming = false)}>{L("Annuler", "Cancel")}</button>
           {:else}
             <button
               class="btn small ghost"
@@ -269,7 +270,7 @@
                 presetName = t.name;
               }}
             >
-              <Icon name="preset" size={13} /> Enregistrer comme préréglage…
+              <Icon name="preset" size={13} /> {L("Enregistrer comme préréglage…", "Save as preset…")}
             </button>
           {/if}
         </div>
@@ -281,9 +282,9 @@
     <button class="btn primary big" disabled={!canConvert} onclick={() => store.convert()}>
       <Icon name="convert" size={17} />
       {#if store.targetInfo && store.checked.length}
-        Convertir {store.checked.length > 1 ? `${store.checked.length} fichiers` : ""} en {store.targetInfo.name}
+        {L(`Convertir ${store.checked.length > 1 ? `${store.checked.length} fichiers` : ""} en ${store.targetInfo.name}`, `Convert ${store.checked.length > 1 ? `${store.checked.length} files` : ""} to ${store.targetInfo.name}`)}
       {:else}
-        Convertir
+        {L("Convertir", "Convert")}
       {/if}
     </button>
   </div>

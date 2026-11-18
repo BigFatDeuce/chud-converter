@@ -4,6 +4,7 @@ adapter = "none"
 homepage = "https://www.libreoffice.org"
 license = "MPL-2.0"
 description = "Bureautique : DOCX, XLSX, PPTX, ODT, ODS, ODP, PDF…"
+description_en = "Office documents: DOCX, XLSX, PPTX, ODT, ODS, ODP, PDF…"
 categories = ['document', 'spreadsheet', 'presentation', 'pdf']
 executables = ['soffice']
 executables_windows = ['soffice.com']

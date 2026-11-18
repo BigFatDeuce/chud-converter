@@ -102,21 +102,21 @@ pub struct JobOutcome {
 
 #[derive(Debug, Error)]
 pub enum JobError {
-    #[error("fichier introuvable : {0}")]
+    #[error("{}", chud_core::trf!("fichier introuvable : {}", "file not found: {}", .0.display()))]
     NotFound(PathBuf),
-    #[error("format non reconnu : {0}")]
+    #[error("{}", chud_core::trf!("format non reconnu : {}", "unrecognized format: {}", .0))]
     Unrecognized(String),
     #[error(transparent)]
     Plan(#[from] PlanError),
-    #[error("étape {} ({engine}) : {error}", .step + 1)]
+    #[error("{}", chud_core::trf!("étape {} ({engine}) : {error}", "step {} ({engine}): {error}", .step + 1))]
     Engine { step: usize, engine: EngineId, error: EngineError },
-    #[error("vérification échouée à l'étape {} : {detail}", .step + 1)]
+    #[error("{}", chud_core::trf!("vérification échouée à l'étape {} : {detail}", "verification failed at step {}: {detail}", .step + 1))]
     Verification { step: usize, detail: String },
-    #[error("opération annulée")]
+    #[error("{}", chud_core::trf!("opération annulée", "operation cancelled"))]
     Cancelled,
-    #[error("la sortie désignerait le fichier source lui-même")]
+    #[error("{}", chud_core::trf!("la sortie désignerait le fichier source lui-même", "the output would be the source file itself"))]
     SameFile,
-    #[error("erreur d'entrée/sortie : {0}")]
+    #[error("{}", chud_core::trf!("erreur d'entrée/sortie : {}", "input/output error: {}", .0))]
     Io(#[from] std::io::Error),
 }
 
@@ -174,7 +174,7 @@ fn unique_dir(base: &Path, prefix: &str) -> std::io::Result<PathBuf> {
             Err(e) => return Err(e),
         }
     }
-    Err(std::io::Error::other("impossible de créer un répertoire de travail"))
+    Err(std::io::Error::other(chud_core::tr!("impossible de créer un répertoire de travail", "cannot create a working folder")))
 }
 
 /// Le format détecté sur le résultat est-il celui attendu (ou un proche parent déclaré) ?
@@ -287,18 +287,25 @@ impl JobRunner {
         });
         let mut notes = Vec::new();
         if detection.extension_mismatch {
-            notes.push(format!(
+            notes.push(chud_core::trf!(
                 "l'extension ne correspond pas au contenu : fichier traité comme {}",
+                "the extension does not match the content: file handled as {}",
                 self.registry.catalog().get(source.as_str()).map_or(source.as_str(), |d| d.name.as_str())
             ));
         }
         if detection.confidence == Confidence::Low {
-            notes.push("format déduit de l'extension seulement : le contenu n'a pas pu être confirmé".into());
+            notes.push(
+                chud_core::tr!(
+                    "format déduit de l'extension seulement : le contenu n'a pas pu être confirmé",
+                    "format inferred from the extension only: the content could not be confirmed"
+                )
+                .into(),
+            );
         }
         on_event(JobEvent::Planned { plan: plan.clone() });
 
         if spec.conflict == Conflict::Skip && wanted.exists() {
-            let reason = format!("{} existe déjà", wanted.display());
+            let reason = chud_core::trf!("{} existe déjà", "{} already exists", wanted.display());
             on_event(JobEvent::Skipped { reason: reason.clone() });
             notes.push(reason);
             return Ok(JobOutcome {
@@ -329,7 +336,7 @@ impl JobRunner {
             let engine: &Arc<dyn Engine> = self.registry.engine(&step.engine).ok_or_else(|| JobError::Engine {
                 step: i,
                 engine: step.engine.clone(),
-                error: EngineError::Other("moteur introuvable".into()),
+                error: EngineError::Other(chud_core::tr!("moteur introuvable", "engine not found").into()),
             })?;
             on_event(JobEvent::Step { index: i, count, engine: step.engine.clone(), from: step.from.clone(), to: step.to.clone() });
             let ext = catalog.get(step.to.as_str()).and_then(|d| d.output_extension()).unwrap_or("bin");
@@ -402,10 +409,15 @@ impl JobRunner {
             }
             // Contrôle indépendant : le fichier existe, n'est pas vide et a bien le format attendu.
             if step.to.as_str() != "directory" {
-                let meta =
-                    std::fs::metadata(&out).map_err(|_| JobError::Verification { step: i, detail: "aucun fichier produit".into() })?;
+                let meta = std::fs::metadata(&out).map_err(|_| JobError::Verification {
+                    step: i,
+                    detail: chud_core::tr!("aucun fichier produit", "no file produced").into(),
+                })?;
                 if meta.len() == 0 {
-                    return Err(JobError::Verification { step: i, detail: "fichier produit vide".into() });
+                    return Err(JobError::Verification {
+                        step: i,
+                        detail: chud_core::tr!("fichier produit vide", "empty output file").into(),
+                    });
                 }
                 let d = detect_path(&out, catalog)?;
                 match &d.format {
@@ -413,13 +425,24 @@ impl JobRunner {
                     Some(f) if d.confidence != Confidence::Low => {
                         return Err(JobError::Verification {
                             step: i,
-                            detail: format!("le fichier produit est reconnu comme {f} et non comme {}", step.to),
+                            detail: chud_core::trf!(
+                                "le fichier produit est reconnu comme {f} et non comme {}",
+                                "the output file is recognized as {f}, not as {}",
+                                step.to
+                            ),
                         });
                     }
-                    _ => notes.push(format!("format du résultat non confirmé par la détection indépendante ({})", step.to)),
+                    _ => notes.push(chud_core::trf!(
+                        "format du résultat non confirmé par la détection indépendante ({})",
+                        "result format not confirmed by independent detection ({})",
+                        step.to
+                    )),
                 }
             } else if !out.is_dir() {
-                return Err(JobError::Verification { step: i, detail: "aucun dossier produit".into() });
+                return Err(JobError::Verification {
+                    step: i,
+                    detail: chud_core::tr!("aucun dossier produit", "no folder produced").into(),
+                });
             }
             on_event(JobEvent::Verified { index: i, verification: verification.clone() });
             verifications.push(verification);
@@ -438,12 +461,15 @@ impl JobRunner {
                 let name = sanitize_component(&only.file_name().to_string_lossy());
                 wanted = wanted.parent().map(|p| p.join(&name)).unwrap_or_else(|| PathBuf::from(&name));
                 current = only.path();
-                notes.push(format!("un seul dossier racine (« {name} ») : extrait directement, sans dossier supplémentaire"));
+                notes.push(chud_core::trf!(
+                    "un seul dossier racine (« {name} ») : extrait directement, sans dossier supplémentaire",
+                    "a single root folder (“{name}”): extracted directly, without an extra folder"
+                ));
             }
         }
         let final_path = finalize(&current, &wanted, &input, spec.conflict, is_dir)?;
         let Some(final_path) = final_path else {
-            let reason = format!("{} existe déjà", wanted.display());
+            let reason = chud_core::trf!("{} existe déjà", "{} already exists", wanted.display());
             on_event(JobEvent::Skipped { reason: reason.clone() });
             notes.push(reason);
             return Ok(JobOutcome {
@@ -470,7 +496,12 @@ impl JobRunner {
             && b.is_file()
             && b.len() > a.len() + a.len() / 20
         {
-            notes.push(format!("le résultat ({}) est plus gros que l'original ({})", human_size(b.len()), human_size(a.len())));
+            notes.push(chud_core::trf!(
+                "le résultat ({}) est plus gros que l'original ({})",
+                "the result ({}) is larger than the original ({})",
+                human_size(b.len()),
+                human_size(a.len())
+            ));
         }
         on_event(JobEvent::Finished { output: final_path.clone() });
         Ok(JobOutcome {
@@ -509,7 +540,11 @@ fn finalize(staged: &Path, wanted: &Path, source: &Path, conflict: Conflict, is_
     }
     let overwrite = conflict == Conflict::Overwrite && !is_dir && !same_file(source, wanted);
     if overwrite && wanted.exists() && !wanted.is_file() {
-        return Err(JobError::Io(std::io::Error::other(format!("{} n'est pas un fichier : remplacement refusé", wanted.display()))));
+        return Err(JobError::Io(std::io::Error::other(chud_core::trf!(
+            "{} n'est pas un fichier : remplacement refusé",
+            "{} is not a file: replacing it is refused",
+            wanted.display()
+        ))));
     }
     // Réservation du nom.
     let mut n = 0u32;
@@ -531,7 +566,7 @@ fn finalize(staged: &Path, wanted: &Path, source: &Path, conflict: Conflict, is_
                 }
                 n += 1;
                 if n > 9999 {
-                    return Err(JobError::Io(std::io::Error::other("aucun nom de sortie libre")));
+                    return Err(JobError::Io(std::io::Error::other(chud_core::tr!("aucun nom de sortie libre", "no free output name"))));
                 }
             }
             Err(e) => return Err(e.into()),
@@ -581,7 +616,7 @@ fn move_dir_contents(from: &Path, to: &Path) -> std::io::Result<()> {
             } else if ft.is_file() {
                 std::fs::copy(ent.path(), &dest)?;
             } else {
-                return Err(std::io::Error::other("lien inattendu dans le résultat"));
+                return Err(std::io::Error::other(chud_core::tr!("lien inattendu dans le résultat", "unexpected link in the result")));
             }
         }
     }

@@ -4,6 +4,7 @@ adapter = "none"
 homepage = "https://exiftool.org"
 license = "Artistic-1.0-Perl OR GPL-1.0-or-later"
 description = "Lecture, copie et nettoyage des métadonnées."
+description_en = "Reading, copying and cleaning metadata."
 categories = ['image', 'video', 'audio', 'pdf']
 executables = ['exiftool']
 

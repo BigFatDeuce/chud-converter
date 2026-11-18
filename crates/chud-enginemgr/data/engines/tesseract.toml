@@ -4,6 +4,7 @@ adapter = "none"
 homepage = "https://github.com/tesseract-ocr/tesseract"
 license = "Apache-2.0"
 description = "Reconnaissance de texte (OCR) dans les images et les PDF numérisés."
+description_en = "Text recognition (OCR) in images and scanned PDFs."
 categories = ['image', 'pdf']
 executables = ['tesseract']
 

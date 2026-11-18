@@ -44,13 +44,13 @@ pub struct Menu {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ShellError {
-    #[error("programme introuvable : {0}")]
+    #[error("{}", chud_core::trf!("programme introuvable : {}", "program not found: {}", .0.display()))]
     MissingExe(PathBuf),
-    #[error("aucun préréglage actif : rien à mettre dans le menu")]
+    #[error("{}", chud_core::trf!("aucun préréglage actif : rien à mettre dans le menu", "no active preset: nothing to put in the menu"))]
     Empty,
-    #[error("entrée inattendue dans la liste des éléments installés, ignorée par sécurité : {0}")]
+    #[error("{}", chud_core::trf!("entrée inattendue dans la liste des éléments installés, ignorée par sécurité : {}", "unexpected entry in the list of installed items, ignored for safety: {}", .0))]
     Suspicious(String),
-    #[error("menu contextuel non pris en charge sur ce système")]
+    #[error("{}", chud_core::trf!("menu contextuel non pris en charge sur ce système", "context menu not supported on this system"))]
     Unsupported,
     #[error("{0}")]
     Io(#[from] std::io::Error),
@@ -94,7 +94,7 @@ pub fn plan_menus_with(store: &PresetStore, catalog: &FormatCatalog, mut can: im
             let items: Vec<MenuItem> = store
                 .for_kinds(&kind)
                 .filter(|p| !p.is_pointless_for(&guess.id) && can(&guess.id, &p.target))
-                .map(|p| MenuItem { preset: p.id.clone(), name: p.name.clone() })
+                .map(|p| MenuItem { preset: p.id.clone(), name: p.display_name().to_owned() })
                 .collect();
             if items.is_empty() {
                 continue;
@@ -120,7 +120,7 @@ pub fn plan_menus_with(store: &PresetStore, catalog: &FormatCatalog, mut can: im
     let items: Vec<MenuItem> = store
         .for_kinds(&folder)
         .filter(|p| can(&dir, &p.target))
-        .map(|p| MenuItem { preset: p.id.clone(), name: p.name.clone() })
+        .map(|p| MenuItem { preset: p.id.clone(), name: p.display_name().to_owned() })
         .collect();
     if !items.is_empty() {
         menus.push(Menu { key: FOLDER.into(), folder: true, extensions: Vec::new(), mime: vec!["inode/directory".into()], items });

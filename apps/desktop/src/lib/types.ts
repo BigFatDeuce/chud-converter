@@ -108,6 +108,16 @@ export interface EngineView {
   hint: string | null;
 }
 
+/** Réglages de l'application (écran Réglages). */
+export interface SettingsView {
+  language: "system" | "fr" | "en";
+  effective: "fr" | "en";
+  system: "fr" | "en";
+  file: string;
+  error?: string;
+  menuNote?: string;
+}
+
 export interface AppInfo {
   version: string;
   dataDir: string;

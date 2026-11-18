@@ -44,7 +44,7 @@ fn check_path(exe: &Path) -> Result<String, ShellError> {
     if s.chars().any(|c| matches!(c, '"' | '`' | '$' | '%' | '\n' | '\r') || (cfg!(unix) && c == '\\')) {
         return Err(ShellError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!("chemin du programme non pris en charge pour un menu : {s}"),
+            chud_core::trf!("chemin du programme non pris en charge pour un menu : {s}", "program path not supported for a menu: {s}"),
         )));
     }
     Ok(s)
@@ -71,7 +71,10 @@ pub fn plan_files(exe: &Path, menus: &[Menu]) -> Result<Vec<Planned>, ShellError
         for (i, item) in menu.items.iter().enumerate() {
             s.push_str(&format!("\n[Desktop Action p{i}]\nName={}\nExec=\"{exe}\" --preset {} -- %F\n", item.name, item.preset));
         }
-        s.push_str(&format!("\n[Desktop Action open]\nName=Ouvrir dans Chud Converter…\nExec=\"{exe}\" -- %F\n"));
+        s.push_str(&chud_core::trf!(
+            "\n[Desktop Action open]\nName=Ouvrir dans Chud Converter…\nExec=\"{exe}\" -- %F\n",
+            "\n[Desktop Action open]\nName=Open in Chud Converter…\nExec=\"{exe}\" -- %F\n"
+        ));
         out.push(Planned {
             rel: Path::new("kio/servicemenus").join(format!("{PREFIX}{}.desktop", menu.key)),
             content: s,
@@ -106,8 +109,7 @@ pub fn plan_files(exe: &Path, menus: &[Menu]) -> Result<Vec<Planned>, ShellError
     for ((_, id), (name, exts)) in &per_preset {
         out.push(Planned {
             rel: Path::new("nemo/actions").join(format!("{PREFIX}{id}.nemo_action")),
-            content: format!(
-                "{MARKER}\n[Nemo Action]\nName=Chud Converter : {name}\nComment=Convertir avec le préréglage « {name} »\nExec=\"{exe}\" --preset {id} -- %F\nIcon-Name=document-save-as\nSelection=NotNone\nExtensions={};\nQuote=double\n",
+            content: chud_core::trf!("{MARKER}\n[Nemo Action]\nName=Chud Converter : {name}\nComment=Convertir avec le préréglage « {name} »\nExec=\"{exe}\" --preset {id} -- %F\nIcon-Name=document-save-as\nSelection=NotNone\nExtensions={};\nQuote=double\n", "{MARKER}\n[Nemo Action]\nName=Chud Converter: {name}\nComment=Convert with the “{name}” preset\nExec=\"{exe}\" --preset {id} -- %F\nIcon-Name=document-save-as\nSelection=NotNone\nExtensions={};\nQuote=double\n",
                 exts.join(";")
             ),
             executable: false,
@@ -125,7 +127,9 @@ pub fn plan_files(exe: &Path, menus: &[Menu]) -> Result<Vec<Planned>, ShellError
         });
     }
     out.push(Planned {
-        rel: Path::new("nautilus/scripts").join(NAUTILUS_DIR).join("99 Ouvrir dans Chud Converter"),
+        rel: Path::new("nautilus/scripts")
+            .join(NAUTILUS_DIR)
+            .join(chud_core::tr!("99 Ouvrir dans Chud Converter", "99 Open in Chud Converter")),
         content: format!("#!/bin/sh\n{MARKER}\nexec {quoted} -- \"$@\"\n"),
         executable: true,
     });

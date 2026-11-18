@@ -20,11 +20,11 @@ pub enum Confidence {
 }
 
 impl Confidence {
-    pub fn label_fr(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Confidence::Low => "faible",
-            Confidence::Medium => "moyenne",
-            Confidence::High => "élevée",
+            Confidence::Low => crate::tr!("faible", "low"),
+            Confidence::Medium => crate::tr!("moyenne", "medium"),
+            Confidence::High => crate::tr!("élevée", "high"),
         }
     }
 }
@@ -45,14 +45,14 @@ pub enum DetectionMethod {
 }
 
 impl DetectionMethod {
-    pub fn label_fr(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            DetectionMethod::Signature => "signature binaire",
-            DetectionMethod::Container => "conteneur et extension",
-            DetectionMethod::Content => "analyse du contenu",
-            DetectionMethod::Extension => "extension seule",
-            DetectionMethod::Directory => "dossier",
-            DetectionMethod::None => "aucune",
+            DetectionMethod::Signature => crate::tr!("signature binaire", "binary signature"),
+            DetectionMethod::Container => crate::tr!("conteneur et extension", "container and extension"),
+            DetectionMethod::Content => crate::tr!("analyse du contenu", "content analysis"),
+            DetectionMethod::Extension => crate::tr!("extension seule", "extension only"),
+            DetectionMethod::Directory => crate::tr!("dossier", "folder"),
+            DetectionMethod::None => crate::tr!("aucune", "none"),
         }
     }
 }
@@ -146,9 +146,21 @@ pub fn detect_reader<R: Read + Seek>(mut reader: R, file_name: Option<&str>, siz
                         d.format = Some(e.id.clone());
                         d.confidence = Confidence::Low;
                         d.method = DetectionMethod::Extension;
-                        d.note = Some("signature binaire non reconnue : format déduit de l'extension uniquement".into());
+                        d.note = Some(
+                            crate::tr!(
+                                "signature binaire non reconnue : format déduit de l'extension uniquement",
+                                "unrecognized binary signature: format inferred from the extension only"
+                            )
+                            .into(),
+                        );
                     } else {
-                        d.note = Some("format non reconnu (ni signature connue, ni extension connue)".into());
+                        d.note = Some(
+                            crate::tr!(
+                                "format non reconnu (ni signature connue, ni extension connue)",
+                                "unrecognized format (neither a known signature nor a known extension)"
+                            )
+                            .into(),
+                        );
                     }
                 }
             }
@@ -170,10 +182,18 @@ pub fn detect_reader<R: Read + Seek>(mut reader: R, file_name: Option<&str>, siz
                         d.format = Some(e.id.clone());
                         d.confidence = Confidence::Medium;
                         d.method = DetectionMethod::Extension;
-                        d.note = Some(format!("signature « {} » ; format retenu d'après l'extension (même famille)", sig.name));
+                        d.note = Some(crate::trf!(
+                            "signature « {} » ; format retenu d'après l'extension (même famille)",
+                            "signature “{}”; format chosen from the extension (same family)",
+                            sig.name
+                        ));
                     } else {
                         d.extension_mismatch = ext_def.is_some();
-                        d.note = Some(format!("reconnu comme « {} », format non pris en charge", sig.name));
+                        d.note = Some(crate::trf!(
+                            "reconnu comme « {} », format non pris en charge",
+                            "recognized as “{}”, an unsupported format",
+                            sig.name
+                        ));
                     }
                 }
             }
@@ -279,7 +299,7 @@ fn classify_text(d: &mut Detection, text: &str, complete: bool, ext: Option<&For
                     d.method = DetectionMethod::Content;
                     d.confidence = Confidence::High;
                 } else if !(g == "xml" && is_xml_family(e)) && !(g == "json" && is_json_family(e)) {
-                    d.note = Some(format!("le contenu ressemble plutôt à du {g}"));
+                    d.note = Some(crate::trf!("le contenu ressemble plutôt à du {g}", "the content looks more like {g}"));
                 }
             }
         }

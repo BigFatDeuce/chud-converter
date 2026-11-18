@@ -221,3 +221,26 @@ Le produit s'appelle **Chud Converter** partout : fenêtres, installeur, métado
 l'exécutable, dossier de données (`%LOCALAPPDATA%\Chud Converter`, `~/.local/share/chudconverter`
 selon les conventions de chaque système), dépôt `chud-converter`. La commande en ligne reste
 `chud` (courte à taper). Le nom « Chud Convert » du pack d'icônes n'est plus utilisé.
+
+## ADR-020 — Deux langues, textes en ligne
+
+**Décision.** Le français et l'anglais sont écrits côte à côte, à l'endroit où le texte est
+produit : `tr!("…", "…")` et `trf!("… {x}", "… {x}")` dans le code Rust, `L("…", "…")` dans
+l'interface ; `name_en` / `limitations_en` dans `formats.toml`, `description_en` /
+`license_en` dans les manifestes de moteurs. Le choix (`system`, `fr`, `en`) est enregistré
+dans le fichier de réglages partagé (`engines.toml`, clé `language`) : l'application, la ligne
+de commande et le menu clic droit parlent la même langue. Par défaut, langue du système
+(français si le système est en français, anglais sinon).
+
+**Pourquoi.** Deux langues seulement : des fichiers de traduction par clés (Fluent, gettext)
+ajouteraient une indirection sans bénéfice, et les clés oubliées passent inaperçues. Écrits
+ensemble, les deux textes ne divergent pas, le compilateur vérifie que les arguments des
+messages formatés sont les mêmes, et un test refuse tout texte français resté dans le
+catalogue anglais. Si une troisième langue arrive, ces paires se convertissent
+mécaniquement en catalogue.
+
+**Conséquences.** Changer de langue ne relance rien : l'interface est reconstruite et les
+textes produits par le cœur (formats, cibles, rapports, préréglages, moteurs) sont redemandés.
+Les rapports déjà écrits restent dans leur langue. Les préréglages fournis suivent la langue ;
+un nom choisi par l'utilisateur est conservé tel quel. Un fichier de réglages illisible n'est
+jamais écrasé : le changement est refusé et l'erreur affichée.

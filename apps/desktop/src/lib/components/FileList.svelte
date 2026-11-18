@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { L } from "../i18n.svelte";
   import Icon from "./Icon.svelte";
   import { store } from "../store.svelte";
   import { categoryLabel, formatSize } from "../format";
@@ -9,15 +10,15 @@
 
 <section>
   <header>
-    <h2>Fichiers</h2>
+    <h2>{L("Fichiers", "Files")}</h2>
     {#if store.files.length}
       <span class="count">{store.files.length}</span>
     {/if}
     <div class="actions">
-      <button class="btn" onclick={() => store.pickFiles()}><Icon name="plus" size={15} /> Ajouter des fichiers</button>
-      <button class="btn" onclick={() => store.pickFolderAsInput()}><Icon name="folder" size={15} /> Ajouter un dossier</button>
+      <button class="btn" onclick={() => store.pickFiles()}><Icon name="plus" size={15} /> {L("Ajouter des fichiers", "Add files")}</button>
+      <button class="btn" onclick={() => store.pickFolderAsInput()}><Icon name="folder" size={15} /> {L("Ajouter un dossier", "Add a folder")}</button>
       {#if store.files.length}
-        <button class="btn ghost" onclick={() => store.clearFiles()}>Vider la liste</button>
+        <button class="btn ghost" onclick={() => store.clearFiles()}>{L("Vider la liste", "Clear the list")}</button>
       {/if}
     </div>
   </header>
@@ -25,16 +26,16 @@
   {#if !store.files.length}
     <button class="empty" onclick={() => store.pickFiles()}>
       <Icon name="upload" size={34} stroke={1.6} />
-      <strong>Glissez vos fichiers ou dossiers ici</strong>
-      <span>ou cliquez pour les choisir. Le format réel de chaque fichier est détecté d'après son contenu.</span>
-      <span class="faint">Vos originaux ne sont jamais modifiés.</span>
+      <strong>{L("Glissez vos fichiers ou dossiers ici", "Drag your files or folders here")}</strong>
+      <span>{L("ou cliquez pour les choisir. Le format réel de chaque fichier est détecté d'après son contenu.", "or click to choose them. The real format of each file is detected from its content.")}</span>
+      <span class="faint">{L("Vos originaux ne sont jamais modifiés.", "Your originals are never modified.")}</span>
     </button>
   {:else}
     <div class="list card">
       {#if usable.length > 1}
         <label class="row head">
           <input type="checkbox" checked={allChecked} onchange={(e) => store.setAllChecked(e.currentTarget.checked)} />
-          <span class="muted">{store.checked.length} sur {usable.length} sélectionnés pour la conversion</span>
+          <span class="muted">{L(`${store.checked.length} sur ${usable.length} sélectionnés pour la conversion`, `${store.checked.length} of ${usable.length} selected for conversion`)}</span>
         </label>
       {/if}
       {#each store.files as f (f.info.path)}
@@ -45,7 +46,7 @@
             type="checkbox"
             checked={f.checked && !broken}
             disabled={broken}
-            aria-label="Convertir {i.name}"
+            aria-label={L(`Convertir ${i.name}`, `Convert ${i.name}`)}
             onchange={() => store.toggle(i.path)}
           />
           <span class="kind" class:dir={i.isDir}><Icon name={i.isDir ? "folder" : "file"} size={18} stroke={1.7} /></span>
@@ -55,23 +56,23 @@
               {#if i.error}
                 <span class="bad"><Icon name="alert" size={13} /> {i.error}</span>
               {:else}
-                <span title="Détection : {i.method ?? '?'}, confiance {i.confidence ?? '?'}">{i.formatName ?? i.format}</span>
-                {#if i.category}<span class="faint">· {categoryLabel[i.category]}</span>{/if}
+                <span title={L(`Détection : ${i.method ?? '?'}, confiance ${i.confidence ?? '?'}`, `Detection: ${i.method ?? '?'}, confidence ${i.confidence ?? '?'}`)}>{i.formatName ?? i.format}</span>
+                {#if i.category}<span class="faint">· {categoryLabel(i.category)}</span>{/if}
                 <span class="faint">· {formatSize(i.size)}</span>
                 {#if i.extensionMismatch}
-                  <span class="warn" title={i.note ?? ""}><Icon name="alert" size={13} /> extension trompeuse</span>
+                  <span class="warn" title={i.note ?? ""}><Icon name="alert" size={13} /> {L("extension trompeuse", "misleading extension")}</span>
                 {/if}
                 {#if f.loading}
-                  <span class="faint">· recherche des conversions…</span>
+                  <span class="faint">{L("· recherche des conversions…", "· looking for conversions…")}</span>
                 {:else if f.targetsError}
                   <span class="bad" title={f.targetsError}><Icon name="alert" size={13} /> {f.targetsError}</span>
                 {:else if f.targets && !f.targets.targets.length}
-                  <span class="warn">aucune conversion possible avec les moteurs installés</span>
+                  <span class="warn">{L("aucune conversion possible avec les moteurs installés", "no conversion possible with the installed engines")}</span>
                 {/if}
               {/if}
             </div>
           </div>
-          <button class="icon-btn" aria-label="Retirer {i.name} de la liste" title="Retirer de la liste (le fichier n'est pas supprimé)" onclick={() => store.removeFile(i.path)}>
+          <button class="icon-btn" aria-label={L(`Retirer ${i.name} de la liste`, `Remove ${i.name} from the list`)} title={L("Retirer de la liste (le fichier n'est pas supprimé)", "Remove from the list (the file is not deleted)")} onclick={() => store.removeFile(i.path)}>
             <Icon name="x" size={15} />
           </button>
         </div>

@@ -108,15 +108,15 @@ impl ProcessOutput {
 
 #[derive(Debug, Error)]
 pub enum ProcessError {
-    #[error("le chemin du programme doit être absolu : {0}")]
+    #[error("{}", chud_core::trf!("le chemin du programme doit être absolu : {}", "the program path must be absolute: {}", .0.display()))]
     NotAbsolute(PathBuf),
-    #[error("impossible de lancer {program} : {source}")]
+    #[error("{}", chud_core::trf!("impossible de lancer {} : {source}", "cannot start {}: {source}", program.display()))]
     Spawn { program: PathBuf, source: std::io::Error },
-    #[error("processus annulé")]
+    #[error("{}", chud_core::trf!("processus annulé", "process cancelled"))]
     Cancelled { stderr_tail: String },
-    #[error("délai maximal dépassé ({0:?})")]
+    #[error("{}", chud_core::trf!("délai maximal dépassé ({:?})", "time limit exceeded ({:?})", .0))]
     Timeout(Duration, String),
-    #[error("erreur d'entrée/sortie : {0}")]
+    #[error("{}", chud_core::trf!("erreur d'entrée/sortie : {}", "input/output error: {}", .0))]
     Io(#[from] std::io::Error),
 }
 

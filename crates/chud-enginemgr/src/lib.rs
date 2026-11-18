@@ -41,11 +41,11 @@ const BUILTIN_MANIFESTS: &[&str] = &[
 
 #[derive(Debug, Error)]
 pub enum ManagerError {
-    #[error("manifeste « {0} » invalide : {1}")]
+    #[error("{}", chud_core::trf!("manifeste « {} » invalide : {}", "invalid manifest “{}”: {}", .0, .1))]
     Manifest(String, String),
-    #[error("réglages invalides ({0}) : {1}")]
+    #[error("{}", chud_core::trf!("réglages invalides ({}) : {}", "invalid settings ({}): {}", .0.display(), .1))]
     Settings(PathBuf, String),
-    #[error("erreur d'entrée/sortie : {0}")]
+    #[error("{}", chud_core::trf!("erreur d'entrée/sortie : {}", "input/output error: {}", .0))]
     Io(#[from] std::io::Error),
 }
 
@@ -72,7 +72,11 @@ pub struct Manifest {
     pub adapter: String,
     pub homepage: String,
     pub license: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license_en: Option<String>,
     pub description: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description_en: Option<String>,
     #[serde(default)]
     pub categories: Vec<String>,
     /// Le premier est l'exécutable principal, les suivants des compagnons (ex. ffprobe).
@@ -93,7 +97,7 @@ impl Manifest {
         let m: Manifest = toml::from_str(text).map_err(|e| ManagerError::Manifest("?".into(), e.to_string()))?;
         Regex::new(&m.detect.version_regex).map_err(|e| ManagerError::Manifest(m.id.clone(), e.to_string()))?;
         if m.executables.is_empty() {
-            return Err(ManagerError::Manifest(m.id.clone(), "aucun exécutable".into()));
+            return Err(ManagerError::Manifest(m.id.clone(), chud_core::tr!("aucun exécutable", "no executable").into()));
         }
         Ok(m)
     }
@@ -117,6 +121,22 @@ impl Manifest {
             &self.detect.known_paths_macos
         } else {
             &self.detect.known_paths_linux
+        }
+    }
+
+    /// Description dans la langue courante.
+    pub fn description_l(&self) -> &str {
+        match (chud_core::lang(), &self.description_en) {
+            (chud_core::Lang::En, Some(en)) => en,
+            _ => &self.description,
+        }
+    }
+
+    /// Licence dans la langue courante.
+    pub fn license_l(&self) -> &str {
+        match (chud_core::lang(), &self.license_en) {
+            (chud_core::Lang::En, Some(en)) => en,
+            _ => &self.license,
         }
     }
 
@@ -185,6 +205,7 @@ impl AppPaths {
         self.config_dir.join("presets.toml")
     }
 
+    /// Réglages de l'application (langue, moteurs).
     pub fn settings_file(&self) -> PathBuf {
         self.config_dir.join("engines.toml")
     }
@@ -211,6 +232,9 @@ fn yes() -> bool {
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
+    /// Langue de l'interface : `system` (par défaut), `fr` ou `en`.
+    #[serde(default)]
+    pub language: chud_core::LangChoice,
     #[serde(default)]
     pub engines: BTreeMap<String, EngineSettings>,
 }
@@ -222,6 +246,13 @@ impl Settings {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Langue effective et application à tout le processus.
+    pub fn apply_language(&self) -> chud_core::Lang {
+        let l = self.language.resolve();
+        chud_core::set_lang(l);
+        l
     }
 
     /// Écriture atomique (fichier temporaire puis renommage).
@@ -388,7 +419,7 @@ pub fn probe_version(exe: &Path, m: &Manifest) -> Result<String, String> {
         }
     }
     Err(if out.success() {
-        "version introuvable dans la réponse".into()
+        chud_core::tr!("version introuvable dans la réponse", "version not found in the output").into()
     } else {
         format!("code {:?} : {}", out.code, out.stderr_tail.lines().last().unwrap_or("").trim())
     })
@@ -459,9 +490,9 @@ impl EngineManager {
             companions: BTreeMap::new(),
             version: None,
             origin: None,
-            license: m.license.clone(),
+            license: m.license_l().to_owned(),
             homepage: m.homepage.clone(),
-            description: m.description.clone(),
+            description: m.description_l().to_owned(),
             hint: m.hint().map(str::to_owned),
         };
         if self.settings.engines.get(&m.id).is_some_and(|s| !s.enabled) {
@@ -473,7 +504,7 @@ impl EngineManager {
         for (path, origin, managed_version) in self.candidates(m) {
             if !path.is_absolute() || !path.is_file() {
                 if origin == EngineOrigin::Custom {
-                    last_error = Some(format!("chemin personnalisé introuvable : {}", path.display()));
+                    last_error = Some(chud_core::trf!("chemin personnalisé introuvable : {}", "custom path not found: {}", path.display()));
                 }
                 continue;
             }
@@ -549,7 +580,7 @@ impl EngineManager {
 }
 
 fn build_adapter(st: &EngineStatus) -> Result<Arc<dyn Engine>, String> {
-    let path = st.path.clone().ok_or("chemin absent")?;
+    let path = st.path.clone().ok_or(chud_core::tr!("chemin absent", "path missing"))?;
     let origin = st.origin.unwrap_or(EngineOrigin::System);
     match st.id.as_str() {
         "ffmpeg" => {
@@ -557,7 +588,7 @@ fn build_adapter(st: &EngineStatus) -> Result<Arc<dyn Engine>, String> {
             Ok(Arc::new(Ffmpeg::new(path, ffprobe, st.version.clone(), origin)?))
         }
         "7zip" => Ok(Arc::new(SevenZip::new(path, st.version.clone(), origin)?)),
-        other => Err(format!("aucun adaptateur pour {other}")),
+        other => Err(chud_core::trf!("aucun adaptateur pour {other}", "no adapter for {other}")),
     }
 }
 

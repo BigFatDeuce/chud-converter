@@ -97,7 +97,7 @@ impl Registry {
                 c.set_value("", &command(exe, Some(&item.preset)))?;
             }
             let (open, _) = hkcu.create_subkey(self.path(&format!("{menu_key}\\shell\\99-ouvrir")))?;
-            open.set_value("MUIVerb", &"Ouvrir dans Chud Converter…")?;
+            open.set_value("MUIVerb", &chud_core::tr!("Ouvrir dans Chud Converter…", "Open in Chud Converter…"))?;
             open.set_value("CommandFlags", &SEPARATOR_BEFORE)?;
             let (c, _) = open.create_subkey("command")?;
             c.set_value("", &command(exe, None))?;
@@ -179,7 +179,7 @@ impl Registry {
     }
 
     pub fn status(&self) -> Result<Status, ShellError> {
-        let location = format!("registre de l'utilisateur (HKCU\\{})", self.classes);
+        let location = chud_core::trf!("registre de l'utilisateur (HKCU\\{})", "user registry (HKCU\\{})", self.classes);
         let Ok(m) = Self::hkcu().open_subkey_with_flags(&self.manifest, KEY_READ) else {
             return Ok(Status { location, ..Status::default() });
         };

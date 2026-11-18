@@ -4,6 +4,7 @@ adapter = "none"
 homepage = "https://www.ghostscript.com"
 license = "AGPL-3.0-or-later"
 description = "PDF et PostScript : rendu, PDF/A, compression."
+description_en = "PDF and PostScript: rendering, PDF/A, compression."
 categories = ['pdf']
 executables = ['gs']
 executables_windows = ['gswin64c']

@@ -3,7 +3,8 @@
 // bandeau « données fictives ». Rien ici n'est jamais présenté comme un vrai résultat.
 
 import type { Api } from "./api";
-import type { EngineView, FileInfo, FileTargets, PlanView, PresetView, QuickBatch, TargetView, UiEvent } from "./types";
+import type { Lang, LangChoice } from "./i18n.svelte";
+import type { EngineView, FileInfo, FileTargets, PlanView, PresetView, QuickBatch, SettingsView, TargetView, UiEvent } from "./types";
 
 const video = (format: string, name: string, fidelity: TargetView["fidelity"], headline: string, lost: string[] = []): TargetView => ({
   format,
@@ -114,6 +115,16 @@ const PRESETS: PresetView[] = [
   preset("webp", "WebP", "webp", "WebP", ["image"]),
   preset("zip", "ZIP", "zip", "ZIP", ["folder"]),
 ];
+
+let langChoice: LangChoice = "system";
+const langListeners: ((l: Lang) => void)[] = [];
+const systemLang = (): Lang => (navigator.language.toLowerCase().startsWith("fr") ? "fr" : "en");
+const settings = (): SettingsView => ({
+  language: langChoice,
+  effective: langChoice === "system" ? systemLang() : langChoice,
+  system: systemLang(),
+  file: "C:\\Exemple\\config\\engines.toml",
+});
 
 export function mockApi(): Api {
   let listener: ((e: UiEvent) => void) | null = null;
@@ -295,6 +306,17 @@ export function mockApi(): Api {
     shellStatus: () => delay(shell()),
     shellInstall: () => ((menu = true), delay(shell(), 600)),
     shellUninstall: () => ((menu = false), delay(shell(), 300)),
+    settings: () => delay(settings()),
+    async setLanguage(language) {
+      langChoice = language;
+      const v = settings();
+      for (const cb of langListeners) cb(v.effective);
+      return delay(v, 200);
+    },
+    async onLanguage(cb) {
+      langListeners.push(cb);
+      return () => {};
+    },
   };
   return api;
 }

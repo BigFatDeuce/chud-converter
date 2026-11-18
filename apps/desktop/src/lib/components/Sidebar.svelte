@@ -1,13 +1,15 @@
 <script lang="ts">
+  import { L } from "../i18n.svelte";
   import logo from "$branding/svg/logo-small.svg";
   import Icon, { type IconName } from "./Icon.svelte";
   import { store, type View } from "../store.svelte";
 
   const items: { view: View; label: string; icon: IconName }[] = [
-    { view: "convert", label: "Convertir", icon: "convert" },
-    { view: "presets", label: "Préréglages", icon: "preset" },
-    { view: "engines", label: "Moteurs", icon: "engine" },
-    { view: "about", label: "À propos", icon: "info" },
+    { view: "convert", label: L("Convertir", "Convert"), icon: "convert" },
+    { view: "presets", label: L("Préréglages", "Presets"), icon: "preset" },
+    { view: "engines", label: L("Moteurs", "Engines"), icon: "engine" },
+    { view: "settings", label: L("Réglages", "Settings"), icon: "settings" },
+    { view: "about", label: L("À propos", "About"), icon: "info" },
   ];
 </script>
 
@@ -16,7 +18,7 @@
     <img src={logo} alt="" width="40" height="40" />
     <div>
       <strong>Chud Converter</strong>
-      <span>local et honnête</span>
+      <span>{L("local et honnête", "local and honest")}</span>
     </div>
   </div>
 
@@ -27,7 +29,7 @@
           <Icon name={it.icon} size={17} />
           <span>{it.label}</span>
           {#if it.view === "convert" && store.active > 0}
-            <em title="Conversions en attente ou en cours">{store.active}</em>
+            <em title={L("Conversions en attente ou en cours", "Conversions waiting or running")}>{store.active}</em>
           {/if}
         </button>
       </li>
@@ -36,7 +38,7 @@
 
   <div class="foot">
     <Icon name="shield" size={14} />
-    <span>Tout reste sur cet ordinateur</span>
+    <span>{L("Tout reste sur cet ordinateur", "Everything stays on this computer")}</span>
   </div>
 </nav>
 

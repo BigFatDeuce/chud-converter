@@ -58,6 +58,18 @@ nécessaires pour la vidéo, l'audio et les archives (`winget install Gyan.FFmpe
 | 25 | **Retirer du menu** | Le menu disparaît de l'Explorateur ; `chud.exe shell status` répond « non installé » |
 | 26 | Terminal : `chud.exe convert Exemples\musique.wav --preset flac` puis `chud.exe presets Exemples\photo.png` | Conversion par préréglage ; la liste des préréglages proposés pour une image (sans « PNG ») |
 
+## Langue (français / anglais)
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 27 | Premier lancement | L'application parle la langue de Windows : français si Windows est en français, anglais sinon |
+| 28 | Écran **Réglages** → **English**, avec `vacances.mkv` dans la liste et un format choisi | Tout passe en anglais **sans redémarrer** : menus, format du fichier (« Video »), cibles, plan, options, préréglages (« Light MP4 (720p) »), écran Moteurs ; le fichier et le format choisis restent |
+| 29 | Convertir en anglais, puis revenir en **Français** | Le nouveau rapport est en anglais ; après le retour, l'interface est en français, l'ancien rapport garde sa langue |
+| 30 | **Langue du système** | Retour à la langue de Windows ; le choix est mémorisé après fermeture |
+| 31 | Terminal : `chud.exe language en`, puis `chud.exe --help` et `chud.exe plan Exemples\vacances.mkv --to mp4` | Aide et plan en anglais ; `chud.exe language` affiche le choix et le fichier où il est enregistré |
+| 32 | `chud.exe --lang fr detect Exemples\faux.jpg` | Réponse en français pour cette seule commande ; le réglage ne change pas |
+| 33 | Avec le menu clic droit installé (test 21), changer de langue dans **Réglages** | Les entrées du menu (« Compress to ZIP », « Open in Chud Converter… ») suivent la nouvelle langue. **Retirez le menu ensuite** (test 25) |
+
 ## Signaler un problème
 
 Notez le numéro du test, ce que vous avez fait et ce qui s'est affiché (une capture aide

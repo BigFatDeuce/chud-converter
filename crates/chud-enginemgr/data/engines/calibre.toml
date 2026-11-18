@@ -4,6 +4,7 @@ adapter = "none"
 homepage = "https://calibre-ebook.com"
 license = "GPL-3.0-or-later"
 description = "Livres numériques : EPUB, MOBI, AZW3, FB2…"
+description_en = "E-books: EPUB, MOBI, AZW3, FB2…"
 categories = ['ebook']
 executables = ['ebook-convert']
 

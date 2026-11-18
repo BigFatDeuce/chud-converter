@@ -3,7 +3,9 @@ name = "ImageMagick"
 adapter = "none"
 homepage = "https://imagemagick.org"
 license = "ImageMagick (compatible Apache-2.0)"
+license_en = "ImageMagick (Apache-2.0 compatible)"
 description = "Images : plus de 200 formats."
+description_en = "Images: more than 200 formats."
 categories = ['image']
 # « convert » n'est jamais utilisé : sous Windows, c'est l'outil système de conversion de disque.
 executables = ['magick']

@@ -8,6 +8,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+chud-core.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]

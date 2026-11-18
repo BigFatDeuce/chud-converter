@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { L } from "../i18n.svelte";
   // Petite fenêtre ouverte par le menu clic droit : suit les conversions lancées par un
   // préréglage, montre les erreurs telles quelles, puis se ferme seule si tout a réussi.
   import logo from "$branding/svg/logo-small.svg";
@@ -58,14 +59,14 @@
   <header>
     <img src={logo} alt="" width="28" height="28" />
     <div>
-      <strong>{names.length ? names.join(", ") : "Conversion rapide"}</strong>
+      <strong>{names.length ? names.join(", ") : L("Conversion rapide", "Quick conversion")}</strong>
       <span class="faint">Chud Converter</span>
     </div>
   </header>
 
   <div class="body">
     {#if !store.quick.length}
-      <p class="muted wait">Préparation des conversions…</p>
+      <p class="muted wait">{L("Préparation des conversions…", "Preparing the conversions…")}</p>
     {/if}
 
     {#each errors as b, i (i)}
@@ -85,7 +86,7 @@
         <Icon name="skip" size={15} />
         <ul>
           {#each ignored as g, i (i)}
-            <li><span class="selectable" title={g.path}>{baseName(g.path)}</span> <span class="faint">— ignoré : {g.reason}</span></li>
+            <li><span class="selectable" title={g.path}>{baseName(g.path)}</span> <span class="faint">{L(`— ignoré : ${g.reason}`, `— skipped: ${g.reason}`)}</span></li>
           {/each}
         </ul>
       </div>
@@ -98,16 +99,16 @@
 
   <footer>
     {#if succeeded && !keepOpen}
-      <span class="faint small">Tout est terminé · fermeture dans {left} s</span>
-      <button class="btn small ghost" onclick={() => (keepOpen = true)}>Garder ouvert</button>
+      <span class="faint small">{L(`Tout est terminé · fermeture dans ${left} s`, `All done · closing in ${left} s`)}</span>
+      <button class="btn small ghost" onclick={() => (keepOpen = true)}>{L("Garder ouvert", "Keep open")}</button>
     {:else if store.active}
-      <span class="faint small">Fermer la fenêtre annule les conversions en cours.</span>
+      <span class="faint small">{L("Fermer la fenêtre annule les conversions en cours.", "Closing the window cancels the running conversions.")}</span>
     {:else}
       <span></span>
     {/if}
     <div class="buttons">
-      <button class="btn small" onclick={openMain}>Ouvrir Chud Converter</button>
-      <button class="btn small primary" onclick={close}>{store.active ? "Annuler et fermer" : "Fermer"}</button>
+      <button class="btn small" onclick={openMain}>{L("Ouvrir Chud Converter", "Open Chud Converter")}</button>
+      <button class="btn small primary" onclick={close}>{store.active ? L("Annuler et fermer", "Cancel and close") : L("Fermer", "Close")}</button>
     </div>
   </footer>
 </div>

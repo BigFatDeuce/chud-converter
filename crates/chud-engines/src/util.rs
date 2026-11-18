@@ -1,3 +1,4 @@
+use chud_core::trf;
 use chud_core::{EngineError, ExecContext};
 use chud_process::{ProcessError, ProcessOutput, ProcessSpec};
 use std::path::Path;
@@ -35,8 +36,12 @@ pub fn map_process_error(e: ProcessError) -> EngineError {
     match e {
         ProcessError::Cancelled { .. } => EngineError::Cancelled,
         ProcessError::Timeout(t, _) => EngineError::Timeout(t),
-        ProcessError::NotAbsolute(p) => EngineError::Other(format!("chemin de moteur non absolu : {}", p.display())),
-        ProcessError::Spawn { program, source } => EngineError::Other(format!("impossible de lancer {} : {source}", program.display())),
+        ProcessError::NotAbsolute(p) => {
+            EngineError::Other(trf!("chemin de moteur non absolu : {}", "engine path is not absolute: {}", p.display()))
+        }
+        ProcessError::Spawn { program, source } => {
+            EngineError::Other(trf!("impossible de lancer {} : {source}", "cannot start {}: {source}", program.display()))
+        }
         ProcessError::Io(e) => EngineError::Io(e),
     }
 }

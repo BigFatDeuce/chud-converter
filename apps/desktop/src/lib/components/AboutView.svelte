@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { L } from "../i18n.svelte";
   import logo from "$branding/svg/logo-small.svg";
   import Icon from "./Icon.svelte";
   import { store } from "../store.svelte";
@@ -24,30 +25,30 @@
   }
 
   const principles = [
-    ["Honnête", "Chaque conversion annonce sa fidélité et liste ce qui sera perdu, avant de commencer."],
-    ["Vérifié", "Le résultat est relu et son format détecté à nouveau. Un outil qui « finit sans erreur » ne suffit pas."],
-    ["Prudent", "L'original n'est jamais modifié. Le fichier final n'apparaît qu'une fois complet et vérifié."],
-    ["Local", "Tout se passe sur cet ordinateur. Aucun fichier, aucun nom de fichier n'est envoyé sur Internet. Pas de télémétrie."],
+    [L("Honnête", "Honest"), L("Chaque conversion annonce sa fidélité et liste ce qui sera perdu, avant de commencer.", "Every conversion states its fidelity and lists what will be lost, before it starts.")],
+    [L("Vérifié", "Verified"), L("Le résultat est relu et son format détecté à nouveau. Un outil qui « finit sans erreur » ne suffit pas.", "The result is read back and its format detected again. A tool that “finishes without errors” is not enough.")],
+    ["Prudent", L("L'original n'est jamais modifié. Le fichier final n'apparaît qu'une fois complet et vérifié.", "The original is never modified. The final file only appears once complete and verified.")],
+    ["Local", L("Tout se passe sur cet ordinateur. Aucun fichier, aucun nom de fichier n'est envoyé sur Internet. Pas de télémétrie.", "Everything happens on this computer. No file and no file name is sent over the Internet. No telemetry.")],
   ];
 </script>
 
 <div class="page">
   <div class="hero">
-    <img src={logo} alt="Logo de Chud Converter" width="96" height="96" />
+    <img src={logo} alt={L("Logo de Chud Converter", "Chud Converter logo")} width="96" height="96" />
     <div>
       <h1>Chud Converter</h1>
-      <p class="muted">Le convertisseur de fichiers universel, local et honnête.</p>
+      <p class="muted">{L("Le convertisseur de fichiers universel, local et honnête.", "The universal, local and honest file converter.")}</p>
       {#if store.info}
-        <p class="version">Version {store.info.version} — alpha</p>
+        <p class="version">{L(`Version ${store.info.version} — alpha`, `Version ${store.info.version} — alpha`)}</p>
       {/if}
     </div>
   </div>
 
   {#if store.info}
     <div class="stats">
-      <div class="card"><b>{nf.format(store.info.formats)}</b><span>formats connus</span></div>
-      <div class="card"><b>{nf.format(store.info.conversions)}</b><span>conversions directes disponibles</span></div>
-      <div class="card"><b>{store.info.enginesReady}</b><span>moteurs prêts</span></div>
+      <div class="card"><b>{nf.format(store.info.formats)}</b><span>{L("formats connus", "known formats")}</span></div>
+      <div class="card"><b>{nf.format(store.info.conversions)}</b><span>{L("conversions directes disponibles", "direct conversions available")}</span></div>
+      <div class="card"><b>{store.info.enginesReady}</b><span>{L("moteurs prêts", "engines ready")}</span></div>
     </div>
   {/if}
 
@@ -63,27 +64,27 @@
   <div class="card facts">
     {#if store.info}
       <div>
-        <span class="faint">Données de l'application</span>
+        <span class="faint">{L("Données de l'application", "App data")}</span>
         <span class="path">
           <span class="mono selectable">{store.info.dataDir}</span>
-          {#if store.info.portable}<em>mode portable</em>{/if}
-          <button class="icon-btn" title="Afficher dans le dossier" aria-label="Afficher le dossier des données" onclick={() => reveal(store.info!.dataDir)}>
+          {#if store.info.portable}<em>{L("mode portable", "portable mode")}</em>{/if}
+          <button class="icon-btn" title={L("Afficher dans le dossier", "Show in folder")} aria-label={L("Afficher le dossier des données", "Show the data folder")} onclick={() => reveal(store.info!.dataDir)}>
             <Icon name="reveal" size={14} />
           </button>
         </span>
       </div>
     {/if}
     <div>
-      <span class="faint">Licence</span>
-      <span>Logiciel libre sous licence GNU GPL, version 3 ou ultérieure. Les moteurs externes gardent leur propre licence.</span>
+      <span class="faint">{L("Licence", "License")}</span>
+      <span>{L("Logiciel libre sous licence GNU GPL, version 3 ou ultérieure. Les moteurs externes gardent leur propre licence.", "Free software under the GNU GPL, version 3 or later. External engines keep their own license.")}</span>
     </div>
     <div>
-      <span class="faint">Code source</span>
+      <span class="faint">{L("Code source", "Source code")}</span>
       <button class="link" onclick={() => open(REPO)}>github.com/BigFatDeuce/chud-converter <Icon name="external" size={12} /></button>
     </div>
     <div>
-      <span class="faint">Signaler un problème</span>
-      <button class="link" onclick={() => open(`${REPO}/issues`)}>Ouvrir un ticket <Icon name="external" size={12} /></button>
+      <span class="faint">{L("Signaler un problème", "Report a problem")}</span>
+      <button class="link" onclick={() => open(`${REPO}/issues`)}>{L("Ouvrir un ticket", "Open an issue")} <Icon name="external" size={12} /></button>
     </div>
   </div>
 </div>

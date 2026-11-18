@@ -44,11 +44,11 @@ pub enum Fidelity {
 }
 
 impl Fidelity {
-    pub fn label_fr(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Fidelity::Lossless => "sans perte",
-            Fidelity::Depends => "selon le contenu",
-            Fidelity::Lossy => "avec perte",
+            Fidelity::Lossless => crate::tr!("sans perte", "lossless"),
+            Fidelity::Depends => crate::tr!("selon le contenu", "depends on content"),
+            Fidelity::Lossy => crate::tr!("avec perte", "lossy"),
         }
     }
 }
@@ -234,28 +234,28 @@ impl Verification {
 
 #[derive(Debug, Error)]
 pub enum EngineError {
-    #[error("opération annulée")]
+    #[error("{}", crate::tr!("opération annulée", "operation cancelled"))]
     Cancelled,
-    #[error("délai maximal dépassé ({0:?})")]
+    #[error("{t} ({0:?})", t = crate::tr!("délai maximal dépassé", "time limit exceeded"))]
     Timeout(Duration),
-    #[error("conversion non prise en charge : {0}")]
+    #[error("{t}{0}", t = crate::tr!("conversion non prise en charge : ", "unsupported conversion: "))]
     Unsupported(String),
-    #[error("option « {key} » : {message}")]
+    #[error("{}", crate::trf!("option « {key} » : {message}", "option “{key}”: {message}"))]
     InvalidOption { key: String, message: String },
-    #[error("fichier d'entrée invalide ou corrompu : {0}")]
+    #[error("{t}{0}", t = crate::tr!("fichier d'entrée invalide ou corrompu : ", "invalid or corrupt input file: "))]
     InvalidInput(String),
-    #[error("refusé pour raison de sécurité : {0}")]
+    #[error("{t}{0}", t = crate::tr!("refusé pour raison de sécurité : ", "refused for safety reasons: "))]
     Refused(String),
-    #[error("le moteur a échoué{} : {detail}", exit_code_suffix(.code))]
+    #[error("{}", crate::trf!("le moteur a échoué{} : {detail}", "the engine failed{}: {detail}", exit_code_suffix(code)))]
     Process { code: Option<i32>, detail: String },
-    #[error("erreur d'entrée/sortie : {0}")]
+    #[error("{t}{0}", t = crate::tr!("erreur d'entrée/sortie : ", "input/output error: "))]
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Other(String),
 }
 
 fn exit_code_suffix(code: &Option<i32>) -> String {
-    code.map(|c| format!(" (code de sortie {c})")).unwrap_or_default()
+    code.map(|c| crate::trf!(" (code de sortie {c})", " (exit code {c})")).unwrap_or_default()
 }
 
 impl EngineError {
@@ -308,7 +308,7 @@ pub trait Engine: Send + Sync {
             None => StepAssessment {
                 fidelity: Fidelity::Lossy,
                 notes: Vec::new(),
-                unavailable: Some("conversion non déclarée par le moteur".into()),
+                unavailable: Some(crate::tr!("conversion non déclarée par le moteur", "conversion not declared by the engine").into()),
                 preserves: None,
             },
         }

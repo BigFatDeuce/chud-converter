@@ -78,6 +78,7 @@ cargo test --workspace
 | `chud-jobs` (préréglages) | les 21 préréglages fournis, chacun exécuté sur un vrai fichier ; options reconnues par les moteurs |
 | `chud-shell` | contenu des menus d'après les préréglages et les moteurs ; inscription réelle dans une branche de test du registre (Windows), réinstallation sans doublon, retrait exact, clé d'un autre programme intacte, liste trafiquée refusée ; fichiers Dolphin, Nemo, Nautilus |
 | `chud-cli` | développement des motifs `*.ext` sans réinterpréter un chemin existant |
+| Langues | choix `system`/`fr`/`en` et langue du système ; aucun texte français dans le catalogue anglais ; noms des préréglages fournis traduits, noms personnels conservés ; dans l'application, changement de langue enregistré, appliqué aux rapports et aux préréglages, autres réglages conservés, fichier illisible jamais écrasé |
 
 Les tests qui exigent un moteur absent affichent `SKIP` et réussissent. Avec la variable
 `CHUD_REQUIRE_ENGINES=1` (utilisée par la CI), un moteur absent fait **échouer** le test : une

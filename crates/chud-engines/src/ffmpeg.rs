@@ -23,6 +23,7 @@ use chud_core::{
     ConversionCap, Engine, EngineError, EngineId, EngineInfo, EngineOrigin, ExecContext, Feature, Fidelity, FormatCatalog, FormatId,
     OptionSpec, OptionValues, Progress, SourceInfo, StepAssessment, StepOutput, StepQuery, StepTask, StreamInfo, StreamKind, Verification,
 };
+use chud_core::{tr, trf};
 use chud_process::ProcessSpec;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -323,11 +324,12 @@ fn ffmpeg_lines(stderr: &str) -> Vec<String> {
 
 /// Messages d'erreur d'FFmpeg connus pour être sans conséquence **lorsque le décodeur ne signale
 /// aucune erreur**. Toute autre erreur fait échouer la vérification.
-const BENIGN_DECODE_MESSAGES: &[(&str, &str)] = &[(
+const BENIGN_DECODE_MESSAGES: &[(&str, &str, &str)] = &[(
     // FFmpeg 8.0 + libopus 1.6 : l'analyseur de paquets Opus du démultiplexeur Matroska rejette un
     // paquet que les décodeurs (natif et libopus) décodent pourtant entièrement.
     "Error parsing Opus packet header",
     "message connu de l'analyseur Opus de FFmpeg 8.0 avec libopus 1.6, sans effet sur le décodage",
+    "known message from the FFmpeg 8.0 Opus parser with libopus 1.6, no effect on decoding",
 )];
 
 /// Bilan d'un décodage de vérification, lu ligne à ligne dans le journal d'FFmpeg.
@@ -360,17 +362,24 @@ impl DecodeLog {
     fn verdict(&self, success: bool) -> Result<Option<String>, String> {
         let tail = |v: &[String]| v[v.len().saturating_sub(3)..].join(" | ");
         if !success {
-            return Err(if self.errors.is_empty() { "FFmpeg s'est arrêté en erreur".into() } else { tail(&self.errors) });
+            return Err(if self.errors.is_empty() {
+                tr!("FFmpeg s'est arrêté en erreur", "FFmpeg stopped with an error").into()
+            } else {
+                tail(&self.errors)
+            });
         }
         if self.errors.is_empty() {
             return Ok(None);
         }
-        let notes: Vec<&str> =
-            self.errors.iter().filter_map(|e| BENIGN_DECODE_MESSAGES.iter().find(|(m, _)| e.contains(m)).map(|(_, n)| *n)).collect();
+        let notes: Vec<&str> = self
+            .errors
+            .iter()
+            .filter_map(|e| BENIGN_DECODE_MESSAGES.iter().find(|(m, _, _)| e.contains(m)).map(|(_, fr, en)| tr!(*fr, *en)))
+            .collect();
         if notes.len() == self.errors.len() && self.decode_errors == Some(0) {
             let mut notes = notes;
             notes.dedup();
-            return Ok(Some(notes.join(" ; ")));
+            return Ok(Some(notes.join(tr!(" ; ", "; "))));
         }
         Err(tail(&self.errors))
     }
@@ -378,15 +387,20 @@ impl DecodeLog {
 
 /// Échec d'FFmpeg : un fichier source illisible est signalé comme tel, avec sa cause probable.
 fn failure(code: Option<i32>, stderr: &str) -> EngineError {
-    const CAUSES: &[(&str, &str)] = &[
-        ("moov atom not found", "index MP4/MOV absent : fichier tronqué ou enregistrement interrompu"),
-        ("EBML header parsing failed", "en-tête Matroska illisible"),
-        ("Invalid data found when processing input", "données illisibles pour ce format"),
+    const CAUSES: &[(&str, &str, &str)] = &[
+        (
+            "moov atom not found",
+            "index MP4/MOV absent : fichier tronqué ou enregistrement interrompu",
+            "MP4/MOV index missing: truncated file or interrupted recording",
+        ),
+        ("EBML header parsing failed", "en-tête Matroska illisible", "unreadable Matroska header"),
+        ("Invalid data found when processing input", "données illisibles pour ce format", "unreadable data for this format"),
     ];
     let lines = ffmpeg_lines(stderr);
-    for (marker, cause) in CAUSES {
+    for (marker, fr, en) in CAUSES {
         if let Some(l) = lines.iter().find(|l| l.contains(marker)) {
-            return EngineError::InvalidInput(format!("{cause} (FFmpeg : {l})"));
+            let cause = tr!(*fr, *en);
+            return EngineError::InvalidInput(trf!("{cause} (FFmpeg : {l})", "{cause} (FFmpeg: {l})"));
         }
     }
     EngineError::Process { code, detail: lines[lines.len().saturating_sub(3)..].join(" | ") }
@@ -416,7 +430,7 @@ impl Capabilities {
             let spec = ProcessSpec::new(ffmpeg).args(["-hide_banner", what]).timeout(Some(Duration::from_secs(20)));
             let out = chud_process::run_capture(&spec, 4 * 1024 * 1024).map_err(|e| e.to_string())?;
             if !out.success() {
-                return Err(format!("ffmpeg {what} a échoué : {}", tail_lines(&out.stderr_tail, 2)));
+                return Err(trf!("ffmpeg {what} a échoué : {}", "ffmpeg {what} failed: {}", tail_lines(&out.stderr_tail, 2)));
             }
             Ok(out.stdout_text())
         };
@@ -613,11 +627,11 @@ impl Ffmpeg {
                 id: EngineId::new("ffmpeg"),
                 name: "FFmpeg".into(),
                 version,
-                license: "LGPL-2.1-or-later ou GPL (selon la compilation)".into(),
+                license: tr!("LGPL-2.1-or-later ou GPL (selon la compilation)", "LGPL-2.1-or-later or GPL (depending on the build)").into(),
                 homepage: "https://ffmpeg.org".into(),
                 origin,
                 path: Some(ffmpeg.clone()),
-                description: "Audio, vidéo, animations et sous-titres.".into(),
+                description: tr!("Audio, vidéo, animations et sous-titres.", "Audio, video, animations and subtitles.").into(),
             },
             ffmpeg,
             ffprobe,
@@ -857,11 +871,11 @@ impl Ffmpeg {
             (Video | Anim, Anim) => self.anim_recipe(from, to, src, o)?,
             (Video, Image) => self.frame_recipe(to, src, o)?,
             (Image, Image | Anim) => self.still_recipe(from, to, src, o)?,
-            _ => return Err(format!("conversion {} → {} non gérée par FFmpeg", from.id, to.id)),
+            _ => return Err(trf!("conversion {} → {} non gérée par FFmpeg", "{} → {} conversion not handled by FFmpeg", from.id, to.id)),
         };
         if o.bool_or("strip_metadata", false) {
             r.out(["-map_metadata", "-1", "-map_chapters", "-1"]);
-            r.notes.push("métadonnées et chapitres supprimés à la demande".into());
+            r.notes.push(tr!("métadonnées et chapitres supprimés à la demande", "metadata and chapters removed as requested").into());
             r.preserves.retain(|f| !matches!(*f, "tags" | "chapters"));
         } else if matches!(to.kind, Video | Audio) {
             r.keep("tags");
@@ -879,19 +893,24 @@ impl Ffmpeg {
             if s.is_empty() {
                 return Ok(None);
             }
-            parse_time(s).map(Some).ok_or_else(|| format!("« {s} » n'est pas une durée valide (ex. 90, 1:30, 01:02:03.5)"))
+            parse_time(s).map(Some).ok_or_else(|| {
+                trf!(
+                    "« {s} » n'est pas une durée valide (ex. 90, 1:30, 01:02:03.5)",
+                    "“{s}” is not a valid duration (e.g. 90, 1:30, 01:02:03.5)"
+                )
+            })
         };
         let start = parse("start")?;
         let end = parse("end")?;
         if let (Some(s), Some(e)) = (start, end)
             && e <= s
         {
-            return Err("la fin doit être postérieure au début".into());
+            return Err(tr!("la fin doit être postérieure au début", "the end must come after the start").into());
         }
         let total = src.and_then(|i| i.duration);
         if let Some(s) = start {
             if total.is_some_and(|t| s >= t) {
-                return Err("le début demandé dépasse la durée du fichier".into());
+                return Err(tr!("le début demandé dépasse la durée du fichier", "the requested start is past the end of the file").into());
             }
             r.pre_input.extend(["-ss".into(), num(s)]);
         }
@@ -904,7 +923,12 @@ impl Ffmpeg {
             _ => None,
         };
         if start.is_some() || end.is_some() {
-            r.notes.push(format!("extrait conservé : {} → {}", start.map_or("début".into(), num), end.map_or("fin".into(), num)));
+            r.notes.push(trf!(
+                "extrait conservé : {} → {}",
+                "excerpt kept: {} → {}",
+                start.map_or(tr!("début", "start").into(), num),
+                end.map_or(tr!("fin", "end").into(), num)
+            ));
         }
         Ok(())
     }
@@ -920,7 +944,13 @@ impl Ffmpeg {
         let Some(info) = src.filter(|i| !i.streams.is_empty()) else {
             // Sans sonde : correspondances optionnelles, tout est ré-encodé (aucune copie à l'aveugle).
             if self.ffprobe.is_none() {
-                r.notes.push("analyse détaillée indisponible (ffprobe absent) : tous les flux sont ré-encodés".into());
+                r.notes.push(
+                    tr!(
+                        "analyse détaillée indisponible (ffprobe absent) : tous les flux sont ré-encodés",
+                        "detailed analysis unavailable (ffprobe missing): all streams are re-encoded"
+                    )
+                    .into(),
+                );
             }
             if to.kind == Kind::Video {
                 r.out(["-map", "0:v:0?"]);
@@ -939,11 +969,15 @@ impl Ffmpeg {
 
         if to.kind == Kind::Video {
             if vids.is_empty() {
-                return Err("ce fichier ne contient aucune piste vidéo".into());
+                return Err(tr!("ce fichier ne contient aucune piste vidéo", "this file has no video track").into());
             }
             let take = if to.any { vids.len() } else { 1 };
             if vids.len() > take {
-                r.notes.push(format!("{} pistes vidéo : seule la première est conservée", vids.len()));
+                r.notes.push(trf!(
+                    "{} pistes vidéo : seule la première est conservée",
+                    "{} video tracks: only the first one is kept",
+                    vids.len()
+                ));
             }
             for v in vids.iter().take(take) {
                 r.out(["-map".to_string(), format!("0:{}", v.index)]);
@@ -959,12 +993,16 @@ impl Ffmpeg {
         }
 
         if to.kind == Kind::Audio && auds.is_empty() {
-            return Err("ce fichier ne contient aucune piste audio".into());
+            return Err(tr!("ce fichier ne contient aucune piste audio", "this file has no audio track").into());
         }
         let multi = to.any || (to.kind == Kind::Video && catalog_has(to.id, "multi_audio"));
         let take = if multi { auds.len() } else { auds.len().min(1) };
         if auds.len() > take {
-            r.notes.push(format!("{} pistes audio : seule la piste principale est conservée", auds.len()));
+            r.notes.push(trf!(
+                "{} pistes audio : seule la piste principale est conservée",
+                "{} audio tracks: only the main track is kept",
+                auds.len()
+            ));
         }
         let mut lead = auds.clone();
         // Piste principale : celle marquée « par défaut » n'est pas exposée ; on suit l'ordre du fichier.
@@ -1000,20 +1038,26 @@ impl Ffmpeg {
                                 // Texte et temps conservés ; polices, couleurs, positions et effets ne
                                 // le sont pas : la fidélité dépend de ce que le fichier utilise.
                                 r.worsen(Fidelity::Depends);
-                                r.notes.push(format!(
-                                    "sous-titres ASS convertis en {target} : texte et temps conservés, styles avancés (polices, couleurs, positions, effets) perdus s'il y en a"
+                                r.notes.push(trf!("sous-titres ASS convertis en {target} : texte et temps conservés, styles avancés (polices, couleurs, positions, effets) perdus s'il y en a", "ASS subtitles converted to {target}: text and timing kept, advanced styles (fonts, colors, positions, effects) lost if any"
                                 ));
                             }
                         }
                         None => {
-                            r.notes.push(format!("sous-titres {} non pris en charge par {} : ignorés", s.codec, to.id));
+                            r.notes.push(trf!(
+                                "sous-titres {} non pris en charge par {} : ignorés",
+                                "{} subtitles not supported by {}: skipped",
+                                s.codec,
+                                to.id
+                            ));
                             continue;
                         }
                     }
                 } else {
-                    r.notes.push(format!(
+                    r.notes.push(trf!(
                         "sous-titres image ({}) impossibles à stocker dans {} : ignorés (une reconnaissance de texte serait nécessaire)",
-                        s.codec, to.id
+                        "image subtitles ({}) cannot be stored in {}: skipped (text recognition would be needed)",
+                        s.codec,
+                        to.id
                     ));
                     continue;
                 }
@@ -1021,7 +1065,7 @@ impl Ffmpeg {
                 kept_subs += 1;
             }
         } else if to.kind == Kind::Video && !subs.is_empty() {
-            r.notes.push("sous-titres supprimés à la demande".into());
+            r.notes.push(tr!("sous-titres supprimés à la demande", "subtitles removed as requested").into());
         }
         r.expect.subtitle = Some(kept_subs);
 
@@ -1047,7 +1091,13 @@ impl Ffmpeg {
         }
 
         if trimming && r.output.iter().any(|a| a == "copy") {
-            r.notes.push("découpe en copie directe : alignée sur l'image clé la plus proche, la durée peut légèrement différer".into());
+            r.notes.push(
+                tr!(
+                    "découpe en copie directe : alignée sur l'image clé la plus proche, la durée peut légèrement différer",
+                    "cutting with stream copy: aligned on the nearest keyframe, the duration may differ slightly"
+                )
+                .into(),
+            );
             r.loose_duration = true;
         }
         r.out(["-max_muxing_queue_size", "4096"]);
@@ -1084,7 +1134,11 @@ impl Ffmpeg {
             // « Toujours réencoder » : pour vraiment alléger un fichier déjà dans le bon codec.
             let reencode = o.bool_or("reencode", false);
             if reencode && wanted == "copy" {
-                return Err("« Copie obligatoire » et « Toujours réencoder » sont incompatibles".into());
+                return Err(tr!(
+                    "« Copie obligatoire » et « Toujours réencoder » sont incompatibles",
+                    "“Copy only” and “Always re-encode” cannot be combined"
+                )
+                .into());
             }
             if codec_ok && codec_matches_choice && !needs_scale && !needs_fps && !reencode {
                 r.out([format!("-c:v:{ov}"), "copy".into()]);
@@ -1102,21 +1156,28 @@ impl Ffmpeg {
                 if alpha_pix(&pix) {
                     r.keep("alpha");
                 }
-                r.notes.push(format!("vidéo {} copiée sans ré-encodage", s.codec));
+                r.notes.push(trf!("vidéo {} copiée sans ré-encodage", "{} video copied without re-encoding", s.codec));
                 return Ok(());
             }
             if wanted == "copy" {
-                return Err(format!("la vidéo {} ne peut pas être copiée telle quelle dans {}", s.codec, to.id));
+                return Err(trf!(
+                    "la vidéo {} ne peut pas être copiée telle quelle dans {}",
+                    "{} video cannot be copied as is into {}",
+                    s.codec,
+                    to.id
+                ));
             }
         } else if wanted == "copy" {
-            return Err("copie vidéo impossible sans analyse du fichier".into());
+            return Err(tr!("copie vidéo impossible sans analyse du fichier", "video copy impossible without analyzing the file").into());
         }
 
         // Ré-encodage.
         let fams = self.video_families(to);
         let fam =
             if wanted == "auto" || wanted == "copy" { fams.first().copied() } else { fams.iter().copied().find(|f| f.name == wanted) }
-                .ok_or_else(|| format!("aucun encodeur vidéo disponible pour {} ({wanted})", to.id))?;
+                .ok_or_else(|| {
+                    trf!("aucun encodeur vidéo disponible pour {} ({wanted})", "no video encoder available for {} ({wanted})", to.id)
+                })?;
         let enc = self.vfam_encoder(fam).expect("famille filtrée");
         let quality = o.str_or("video_quality", "balanced");
         let speed = o.str_or("speed", "medium");
@@ -1180,7 +1241,7 @@ impl Ffmpeg {
         let mut chain: Vec<String> = Vec::new();
         if fps > 0.0 {
             chain.push(format!("fps={}", num(fps)));
-            r.notes.push(format!("cadence convertie à {} images/s", num(fps)));
+            r.notes.push(trf!("cadence convertie à {} images/s", "frame rate converted to {} fps", num(fps)));
         }
         let (w, h) = (s.and_then(|s| s.width), s.and_then(|s| s.height));
         let even_needed = pix_out.starts_with("yuv420");
@@ -1191,12 +1252,18 @@ impl Ffmpeg {
                 None => format!("scale=w=-2:h='min(ih,{target})':flags=lanczos"),
             });
             if let Some(h) = h {
-                r.notes.push(format!("hauteur réduite de {h} à {target} pixels"));
+                r.notes.push(trf!("hauteur réduite de {h} à {target} pixels", "height reduced from {h} to {target} pixels"));
             }
         } else if even_needed && (w.is_none() || h.is_none() || w.is_some_and(|w| w % 2 == 1) || h.is_some_and(|h| h % 2 == 1)) {
             chain.push("scale=trunc(iw/2)*2:trunc(ih/2)*2".into());
             if w.is_some_and(|w| w % 2 == 1) || h.is_some_and(|h| h % 2 == 1) {
-                r.notes.push("dimensions arrondies à un nombre pair (exigence du codec)".into());
+                r.notes.push(
+                    tr!(
+                        "dimensions arrondies à un nombre pair (exigence du codec)",
+                        "dimensions rounded to an even number (codec requirement)"
+                    )
+                    .into(),
+                );
             }
         }
         if !chain.is_empty() {
@@ -1208,13 +1275,20 @@ impl Ffmpeg {
         if ten_bit || pix_out.contains("10") {
             r.keep("high_bit_depth");
         } else if src_high {
-            r.notes.push("profondeur de couleur réduite à 8 bits".into());
+            r.notes.push(tr!("profondeur de couleur réduite à 8 bits", "color depth reduced to 8 bits").into());
         }
         if src_hdr {
-            r.notes.push("métadonnées HDR non garanties après ré-encodage : l'image peut paraître délavée".into());
+            r.notes.push(
+                tr!(
+                    "métadonnées HDR non garanties après ré-encodage : l'image peut paraître délavée",
+                    "HDR metadata not guaranteed after re-encoding: the picture may look washed out"
+                )
+                .into(),
+            );
         }
-        r.notes.push(format!(
+        r.notes.push(trf!(
             "vidéo ré-encodée en {} ({enc}){}",
+            "video re-encoded to {} ({enc}){}",
             fam.label,
             s.map(|s| format!(", source {}", s.codec)).unwrap_or_default()
         ));
@@ -1243,14 +1317,19 @@ impl Ffmpeg {
                 r.keep("audio");
                 r.keep("surround");
                 r.keep("high_bit_depth");
-                r.notes.push(format!("audio {} copié sans ré-encodage", s.codec));
+                r.notes.push(trf!("audio {} copié sans ré-encodage", "{} audio copied without re-encoding", s.codec));
                 return Ok(());
             }
             if wanted == "copy" {
-                return Err(format!("l'audio {} ne peut pas être copié tel quel dans {}", s.codec, to.id));
+                return Err(trf!(
+                    "l'audio {} ne peut pas être copié tel quel dans {}",
+                    "{} audio cannot be copied as is into {}",
+                    s.codec,
+                    to.id
+                ));
             }
         } else if wanted == "copy" {
-            return Err("copie audio impossible sans analyse du fichier".into());
+            return Err(tr!("copie audio impossible sans analyse du fichier", "audio copy impossible without analyzing the file").into());
         }
 
         let fam = if wanted == "auto" || wanted == "copy" {
@@ -1258,7 +1337,7 @@ impl Ffmpeg {
         } else {
             self.audio_families(to).into_iter().find(|f| f.name == wanted)
         }
-        .ok_or_else(|| format!("aucun encodeur audio disponible pour {} ({wanted})", to.id))?;
+        .ok_or_else(|| trf!("aucun encodeur audio disponible pour {} ({wanted})", "no audio encoder available for {} ({wanted})", to.id))?;
         let nature = s.map(samples_of).unwrap_or(Samples::Unknown);
         let mut a: Vec<String> = Vec::new();
         let mut fid = if fam.lossless { Fidelity::Lossless } else { Fidelity::Lossy };
@@ -1287,27 +1366,39 @@ impl Ffmpeg {
                 (b, false, le) => format!("pcm_s{b}{}", if le { "le" } else { "be" }),
             };
             if !self.avail.has_encoder(&codec) {
-                return Err(format!("encodeur {codec} indisponible"));
+                return Err(trf!("encodeur {codec} indisponible", "encoder {codec} unavailable"));
             }
             match (nature, float) {
                 (Samples::Int(b), false) if b > bits => {
                     fid = Fidelity::Lossy;
-                    r.notes.push(format!("profondeur réduite de {b} à {bits} bits"));
+                    r.notes.push(trf!("profondeur réduite de {b} à {bits} bits", "bit depth reduced from {b} to {bits} bits"));
                 }
                 (Samples::Float(_), false) | (Samples::Decoded, false) => {
                     fid = Fidelity::Lossy;
-                    r.notes.push(format!("échantillons flottants arrondis en entiers {bits} bits"));
+                    r.notes.push(trf!(
+                        "échantillons flottants arrondis en entiers {bits} bits",
+                        "floating-point samples rounded to {bits}-bit integers"
+                    ));
                 }
                 (Samples::Float(64), true) if bits == 32 => {
                     fid = Fidelity::Lossy;
-                    r.notes.push("échantillons 64 bits réduits à 32 bits flottants".into());
+                    r.notes.push(tr!("échantillons 64 bits réduits à 32 bits flottants", "64-bit samples reduced to 32-bit float").into());
                 }
                 (Samples::Int(b), true) if b > 24 => {
                     fid = Fidelity::Lossy;
-                    r.notes.push(format!("entiers {b} bits convertis en flottant 32 bits (précision 24 bits)"));
+                    r.notes.push(trf!(
+                        "entiers {b} bits convertis en flottant 32 bits (précision 24 bits)",
+                        "{b}-bit integers converted to 32-bit float (24-bit precision)"
+                    ));
                 }
                 (Samples::Decoded, true) => {
-                    r.notes.push("signal décodé conservé en flottant 32 bits, sans arrondi".into());
+                    r.notes.push(
+                        tr!(
+                            "signal décodé conservé en flottant 32 bits, sans arrondi",
+                            "decoded signal kept as 32-bit float, without rounding"
+                        )
+                        .into(),
+                    );
                 }
                 (Samples::Unknown, _) => fid = Fidelity::Depends,
                 _ => {}
@@ -1334,13 +1425,18 @@ impl Ffmpeg {
                         Samples::Int(b) => {
                             a.extend([format!("-sample_fmt:a:{oa}"), sfmt(false).into()]);
                             fid = Fidelity::Lossy;
-                            r.notes.push(format!("entiers {b} bits réduits à 24 bits ({} est limité à 24 bits)", fam.label));
+                            r.notes.push(trf!(
+                                "entiers {b} bits réduits à 24 bits ({} est limité à 24 bits)",
+                                "{b}-bit integers reduced to 24 bits ({} is limited to 24 bits)",
+                                fam.label
+                            ));
                         }
                         Samples::Float(_) => {
                             a.extend([format!("-sample_fmt:a:{oa}"), sfmt(false).into()]);
                             fid = Fidelity::Lossy;
-                            r.notes.push(format!(
+                            r.notes.push(trf!(
                                 "échantillons flottants convertis en entiers 24 bits ({} ne stocke pas de flottants)",
+                                "floating-point samples converted to 24-bit integers ({} does not store floats)",
                                 fam.label
                             ));
                         }
@@ -1348,14 +1444,18 @@ impl Ffmpeg {
                             a.extend([format!("-sample_fmt:a:{oa}"), sfmt(false).into()]);
                             fid = Fidelity::Depends;
                             r.notes.push(
-                                "signal décodé stocké en entiers 24 bits ; d'éventuelles crêtes au-delà de 0 dBFS sont écrêtées".into(),
+                                tr!(
+                                    "signal décodé stocké en entiers 24 bits ; d'éventuelles crêtes au-delà de 0 dBFS sont écrêtées",
+                                    "decoded signal stored as 24-bit integers; any peaks above 0 dBFS are clipped"
+                                )
+                                .into(),
                             );
                         }
                         Samples::Dsd | Samples::Unknown => fid = Fidelity::Depends,
                     }
                 } else if nature == Samples::Float(64) {
                     fid = Fidelity::Lossy;
-                    r.notes.push("échantillons 64 bits réduits à 32 bits flottants".into());
+                    r.notes.push(tr!("échantillons 64 bits réduits à 32 bits flottants", "64-bit samples reduced to 32-bit float").into());
                 }
             } else {
                 keep_depth = false;
@@ -1371,8 +1471,9 @@ impl Ffmpeg {
                         _ => a.extend([format!("-b:a:{oa}"), "192k".into()]),
                     }
                 }
-                r.notes.push(format!(
+                r.notes.push(trf!(
                     "audio ré-encodé en {}{}",
+                    "audio re-encoded to {}{}",
                     fam.label,
                     s.map(|s| format!(" (source {})", s.codec)).unwrap_or_default()
                 ));
@@ -1380,7 +1481,9 @@ impl Ffmpeg {
         }
         if nature == Samples::Dsd {
             fid = Fidelity::Lossy;
-            r.notes.push("conversion DSD → PCM : filtrage passe-bas obligatoire".into());
+            r.notes.push(
+                tr!("conversion DSD → PCM : filtrage passe-bas obligatoire", "DSD → PCM conversion: low-pass filtering required").into(),
+            );
         }
 
         // Canaux.
@@ -1397,7 +1500,7 @@ impl Ffmpeg {
             a.extend([format!("-ac:a:{oa}"), c.to_string()]);
             if let Some(sc) = src_ch {
                 fid = Fidelity::Lossy;
-                r.notes.push(format!("mixage de {sc} à {c} canaux"));
+                r.notes.push(trf!("mixage de {sc} à {c} canaux", "downmix from {sc} to {c} channels"));
             }
         }
         let surround_kept = out_ch.or(src_ch).is_some_and(|c| c > 2) || out_ch.is_none();
@@ -1411,16 +1514,17 @@ impl Ffmpeg {
                 a.extend([format!("-ar:a:{oa}"), hz.to_string()]);
                 if let Some(sr) = s.and_then(|s| s.sample_rate) {
                     fid = Fidelity::Lossy;
-                    r.notes.push(format!("rééchantillonnage de {sr} à {hz} Hz"));
+                    r.notes.push(trf!("rééchantillonnage de {sr} à {hz} Hz", "resampling from {sr} to {hz} Hz"));
                 }
             }
         } else if fam.name == "opus" && s.and_then(|s| s.sample_rate).is_some_and(|sr| sr != 48000) {
-            r.notes.push("Opus fonctionne à 48 kHz : l'audio est rééchantillonné".into());
+            r.notes
+                .push(tr!("Opus fonctionne à 48 kHz : l'audio est rééchantillonné", "Opus works at 48 kHz: the audio is resampled").into());
         }
         if normalize {
             a.extend([format!("-filter:a:{oa}"), "loudnorm=I=-16:TP=-1.5:LRA=11".into()]);
             fid = Fidelity::Lossy;
-            r.notes.push("volume normalisé (EBU R128, −16 LUFS)".into());
+            r.notes.push(tr!("volume normalisé (EBU R128, −16 LUFS)", "loudness normalized (EBU R128, −16 LUFS)").into());
         }
         r.out(a);
         r.worsen(fid);
@@ -1438,7 +1542,11 @@ impl Ffmpeg {
         let mut r = Recipe::default();
         let wanted = o.int_or("subtitle_index", 0).max(0) as usize;
         let Some(info) = src.filter(|i| !i.streams.is_empty()) else {
-            return Err("analyse du fichier nécessaire pour choisir la piste de sous-titres".into());
+            return Err(tr!(
+                "analyse du fichier nécessaire pour choisir la piste de sous-titres",
+                "the file must be analyzed to choose the subtitle track"
+            )
+            .into());
         };
         let subs: Vec<&StreamInfo> = info.streams.iter().filter(|s| s.kind == StreamKind::Subtitle).collect();
         let usable: Vec<&&StreamInfo> = if to.id == "sup" {
@@ -1448,28 +1556,44 @@ impl Ffmpeg {
         };
         if usable.is_empty() {
             return Err(if subs.is_empty() {
-                "ce fichier ne contient aucun sous-titre".into()
+                tr!("ce fichier ne contient aucun sous-titre", "this file has no subtitles").into()
             } else if to.id == "sup" {
-                "aucun sous-titre PGS à extraire".into()
+                tr!("aucun sous-titre PGS à extraire", "no PGS subtitles to extract").into()
             } else {
-                "les sous-titres de ce fichier sont des images : une reconnaissance de texte (OCR) serait nécessaire".into()
+                tr!(
+                    "les sous-titres de ce fichier sont des images : une reconnaissance de texte (OCR) serait nécessaire",
+                    "this file's subtitles are images: text recognition (OCR) would be needed"
+                )
+                .into()
             });
         }
-        let s = usable.get(wanted).ok_or_else(|| format!("piste de sous-titres n°{wanted} introuvable ({} disponibles)", usable.len()))?;
+        let s = usable.get(wanted).ok_or_else(|| {
+            trf!(
+                "piste de sous-titres n°{wanted} introuvable ({} disponibles)",
+                "subtitle track #{wanted} not found ({} available)",
+                usable.len()
+            )
+        })?;
         r.out(["-map".to_string(), format!("0:{}", s.index)]);
         if to.subs.contains(&s.codec.as_str()) {
             r.out(["-c:s", "copy"]);
-            r.notes.push(format!("sous-titres {} extraits sans conversion", s.codec));
+            r.notes.push(trf!("sous-titres {} extraits sans conversion", "{} subtitles extracted without conversion", s.codec));
         } else {
-            let target = self.sub_target(to).ok_or("aucun encodeur de sous-titres disponible")?;
+            let target = self.sub_target(to).ok_or(tr!("aucun encodeur de sous-titres disponible", "no subtitle encoder available"))?;
             r.out(["-c:s", sub_encoder(target)]);
-            r.notes.push(format!("sous-titres {} convertis en {}", s.codec, to.id));
+            r.notes.push(trf!("sous-titres {} convertis en {}", "{} subtitles converted to {}", s.codec, to.id));
             if s.codec == "ass" || s.codec == "ssa" {
-                r.notes.push("les styles ASS (polices, couleurs, positions) ne sont pas tous transposables".into());
+                r.notes.push(
+                    tr!(
+                        "les styles ASS (polices, couleurs, positions) ne sont pas tous transposables",
+                        "not all ASS styles (fonts, colors, positions) can be carried over"
+                    )
+                    .into(),
+                );
             }
         }
         if let Some(l) = &s.language {
-            r.notes.push(format!("langue : {l}"));
+            r.notes.push(trf!("langue : {l}", "language: {l}"));
         }
         r.keep("subtitles");
         r.keep("timed_text");
@@ -1483,18 +1607,30 @@ impl Ffmpeg {
 
     fn sub_convert_recipe(&self, from: &Fmt, to: &Fmt) -> Result<Recipe, String> {
         let mut r = Recipe::default();
-        let target = self.sub_target(to).ok_or("aucun encodeur de sous-titres disponible")?;
+        let target = self.sub_target(to).ok_or(tr!("aucun encodeur de sous-titres disponible", "no subtitle encoder available"))?;
         r.out(["-map", "0:s:0", "-c:s", sub_encoder(target)]);
         r.keep("timed_text");
         r.keep("subtitles");
         r.fidelity = Some(Fidelity::Lossless);
         if from.id == "microdvd" {
             r.fidelity = Some(Fidelity::Depends);
-            r.notes.push("MicroDVD compte en images : la cadence indiquée dans le fichier (ou 23,976 i/s) sert au calcul des temps".into());
+            r.notes.push(
+                tr!(
+                    "MicroDVD compte en images : la cadence indiquée dans le fichier (ou 23,976 i/s) sert au calcul des temps",
+                    "MicroDVD counts frames: the frame rate given in the file (or 23.976 fps) is used to compute times"
+                )
+                .into(),
+            );
         }
         if from.id == "ass" && target != "ass" {
             r.fidelity = Some(Fidelity::Depends);
-            r.notes.push("texte et temps conservés ; les styles ASS (polices, couleurs, positions, effets) sont perdus s'il y en a".into());
+            r.notes.push(
+                tr!(
+                    "texte et temps conservés ; les styles ASS (polices, couleurs, positions, effets) sont perdus s'il y en a",
+                    "text and timing kept; ASS styles (fonts, colors, positions, effects) are lost if any"
+                )
+                .into(),
+            );
         }
         r.expect = Expect { video: Some(0), audio: Some(0), subtitle: Some(1) };
         r.loose_duration = true;
@@ -1506,7 +1642,11 @@ impl Ffmpeg {
         self.trim(o, src, &mut r)?;
         let from_video = from.kind == Kind::Video;
         let v = match src.filter(|i| !i.streams.is_empty()) {
-            Some(info) => Some(info.streams_of(StreamKind::Video).next().ok_or("ce fichier ne contient aucune piste vidéo")?),
+            Some(info) => Some(
+                info.streams_of(StreamKind::Video)
+                    .next()
+                    .ok_or(tr!("ce fichier ne contient aucune piste vidéo", "this file has no video track"))?,
+            ),
             None => None,
         };
         let map = v.map_or("0:v:0".to_string(), |v| format!("0:{}", v.index));
@@ -1519,16 +1659,16 @@ impl Ffmpeg {
         let mut fid = Fidelity::Lossless;
         if fps > 0.0 && src_fps.is_none_or(|f| f > fps + 0.01) {
             chain.push(format!("fps={}", num(fps)));
-            r.notes.push(format!("cadence limitée à {} images/s", num(fps)));
+            r.notes.push(trf!("cadence limitée à {} images/s", "frame rate limited to {} fps", num(fps)));
             fid = Fidelity::Lossy;
         }
         if max_w > 0 && v.and_then(|v| v.width).is_none_or(|w| w > max_w) {
             chain.push(format!("scale=w='min(iw,{max_w})':h=-1:flags=lanczos"));
-            r.notes.push(format!("largeur limitée à {max_w} pixels"));
+            r.notes.push(trf!("largeur limitée à {max_w} pixels", "width limited to {max_w} pixels"));
             fid = Fidelity::Lossy;
         }
         let animated = true;
-        let enc = self.anim_encoder(to.id, animated).ok_or("encodeur indisponible")?;
+        let enc = self.anim_encoder(to.id, animated).ok_or(tr!("encodeur indisponible", "encoder unavailable"))?;
         let lossless_default = !from_video;
         match to.id {
             "gif" => {
@@ -1544,7 +1684,13 @@ impl Ffmpeg {
                     if o.bool_or("loop", true) { "0" } else { "-1" }.into(),
                 ]);
                 fid = Fidelity::Lossy;
-                r.notes.push("palette réduite à 256 couleurs (optimisée pour l'animation)".into());
+                r.notes.push(
+                    tr!(
+                        "palette réduite à 256 couleurs (optimisée pour l'animation)",
+                        "palette reduced to 256 colors (optimized for the animation)"
+                    )
+                    .into(),
+                );
             }
             _ => {
                 r.out(["-map".to_string(), map]);
@@ -1567,13 +1713,13 @@ impl Ffmpeg {
                         let q = o.int_or("quality", 80).clamp(0, 100);
                         r.out(["-lossless".to_string(), "0".into(), "-quality".into(), q.to_string()]);
                         fid = Fidelity::Lossy;
-                        r.notes.push(format!("WebP avec perte, qualité {q}"));
+                        r.notes.push(trf!("WebP avec perte, qualité {q}", "lossy WebP, quality {q}"));
                     }
                 }
             }
         }
         if from_video {
-            r.notes.push("le son n'est pas conservé dans une animation".into());
+            r.notes.push(tr!("le son n'est pas conservé dans une animation", "sound is not kept in an animation").into());
         }
         r.out(["-an", "-sn", "-dn"]);
         r.keep("animation");
@@ -1590,7 +1736,11 @@ impl Ffmpeg {
     fn frame_recipe(&self, to: &Fmt, src: Option<&SourceInfo>, o: &OptionValues) -> Result<Recipe, String> {
         let mut r = Recipe::default();
         let v = match src.filter(|i| !i.streams.is_empty()) {
-            Some(info) => Some(info.streams_of(StreamKind::Video).next().ok_or("ce fichier ne contient aucune piste vidéo")?),
+            Some(info) => Some(
+                info.streams_of(StreamKind::Video)
+                    .next()
+                    .ok_or(tr!("ce fichier ne contient aucune piste vidéo", "this file has no video track"))?,
+            ),
             None => None,
         };
         let raw = o.str_or("time", "").trim();
@@ -1598,13 +1748,18 @@ impl Ffmpeg {
         let t = if raw.is_empty() {
             total.map(|d| (d * 0.1).min(10.0)).unwrap_or(0.0)
         } else {
-            parse_time(raw).ok_or_else(|| format!("« {raw} » n'est pas un instant valide (ex. 12, 0:12, 00:00:12.5)"))?
+            parse_time(raw).ok_or_else(|| {
+                trf!(
+                    "« {raw} » n'est pas un instant valide (ex. 12, 0:12, 00:00:12.5)",
+                    "“{raw}” is not a valid time (e.g. 12, 0:12, 00:00:12.5)"
+                )
+            })?
         };
         if total.is_some_and(|d| t >= d) {
-            return Err("l'instant demandé dépasse la durée de la vidéo".into());
+            return Err(tr!("l'instant demandé dépasse la durée de la vidéo", "the requested time is past the end of the video").into());
         }
         r.pre_input.extend(["-ss".into(), num(t)]);
-        let enc = self.anim_encoder(to.id, false).ok_or("encodeur indisponible")?;
+        let enc = self.anim_encoder(to.id, false).ok_or(tr!("encodeur indisponible", "encoder unavailable"))?;
         r.out(["-map".to_string(), v.map_or("0:v:0".into(), |v| format!("0:{}", v.index))]);
         r.out(["-frames:v", "1", "-update", "1", "-c:v", enc]);
         let mut fid = Fidelity::Lossless;
@@ -1619,7 +1774,7 @@ impl Ffmpeg {
             r.out(["-pix_fmt", pix]);
         }
         r.out(["-an", "-sn", "-dn"]);
-        r.notes.push(format!("une seule image extraite, à {} s", num(t)));
+        r.notes.push(trf!("une seule image extraite, à {} s", "a single frame extracted, at {} s", num(t)));
         r.fidelity = Some(fid);
         r.expect = Expect { video: Some(1), audio: Some(0), subtitle: Some(0) };
         r.loose_duration = true;
@@ -1629,7 +1784,7 @@ impl Ffmpeg {
     fn still_recipe(&self, from: &Fmt, to: &Fmt, src: Option<&SourceInfo>, o: &OptionValues) -> Result<Recipe, String> {
         let _ = src;
         let mut r = Recipe::default();
-        let enc = self.anim_encoder(to.id, false).ok_or("encodeur indisponible")?;
+        let enc = self.anim_encoder(to.id, false).ok_or(tr!("encodeur indisponible", "encoder unavailable"))?;
         r.out(["-map", "0:v:0", "-frames:v", "1", "-c:v", enc]);
         let q = o.int_or("quality", if to.id == "avif" { 60 } else { 80 }).clamp(0, 100);
         let mut fid = Fidelity::Lossy;
@@ -1652,7 +1807,10 @@ impl Ffmpeg {
                     r.out(["-crf".to_string(), crf.to_string(), "-preset".into(), "8".into()]);
                 }
                 r.out(["-pix_fmt", "yuv420p"]);
-                r.notes.push(format!("AVIF qualité {q} ; la transparence n'est pas conservée par ce moteur"));
+                r.notes.push(trf!(
+                    "AVIF qualité {q} ; la transparence n'est pas conservée par ce moteur",
+                    "AVIF quality {q}; transparency is not kept by this engine"
+                ));
             }
             "webp" => {
                 if o.bool_or("lossless", false) {
@@ -1660,7 +1818,7 @@ impl Ffmpeg {
                     fid = Fidelity::Lossless;
                 } else {
                     r.out(["-lossless".to_string(), "0".into(), "-quality".into(), q.to_string()]);
-                    r.notes.push(format!("WebP avec perte, qualité {q}"));
+                    r.notes.push(trf!("WebP avec perte, qualité {q}", "lossy WebP, quality {q}"));
                 }
             }
             "jpeg" => {
@@ -1670,7 +1828,7 @@ impl Ffmpeg {
             _ => {
                 fid = Fidelity::Lossless;
                 if from.id == "avif" {
-                    r.notes.push("image AVIF décodée (conversion YUV → RVB)".into());
+                    r.notes.push(tr!("image AVIF décodée (conversion YUV → RVB)", "AVIF image decoded (YUV → RGB conversion)").into());
                 }
             }
         }
@@ -1839,11 +1997,11 @@ fn parse_probe(v: &Value, fkind: Kind) -> SourceInfo {
 
     // Résumé lisible.
     if let Some(name) = fmt.and_then(|f| jstr(f, "format_long_name")) {
-        summary.push(("Conteneur".to_string(), name.to_owned()));
+        summary.push((tr!("Conteneur", "Container").to_string(), name.to_owned()));
     }
     if let Some(d) = info.duration {
         let s = d.round() as u64;
-        summary.push(("Durée".into(), format!("{}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60)));
+        summary.push((tr!("Durée", "Duration").into(), format!("{}:{:02}:{:02}", s / 3600, (s / 60) % 60, s % 60)));
     }
     for (i, s) in vids.iter().enumerate() {
         let mut t = s.codec.clone();
@@ -1851,12 +2009,12 @@ fn parse_probe(v: &Value, fkind: Kind) -> SourceInfo {
             t.push_str(&format!(" {w}×{h}"));
         }
         if let Some(f) = s.frame_rate {
-            t.push_str(&format!(" {} i/s", num(f)));
+            t.push_str(&trf!(" {} i/s", " {} fps", num(f)));
         }
         if let Some(p) = &s.sample_format {
             t.push_str(&format!(" ({p})"));
         }
-        summary.push((format!("Vidéo {}", i + 1), t));
+        summary.push((trf!("Vidéo {}", "Video {}", i + 1), t));
     }
     for (i, s) in auds.iter().enumerate() {
         let mut t = s.codec.clone();
@@ -1864,7 +2022,7 @@ fn parse_probe(v: &Value, fkind: Kind) -> SourceInfo {
             t.push_str(&format!(" {} kHz", num(r as f64 / 1000.0)));
         }
         if let Some(c) = s.channels {
-            t.push_str(&format!(", {c} canal{}", if c > 1 { "aux" } else { "" }));
+            t.push_str(&if c > 1 { trf!(", {c} canaux", ", {c} channels") } else { trf!(", {c} canal", ", {c} channel") });
         }
         if let Some(l) = &s.language {
             t.push_str(&format!(" [{l}]"));
@@ -1876,13 +2034,13 @@ fn parse_probe(v: &Value, fkind: Kind) -> SourceInfo {
         if let Some(l) = &s.language {
             t.push_str(&format!(" [{l}]"));
         }
-        summary.push((format!("Sous-titres {}", i + 1), t));
+        summary.push((trf!("Sous-titres {}", "Subtitles {}", i + 1), t));
     }
     if chapters > 0 {
-        summary.push(("Chapitres".into(), chapters.to_string()));
+        summary.push((tr!("Chapitres", "Chapters").into(), chapters.to_string()));
     }
     if hdr {
-        summary.push(("HDR".into(), "oui".into()));
+        summary.push(("HDR".into(), tr!("oui", "yes").into()));
     }
     info.summary = summary;
     // Pour les fichiers de sous-titres, la sonde ne sait pas établir les styles réellement utilisés :
@@ -1912,104 +2070,183 @@ impl Engine for Ffmpeg {
         let (Some(f), Some(t)) = (fmt_by_id(from.as_str()), fmt_by_id(to.as_str())) else { return Vec::new() };
         let mut o = Vec::new();
         let trim = |o: &mut Vec<OptionSpec>| {
-            o.push(OptionSpec::text("start", "Début (ex. 1:30)", 16, "").help("Laisser vide pour partir du début"));
-            o.push(OptionSpec::text("end", "Fin (ex. 2:45)", 16, "").help("Laisser vide pour aller jusqu'à la fin"));
+            o.push(
+                OptionSpec::text("start", tr!("Début (ex. 1:30)", "Start (e.g. 1:30)"), 16, "")
+                    .help(tr!("Laisser vide pour partir du début", "Leave empty to start at the beginning")),
+            );
+            o.push(
+                OptionSpec::text("end", tr!("Fin (ex. 2:45)", "End (e.g. 2:45)"), 16, "")
+                    .help(tr!("Laisser vide pour aller jusqu'à la fin", "Leave empty to go to the end")),
+            );
         };
         match (f.kind, t.kind) {
             (Kind::Video | Kind::Audio | Kind::Anim, Kind::Video | Kind::Audio) => {
                 if t.kind == Kind::Video {
-                    let mut choices: Vec<(&str, &str)> = vec![("auto", "Automatique (copie si possible)"), ("copy", "Copie obligatoire")];
+                    let mut choices: Vec<(&str, &str)> = vec![
+                        ("auto", tr!("Automatique (copie si possible)", "Automatic (copy when possible)")),
+                        ("copy", tr!("Copie obligatoire", "Copy only")),
+                    ];
                     for fam in self.video_families(t) {
                         choices.push((fam.name, fam.label));
                     }
-                    o.push(OptionSpec::choice("video_codec", "Codec vidéo", &choices, "auto"));
+                    o.push(OptionSpec::choice("video_codec", tr!("Codec vidéo", "Video codec"), &choices, "auto"));
                     o.push(OptionSpec::choice(
                         "video_quality",
-                        "Qualité vidéo",
-                        &[("high", "Haute"), ("balanced", "Équilibrée"), ("small", "Fichier léger")],
+                        tr!("Qualité vidéo", "Video quality"),
+                        &[
+                            ("high", tr!("Haute", "High")),
+                            ("balanced", tr!("Équilibrée", "Balanced")),
+                            ("small", tr!("Fichier léger", "Small file")),
+                        ],
                         "balanced",
                     ));
                     o.push(
                         OptionSpec::choice(
                             "speed",
-                            "Vitesse d'encodage",
-                            &[("fast", "Rapide"), ("medium", "Normale"), ("slow", "Lente (meilleure compression)")],
+                            tr!("Vitesse d'encodage", "Encoding speed"),
+                            &[
+                                ("fast", tr!("Rapide", "Fast")),
+                                ("medium", tr!("Normale", "Normal")),
+                                ("slow", tr!("Lente (meilleure compression)", "Slow (better compression)")),
+                            ],
                             "medium",
                         )
                         .advanced(),
                     );
                     o.push(
-                        OptionSpec::bool("reencode", "Toujours réencoder la vidéo", false)
-                            .help("Même si elle pourrait être copiée telle quelle : nécessaire pour réduire la taille d'une vidéo déjà au bon format")
+                        OptionSpec::bool("reencode", tr!("Toujours réencoder la vidéo", "Always re-encode the video"), false)
+                            .help(tr!("Même si elle pourrait être copiée telle quelle : nécessaire pour réduire la taille d'une vidéo déjà au bon format", "Even if it could be copied as is: needed to shrink a video already in the right format"))
                             .advanced(),
                     );
-                    o.push(OptionSpec::int("max_height", "Hauteur maximale (0 = inchangée)", 0, 8640, 0).help("720, 1080, 2160…"));
-                    o.push(OptionSpec::float("fps", "Images par seconde (0 = inchangé)", 0.0, 240.0, 0.0).advanced());
-                    o.push(OptionSpec::choice("subtitles", "Sous-titres", &[("keep", "Conserver"), ("drop", "Supprimer")], "keep"));
+                    o.push(
+                        OptionSpec::int(
+                            "max_height",
+                            tr!("Hauteur maximale (0 = inchangée)", "Maximum height (0 = unchanged)"),
+                            0,
+                            8640,
+                            0,
+                        )
+                        .help("720, 1080, 2160…"),
+                    );
+                    o.push(
+                        OptionSpec::float(
+                            "fps",
+                            tr!("Images par seconde (0 = inchangé)", "Frames per second (0 = unchanged)"),
+                            0.0,
+                            240.0,
+                            0.0,
+                        )
+                        .advanced(),
+                    );
+                    o.push(OptionSpec::choice(
+                        "subtitles",
+                        tr!("Sous-titres", "Subtitles"),
+                        &[("keep", tr!("Conserver", "Keep")), ("drop", tr!("Supprimer", "Remove"))],
+                        "keep",
+                    ));
                 }
-                let mut choices: Vec<(&str, &str)> = vec![("auto", "Automatique (copie si possible)"), ("copy", "Copie obligatoire")];
+                let mut choices: Vec<(&str, &str)> = vec![
+                    ("auto", tr!("Automatique (copie si possible)", "Automatic (copy when possible)")),
+                    ("copy", tr!("Copie obligatoire", "Copy only")),
+                ];
                 for fam in self.audio_families(t) {
                     choices.push((fam.name, fam.label));
                 }
-                o.push(OptionSpec::choice("audio_codec", "Codec audio", &choices, "auto").advanced());
+                o.push(OptionSpec::choice("audio_codec", tr!("Codec audio", "Audio codec"), &choices, "auto").advanced());
                 if !is_lossy_target_audio(t) && t.audio.iter().any(|a| a.starts_with("pcm")) {
                     o.push(OptionSpec::choice(
                         "bit_depth",
-                        "Résolution",
+                        tr!("Résolution", "Bit depth"),
                         &[
-                            ("auto", "Fidèle à la source"),
+                            ("auto", tr!("Fidèle à la source", "Same as source")),
                             ("16", "16 bits"),
                             ("24", "24 bits"),
-                            ("32", "32 bits entiers"),
-                            ("32f", "32 bits flottants"),
+                            ("32", tr!("32 bits entiers", "32-bit integer")),
+                            ("32f", tr!("32 bits flottants", "32-bit float")),
                         ],
                         "auto",
                     ));
                 }
                 if self.audio_families(t).iter().any(|a| !a.lossless) {
-                    o.push(OptionSpec::int("audio_bitrate", "Débit audio en kbit/s (0 = automatique)", 0, 1536, 0));
+                    o.push(OptionSpec::int(
+                        "audio_bitrate",
+                        tr!("Débit audio en kbit/s (0 = automatique)", "Audio bitrate in kbit/s (0 = automatic)"),
+                        0,
+                        1536,
+                        0,
+                    ));
                 }
-                o.push(OptionSpec::int("sample_rate", "Fréquence d'échantillonnage (0 = inchangée)", 0, 384_000, 0).advanced());
-                o.push(OptionSpec::int("channels", "Nombre de canaux (0 = inchangé)", 0, 8, 0).advanced());
-                o.push(OptionSpec::bool("normalize", "Normaliser le volume (EBU R128)", false).advanced());
+                o.push(
+                    OptionSpec::int(
+                        "sample_rate",
+                        tr!("Fréquence d'échantillonnage (0 = inchangée)", "Sample rate (0 = unchanged)"),
+                        0,
+                        384_000,
+                        0,
+                    )
+                    .advanced(),
+                );
+                o.push(
+                    OptionSpec::int("channels", tr!("Nombre de canaux (0 = inchangé)", "Number of channels (0 = unchanged)"), 0, 8, 0)
+                        .advanced(),
+                );
+                o.push(
+                    OptionSpec::bool("normalize", tr!("Normaliser le volume (EBU R128)", "Normalize loudness (EBU R128)"), false)
+                        .advanced(),
+                );
                 trim(&mut o);
-                o.push(OptionSpec::bool("strip_metadata", "Supprimer les métadonnées", false).advanced());
+                o.push(OptionSpec::bool("strip_metadata", tr!("Supprimer les métadonnées", "Remove metadata"), false).advanced());
             }
             (Kind::Video, Kind::Subtitle) => {
-                o.push(OptionSpec::int("subtitle_index", "Piste de sous-titres (0 = première)", 0, 99, 0));
+                o.push(OptionSpec::int(
+                    "subtitle_index",
+                    tr!("Piste de sous-titres (0 = première)", "Subtitle track (0 = first)"),
+                    0,
+                    99,
+                    0,
+                ));
             }
             (Kind::Video | Kind::Anim, Kind::Anim) => {
                 let from_video = f.kind == Kind::Video;
                 let gif = t.id == "gif";
                 o.push(OptionSpec::float(
                     "fps",
-                    "Images par seconde (0 = inchangé)",
+                    tr!("Images par seconde (0 = inchangé)", "Frames per second (0 = unchanged)"),
                     0.0,
                     60.0,
                     if from_video && gif { 15.0 } else { 0.0 },
                 ));
-                o.push(OptionSpec::int("max_width", "Largeur maximale (0 = inchangée)", 0, 8192, if from_video && gif { 480 } else { 0 }));
-                o.push(OptionSpec::bool("loop", "Lecture en boucle", true));
+                o.push(OptionSpec::int(
+                    "max_width",
+                    tr!("Largeur maximale (0 = inchangée)", "Maximum width (0 = unchanged)"),
+                    0,
+                    8192,
+                    if from_video && gif { 480 } else { 0 },
+                ));
+                o.push(OptionSpec::bool("loop", tr!("Lecture en boucle", "Loop playback"), true));
                 if t.id == "webp" {
-                    o.push(OptionSpec::bool("lossless", "Sans perte", !from_video));
-                    o.push(OptionSpec::int("quality", "Qualité (avec perte)", 0, 100, 80));
+                    o.push(OptionSpec::bool("lossless", tr!("Sans perte", "Lossless"), !from_video));
+                    o.push(OptionSpec::int("quality", tr!("Qualité (avec perte)", "Quality (lossy)"), 0, 100, 80));
                 }
                 if from_video {
                     trim(&mut o);
                 }
             }
             (Kind::Video, Kind::Image) => {
-                o.push(OptionSpec::text("time", "Instant de l'image (ex. 0:12)", 16, "").help("Vide : à 10 % de la durée"));
+                o.push(
+                    OptionSpec::text("time", tr!("Instant de l'image (ex. 0:12)", "Frame time (e.g. 0:12)"), 16, "")
+                        .help(tr!("Vide : à 10 % de la durée", "Empty: at 10% of the duration")),
+                );
                 if t.id == "jpeg" {
-                    o.push(OptionSpec::int("quality", "Qualité", 1, 100, 90));
+                    o.push(OptionSpec::int("quality", tr!("Qualité", "Quality"), 1, 100, 90));
                 }
             }
             (Kind::Image, Kind::Image | Kind::Anim) => {
                 if matches!(t.id, "avif" | "webp" | "jpeg") {
-                    o.push(OptionSpec::int("quality", "Qualité", 0, 100, if t.id == "avif" { 60 } else { 80 }));
+                    o.push(OptionSpec::int("quality", tr!("Qualité", "Quality"), 0, 100, if t.id == "avif" { 60 } else { 80 }));
                 }
                 if t.id == "webp" {
-                    o.push(OptionSpec::bool("lossless", "Sans perte", false));
+                    o.push(OptionSpec::bool("lossless", tr!("Sans perte", "Lossless"), false));
                 }
             }
             _ => {}
@@ -2043,7 +2280,13 @@ impl Engine for Ffmpeg {
             return StepAssessment {
                 fidelity: Fidelity::Lossy,
                 notes: vec![],
-                unavailable: Some("conversion non disponible avec cette installation de FFmpeg".into()),
+                unavailable: Some(
+                    tr!(
+                        "conversion non disponible avec cette installation de FFmpeg",
+                        "conversion not available with this FFmpeg installation"
+                    )
+                    .into(),
+                ),
                 preserves: None,
             };
         };
@@ -2069,7 +2312,7 @@ impl Engine for Ffmpeg {
                     || !matches!(q.options.str_or("video_codec", "auto"), "auto" | "copy");
                 if forced && matches!(to.kind, Kind::Video | Kind::Audio) {
                     fid = Fidelity::Lossy;
-                    notes.push("les options choisies imposent un ré-encodage".into());
+                    notes.push(tr!("les options choisies imposent un ré-encodage", "the chosen options require re-encoding").into());
                 }
                 if let Err(e) = self.recipe(from, to, None, q.options)
                     && matches!(to.kind, Kind::Video | Kind::Audio)
@@ -2085,11 +2328,19 @@ impl Engine for Ffmpeg {
         ctx.check_cancelled()?;
         let from = fmt_by_id(task.from.as_str()).ok_or_else(|| EngineError::Unsupported(task.from.to_string()))?;
         let to = fmt_by_id(task.to.as_str()).ok_or_else(|| EngineError::Unsupported(task.to.to_string()))?;
-        let demux = self
-            .demuxer_for(from, &task.input)
-            .ok_or_else(|| EngineError::Unsupported(format!("lecture {} indisponible avec cette installation de FFmpeg", from.id)))?;
+        let demux = self.demuxer_for(from, &task.input).ok_or_else(|| {
+            EngineError::Unsupported(trf!(
+                "lecture {} indisponible avec cette installation de FFmpeg",
+                "reading {} is not available with this FFmpeg installation",
+                from.id
+            ))
+        })?;
         if !self.writable(to) {
-            return Err(EngineError::Unsupported(format!("écriture {} indisponible avec cette installation de FFmpeg", to.id)));
+            return Err(EngineError::Unsupported(trf!(
+                "écriture {} indisponible avec cette installation de FFmpeg",
+                "writing {} is not available with this FFmpeg installation",
+                to.id
+            )));
         }
         let recipe = self.recipe(from, to, task.source.as_ref(), &task.options).map_err(EngineError::Unsupported)?;
 
@@ -2136,7 +2387,10 @@ impl Engine for Ffmpeg {
             return Err(failure(out.code, &out.stderr_tail));
         }
         if std::fs::metadata(&task.output).map(|m| m.len()).unwrap_or(0) == 0 {
-            return Err(EngineError::Process { code: out.code, detail: "FFmpeg n'a produit aucun contenu".into() });
+            return Err(EngineError::Process {
+                code: out.code,
+                detail: tr!("FFmpeg n'a produit aucun contenu", "FFmpeg produced no content").into(),
+            });
         }
         Ok(StepOutput { notes: recipe.notes })
     }
@@ -2147,40 +2401,47 @@ impl Engine for Ffmpeg {
         };
         let Some(demux) = self.demuxer(to) else { return Verification::SignatureOnly };
         let Ok(recipe) = self.recipe(from, to, task.source.as_ref(), &task.options) else {
-            return Verification::Failed("impossible de recalculer la recette de conversion".into());
+            return Verification::Failed(
+                tr!("impossible de recalculer la recette de conversion", "cannot recompute the conversion recipe").into(),
+            );
         };
         let mut level: Vec<String> = Vec::new();
         if self.ffprobe.is_some() {
             let Some(v) = self.ffprobe_json(output, Some(demux), Duration::from_secs(120)) else {
-                return Verification::Failed("ffprobe ne parvient pas à lire le fichier produit".into());
+                return Verification::Failed(
+                    tr!("ffprobe ne parvient pas à lire le fichier produit", "ffprobe cannot read the output file").into(),
+                );
             };
             let info = parse_probe(&v, to.kind);
             let (nv, na, ns) = counts(&info);
             let check = |label: &str, want: Option<usize>, got: usize| -> Result<(), String> {
                 match want {
-                    Some(w) if w != got => Err(format!("{label} : {w} attendue(s), {got} trouvée(s)")),
+                    Some(w) if w != got => Err(trf!("{label} : {w} attendue(s), {got} trouvée(s)", "{label}: {w} expected, {got} found")),
                     _ => Ok(()),
                 }
             };
             for (label, want, got) in [
-                ("pistes vidéo", recipe.expect.video, nv),
-                ("pistes audio", recipe.expect.audio, na),
-                ("sous-titres", recipe.expect.subtitle, ns),
+                (tr!("pistes vidéo", "video tracks"), recipe.expect.video, nv),
+                (tr!("pistes audio", "audio tracks"), recipe.expect.audio, na),
+                (tr!("sous-titres", "subtitles"), recipe.expect.subtitle, ns),
             ] {
                 if let Err(e) = check(label, want, got) {
                     return Verification::Failed(e);
                 }
             }
             if nv + na + ns == 0 {
-                return Verification::Failed("le fichier produit ne contient aucun flux".into());
+                return Verification::Failed(tr!("le fichier produit ne contient aucun flux", "the output file has no streams").into());
             }
             if let (Some(want), Some(got), false) = (recipe.duration, info.duration, recipe.loose_duration) {
                 let tol = (want * 0.02).max(1.5);
                 if (want - got).abs() > tol {
-                    return Verification::Failed(format!("durée {got:.1} s au lieu de {want:.1} s"));
+                    return Verification::Failed(trf!(
+                        "durée {got:.1} s au lieu de {want:.1} s",
+                        "duration {got:.1} s instead of {want:.1} s"
+                    ));
                 }
             }
-            level.push("flux et durée contrôlés par ffprobe".into());
+            level.push(tr!("flux et durée contrôlés par ffprobe", "streams and duration checked with ffprobe").into());
         }
         // Décodage intégral quand c'est raisonnable (audio, sous-titres, images, vidéos courtes).
         let video_out = recipe.expect.video.unwrap_or(1) > 0 && to.kind == Kind::Video;
@@ -2200,16 +2461,16 @@ impl Engine for Ffmpeg {
             let mut log = DecodeLog::default();
             match run_tool(spec, ctx, &mut |_| {}, &mut |l| log.feed(l)) {
                 Ok(out) => match log.verdict(out.success()) {
-                    Ok(None) => level.push("décodage intégral sans erreur".into()),
-                    Ok(Some(note)) => level.push(format!("décodage intégral sans erreur ({note})")),
-                    Err(e) => return Verification::Failed(format!("erreurs au décodage : {e}")),
+                    Ok(None) => level.push(tr!("décodage intégral sans erreur", "fully decoded without errors").into()),
+                    Ok(Some(note)) => level.push(trf!("décodage intégral sans erreur ({note})", "fully decoded without errors ({note})")),
+                    Err(e) => return Verification::Failed(trf!("erreurs au décodage : {e}", "decoding errors: {e}")),
                 },
-                Err(EngineError::Cancelled) => return Verification::Failed("vérification annulée".into()),
-                Err(e) => return Verification::Failed(format!("vérification impossible : {e}")),
+                Err(EngineError::Cancelled) => return Verification::Failed(tr!("vérification annulée", "verification cancelled").into()),
+                Err(e) => return Verification::Failed(trf!("vérification impossible : {e}", "verification impossible: {e}")),
             }
-            return Verification::Decoded(level.join(" ; "));
+            return Verification::Decoded(level.join(tr!(" ; ", "; ")));
         }
-        if level.is_empty() { Verification::SignatureOnly } else { Verification::Structural(level.join(" ; ")) }
+        if level.is_empty() { Verification::SignatureOnly } else { Verification::Structural(level.join(tr!(" ; ", "; "))) }
     }
 
     fn weight(&self, from: &FormatId, to: &FormatId) -> u32 {

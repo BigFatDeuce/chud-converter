@@ -13,15 +13,15 @@ use thiserror::Error;
 
 #[derive(Debug, Error, Clone, Serialize)]
 pub enum PlanError {
-    #[error("format source inconnu : {0}")]
+    #[error("{t}{0}", t = crate::tr!("format source inconnu : ", "unknown source format: "))]
     UnknownSource(String),
-    #[error("format cible inconnu : {0}")]
+    #[error("{t}{0}", t = crate::tr!("format cible inconnu : ", "unknown target format: "))]
     UnknownTarget(String),
-    #[error("aucun moteur actif ne sait convertir {from} en {to}")]
+    #[error("{}", crate::trf!("aucun moteur actif ne sait convertir {from} en {to}", "no active engine can convert {from} to {to}"))]
     NoPath { from: String, to: String },
-    #[error("conversion {from} → {to} impossible pour ce fichier : {}", reasons.join(" ; "))]
+    #[error("{}", crate::trf!("conversion {from} → {to} impossible pour ce fichier : {}", "{from} → {to} conversion impossible for this file: {}", reasons.join(crate::tr!(" ; ", "; "))))]
     Unavailable { from: String, to: String, reasons: Vec<String> },
-    #[error("option « {key} » : {message}")]
+    #[error("{}", crate::trf!("option « {key} » : {message}", "option “{key}”: {message}"))]
     InvalidOption { key: String, message: String },
 }
 
@@ -105,7 +105,7 @@ impl Registry {
             refined.sort_by(|a, b| a.cost.cmp(&b.cost));
             let best = refined.remove(0);
             let Some(def) = self.catalog.get(target.as_str()) else { continue };
-            out.push(TargetChoice { name: def.name.clone(), category: def.category, format: target, best, alternatives: refined });
+            out.push(TargetChoice { name: def.label().to_owned(), category: def.category, format: target, best, alternatives: refined });
         }
         out.sort_by_key(|a| (a.category, a.name.to_lowercase()));
         out
@@ -202,8 +202,13 @@ impl Registry {
             // un détour optimiste (mkv → mka → mp3) passerait devant la conversion directe.
             if i > 0 && step.fidelity == Fidelity::Depends {
                 step.fidelity = Fidelity::Lossy;
-                step.notes
-                    .push("fidélité exacte inconnue avant de produire le fichier intermédiaire : comptée avec perte par prudence".into());
+                step.notes.push(
+                    crate::tr!(
+                        "fidélité exacte inconnue avant de produire le fichier intermédiaire : comptée avec perte par prudence",
+                        "exact fidelity unknown before the intermediate file exists: counted as lossy to be safe"
+                    )
+                    .into(),
+                );
             }
             if let Some(p) = a.preserves {
                 step.preserves = p;

@@ -10,6 +10,7 @@ use chud_core::{
     ConversionCap, Engine, EngineError, EngineId, EngineInfo, EngineOrigin, ExecContext, Fidelity, FormatId, OptionSpec, OptionValues,
     Progress, StepAssessment, StepOutput, StepQuery, StepTask, Verification,
 };
+use chud_core::{tr, trf};
 use serde_json::{Map, Value};
 use std::path::Path;
 
@@ -57,13 +58,17 @@ impl DataNative {
         Self {
             info: EngineInfo {
                 id: EngineId::new("data"),
-                name: "Données (natif)".into(),
+                name: tr!("Données (natif)", "Data (native)").into(),
                 version: Some(env!("CARGO_PKG_VERSION").into()),
                 license: "MIT OR Apache-2.0".into(),
                 homepage: String::new(),
                 origin: EngineOrigin::Builtin,
                 path: None,
-                description: "JSON, NDJSON, YAML, TOML, CSV et TSV en Rust pur, avec détection d'encodage.".into(),
+                description: tr!(
+                    "JSON, NDJSON, YAML, TOML, CSV et TSV en Rust pur, avec détection d'encodage.",
+                    "JSON, NDJSON, YAML, TOML, CSV and TSV in pure Rust, with encoding detection."
+                )
+                .into(),
             },
             caps,
         }
@@ -106,7 +111,7 @@ fn parse(format: &str, src: &str, opts: &OptionValues, notes: &mut Vec<String>) 
                 0 => Ok(Value::Null),
                 1 => Ok(docs.remove(0)),
                 n => {
-                    notes.push(format!("{n} documents YAML regroupés dans un tableau"));
+                    notes.push(trf!("{n} documents YAML regroupés dans un tableau", "{n} YAML documents grouped into an array"));
                     Ok(Value::Array(docs))
                 }
             }
@@ -120,7 +125,7 @@ fn parse(format: &str, src: &str, opts: &OptionValues, notes: &mut Vec<String>) 
             let delim = delimiter_of(opts.str_or("input_delimiter", "auto"), auto);
             read_table(src, delim, opts.bool_or("infer_types", false))
         }
-        other => Err(EngineError::Unsupported(format!("lecture {other}"))),
+        other => Err(EngineError::Unsupported(trf!("lecture {other}", "reading {other}"))),
     }
 }
 
@@ -132,7 +137,8 @@ fn sniff(src: &str) -> u8 {
 fn read_table(src: &str, delim: u8, infer: bool) -> Result<Value, EngineError> {
     let mut rdr = csv::ReaderBuilder::new().delimiter(delim).flexible(true).from_reader(src.as_bytes());
     let mut headers: Vec<String> = Vec::new();
-    for (i, h) in rdr.headers().map_err(|e| invalid(format!("en-tête CSV illisible : {e}")))?.iter().enumerate() {
+    for (i, h) in rdr.headers().map_err(|e| invalid(trf!("en-tête CSV illisible : {e}", "unreadable CSV header: {e}")))?.iter().enumerate()
+    {
         let mut name = if h.trim().is_empty() { format!("colonne_{}", i + 1) } else { h.to_owned() };
         let base = name.clone();
         let mut n = 2;
@@ -195,7 +201,10 @@ fn toml_to_json(v: toml::Value) -> Value {
 fn json_to_toml(v: &Value, path: &str) -> Result<toml::Value, EngineError> {
     Ok(match v {
         Value::Null => {
-            return Err(EngineError::Unsupported(format!("TOML ne peut pas représenter la valeur nulle en {path}")));
+            return Err(EngineError::Unsupported(trf!(
+                "TOML ne peut pas représenter la valeur nulle en {path}",
+                "TOML cannot represent the null value at {path}"
+            )));
         }
         Value::Bool(b) => toml::Value::Boolean(*b),
         Value::Number(n) => match (n.as_i64(), n.as_f64()) {
@@ -245,7 +254,10 @@ fn cell(v: &Value) -> String {
 
 fn write_table(v: &Value, delim: u8, flatten: bool, notes: &mut Vec<String>) -> Result<String, EngineError> {
     let Value::Array(items) = v else {
-        return Err(EngineError::Unsupported("un tableau CSV nécessite une liste d'enregistrements à la racine".into()));
+        return Err(EngineError::Unsupported(
+            tr!("un tableau CSV nécessite une liste d'enregistrements à la racine", "a CSV table needs a list of records at the root")
+                .into(),
+        ));
     };
     let mut rows: Vec<Map<String, Value>> = Vec::with_capacity(items.len());
     let mut nested = false;
@@ -262,7 +274,7 @@ fn write_table(v: &Value, delim: u8, flatten: bool, notes: &mut Vec<String>) -> 
         rows.push(row);
     }
     if nested {
-        notes.push("valeurs imbriquées écrites en JSON dans les cellules".into());
+        notes.push(tr!("valeurs imbriquées écrites en JSON dans les cellules", "nested values written as JSON in the cells").into());
     }
     let mut headers: Vec<String> = Vec::new();
     for r in &rows {
@@ -315,13 +327,15 @@ fn serialize(format: &str, v: &Value, opts: &OptionValues, notes: &mut Vec<Strin
         "toml" => {
             let t = json_to_toml(v, "$")?;
             let toml::Value::Table(table) = t else {
-                return Err(EngineError::Unsupported("la racine d'un document TOML doit être un objet".into()));
+                return Err(EngineError::Unsupported(
+                    tr!("la racine d'un document TOML doit être un objet", "the root of a TOML document must be an object").into(),
+                ));
             };
             toml::to_string_pretty(&table).map_err(|e| other(&e))
         }
         "csv" => write_table(v, delimiter_of(opts.str_or("delimiter", "comma"), b','), opts.bool_or("flatten", true), notes),
         "tsv" => write_table(v, b'\t', opts.bool_or("flatten", true), notes),
-        f => Err(EngineError::Unsupported(format!("écriture {f}"))),
+        f => Err(EngineError::Unsupported(trf!("écriture {f}", "writing {f}"))),
     }
 }
 
@@ -341,13 +355,13 @@ impl Engine for DataNative {
                 o.push(
                     OptionSpec::choice(
                         "input_delimiter",
-                        "Séparateur du fichier source",
+                        tr!("Séparateur du fichier source", "Source file delimiter"),
                         &[
-                            ("auto", "Détection automatique"),
-                            ("comma", "Virgule"),
-                            ("semicolon", "Point-virgule"),
-                            ("tab", "Tabulation"),
-                            ("pipe", "Barre verticale"),
+                            ("auto", tr!("Détection automatique", "Automatic detection")),
+                            ("comma", tr!("Virgule", "Comma")),
+                            ("semicolon", tr!("Point-virgule", "Semicolon")),
+                            ("tab", tr!("Tabulation", "Tab")),
+                            ("pipe", tr!("Barre verticale", "Vertical bar")),
                         ],
                         "auto",
                     )
@@ -356,31 +370,46 @@ impl Engine for DataNative {
             }
             if !is_table(to.as_str()) {
                 o.push(
-                    OptionSpec::bool("infer_types", "Deviner les types (nombres, booléens)", false)
-                        .help("Désactivé par défaut : toutes les cellules restent du texte, ce qui est sans perte."),
+                    OptionSpec::bool("infer_types", tr!("Deviner les types (nombres, booléens)", "Guess types (numbers, booleans)"), false)
+                        .help(tr!(
+                            "Désactivé par défaut : toutes les cellules restent du texte, ce qui est sans perte.",
+                            "Off by default: every cell stays text, which is lossless."
+                        )),
                 );
             }
         }
         match to.as_str() {
-            "json" => o.push(OptionSpec::int("indent", "Indentation (0 = compact)", 0, 8, 2)),
+            "json" => o.push(OptionSpec::int("indent", tr!("Indentation (0 = compact)", "Indentation (0 = compact)"), 0, 8, 2)),
             "csv" => {
                 o.push(OptionSpec::choice(
                     "delimiter",
-                    "Séparateur",
+                    tr!("Séparateur", "Delimiter"),
                     &[
-                        ("comma", "Virgule"),
-                        ("semicolon", "Point-virgule (Excel français)"),
-                        ("tab", "Tabulation"),
-                        ("pipe", "Barre verticale"),
+                        ("comma", tr!("Virgule", "Comma")),
+                        ("semicolon", tr!("Point-virgule (Excel français)", "Semicolon (French Excel)")),
+                        ("tab", tr!("Tabulation", "Tab")),
+                        ("pipe", tr!("Barre verticale", "Vertical bar")),
                     ],
                     "comma",
                 ));
-                o.push(OptionSpec::bool("bom", "Ajouter un BOM UTF-8 (compatibilité Excel)", false));
-                o.push(OptionSpec::bool("flatten", "Aplatir les objets imbriqués (a.b)", true).advanced());
+                o.push(OptionSpec::bool(
+                    "bom",
+                    tr!("Ajouter un BOM UTF-8 (compatibilité Excel)", "Add a UTF-8 BOM (Excel compatibility)"),
+                    false,
+                ));
+                o.push(
+                    OptionSpec::bool("flatten", tr!("Aplatir les objets imbriqués (a.b)", "Flatten nested objects (a.b)"), true).advanced(),
+                );
             }
             "tsv" => {
-                o.push(OptionSpec::bool("bom", "Ajouter un BOM UTF-8 (compatibilité Excel)", false));
-                o.push(OptionSpec::bool("flatten", "Aplatir les objets imbriqués (a.b)", true).advanced());
+                o.push(OptionSpec::bool(
+                    "bom",
+                    tr!("Ajouter un BOM UTF-8 (compatibilité Excel)", "Add a UTF-8 BOM (Excel compatibility)"),
+                    false,
+                ));
+                o.push(
+                    OptionSpec::bool("flatten", tr!("Aplatir les objets imbriqués (a.b)", "Flatten nested objects (a.b)"), true).advanced(),
+                );
             }
             _ => {}
         }
@@ -392,10 +421,16 @@ impl Engine for DataNative {
         let mut notes = Vec::new();
         if q.options.bool_or("infer_types", false) {
             fidelity = Fidelity::Lossy;
-            notes.push("typage automatique : « 1.50 » devient 1.5, « TRUE » devient true".into());
+            notes.push(
+                tr!(
+                    "typage automatique : « 1.50 » devient 1.5, « TRUE » devient true",
+                    "automatic typing: “1.50” becomes 1.5, “TRUE” becomes true"
+                )
+                .into(),
+            );
         }
         if is_table(q.to.as_str()) && !is_table(q.from.as_str()) {
-            notes.push("CSV/TSV : toutes les valeurs deviennent du texte".into());
+            notes.push(tr!("CSV/TSV : toutes les valeurs deviennent du texte", "CSV/TSV: every value becomes text").into());
         }
         StepAssessment { fidelity, notes, unavailable: None, preserves: None }
     }
@@ -404,8 +439,9 @@ impl Engine for DataNative {
         ctx.check_cancelled()?;
         let size = std::fs::metadata(&task.input)?.len();
         if size > MAX_INPUT {
-            return Err(EngineError::Refused(format!(
+            return Err(EngineError::Refused(trf!(
                 "fichier de {} Mo : le moteur natif est limité à {} Mo",
+                "{} MB file: the native engine is limited to {} MB",
                 size / 1_048_576,
                 MAX_INPUT / 1_048_576
             )));
@@ -417,12 +453,12 @@ impl Engine for DataNative {
             notes.push(format!("encodage source {} converti en UTF-8", decoded.encoding));
         }
         if decoded.lossy {
-            notes.push("octets invalides remplacés lors du décodage".into());
+            notes.push(tr!("octets invalides remplacés lors du décodage", "invalid bytes replaced while decoding").into());
         }
-        ctx.report(Progress { fraction: Some(0.2), message: Some("analyse".into()), ..Default::default() });
+        ctx.report(Progress { fraction: Some(0.2), message: Some(tr!("analyse", "analysis").into()), ..Default::default() });
         let value = parse(task.from.as_str(), &decoded.text, &task.options, &mut notes)?;
         ctx.check_cancelled()?;
-        ctx.report(Progress { fraction: Some(0.6), message: Some("écriture".into()), ..Default::default() });
+        ctx.report(Progress { fraction: Some(0.6), message: Some(tr!("écriture", "writing").into()), ..Default::default() });
         let mut out = serialize(task.to.as_str(), &value, &task.options, &mut notes)?;
 
         // Vérification d'aller-retour pour les formats structurés.
@@ -435,9 +471,18 @@ impl Engine for DataNative {
                 _ => value.clone(),
             };
             if !same_value(&back, &expected) {
-                return Err(EngineError::Other("vérification d'aller-retour échouée : le résultat relu diffère des données source".into()));
+                return Err(EngineError::Other(
+                    tr!(
+                        "vérification d'aller-retour échouée : le résultat relu diffère des données source",
+                        "round-trip check failed: the result read back differs from the source data"
+                    )
+                    .into(),
+                ));
             }
-            notes.push("aller-retour vérifié : les données relues sont identiques".into());
+            notes.push(
+                tr!("aller-retour vérifié : les données relues sont identiques", "round trip checked: the data read back is identical")
+                    .into(),
+            );
         }
         if is_table(task.to.as_str()) && task.options.bool_or("bom", false) {
             out.insert(0, '\u{feff}');
@@ -448,7 +493,7 @@ impl Engine for DataNative {
     }
 
     fn verify(&self, output: &Path, task: &StepTask, _ctx: &ExecContext) -> Verification {
-        let Ok(bytes) = std::fs::read(output) else { return Verification::Failed("fichier illisible".into()) };
+        let Ok(bytes) = std::fs::read(output) else { return Verification::Failed(tr!("fichier illisible", "unreadable file").into()) };
         let decoded = text::decode(&bytes);
         let mut sink = Vec::new();
         let mut opts = OptionValues::new();
@@ -458,13 +503,13 @@ impl Engine for DataNative {
         match parse(task.to.as_str(), &decoded.text, &opts, &mut sink) {
             Ok(v) => {
                 let n = match &v {
-                    Value::Array(a) => format!("{} éléments", a.len()),
-                    Value::Object(o) => format!("{} clés", o.len()),
+                    Value::Array(a) => trf!("{} éléments", "{} items", a.len()),
+                    Value::Object(o) => trf!("{} clés", "{} keys", o.len()),
                     _ => "valeur scalaire".into(),
                 };
-                Verification::Decoded(format!("ré-analysé ({n})"))
+                Verification::Decoded(trf!("ré-analysé ({n})", "parsed again ({n})"))
             }
-            Err(e) => Verification::Failed(format!("le fichier produit ne se relit pas : {e}")),
+            Err(e) => Verification::Failed(trf!("le fichier produit ne se relit pas : {e}", "the output file cannot be read back: {e}")),
         }
     }
 }

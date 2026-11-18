@@ -1,22 +1,23 @@
 <script lang="ts">
+  import { L } from "../i18n.svelte";
   import Icon from "./Icon.svelte";
   import { store } from "../store.svelte";
   import { api, errorText } from "../api";
   import type { EngineState, EngineView } from "../types";
 
   const stateText: Record<EngineState, string> = {
-    ready: "Prêt",
-    no_adapter: "Détecté, pas encore pris en charge",
-    broken: "Ne fonctionne pas",
-    missing: "Non installé",
-    disabled: "Désactivé",
+    ready: L("Prêt", "Ready"),
+    no_adapter: L("Détecté, pas encore pris en charge", "Detected, not supported yet"),
+    broken: L("Ne fonctionne pas", "Not working"),
+    missing: L("Non installé", "Not installed"),
+    disabled: L("Désactivé", "Disabled"),
   };
 
   const originText: Record<string, string> = {
-    builtin: "intégré à Chud Converter",
-    system: "installé sur le système (jamais modifié par Chud Converter)",
-    managed: "installé par Chud Converter",
-    custom: "chemin choisi par vous",
+    builtin: L("intégré à Chud Converter", "built into Chud Converter"),
+    system: L("installé sur le système (jamais modifié par Chud Converter)", "installed on the system (never changed by Chud Converter)"),
+    managed: L("installé par Chud Converter", "installed by Chud Converter"),
+    custom: L("chemin choisi par vous", "path chosen by you"),
   };
 
   const order: EngineState[] = ["ready", "no_adapter", "broken", "disabled", "missing"];
@@ -32,7 +33,7 @@
       copied = e.id;
       setTimeout(() => (copied = null), 1500);
     } catch {
-      store.say("Copie impossible : sélectionnez la commande à la main.");
+      store.say(L("Copie impossible : sélectionnez la commande à la main.", "Copy failed: select the command by hand."));
     }
   }
 
@@ -56,15 +57,14 @@
 <div class="page">
   <header>
     <div>
-      <h1>Moteurs</h1>
+      <h1>{L("Moteurs", "Engines")}</h1>
       <p class="muted">
-        Chud Converter s'appuie sur des logiciels reconnus, installés sur votre ordinateur. Il les détecte, affiche leur
-        version et leur licence, et ne les remplace jamais sans vous le demander.
+        {L("Chud Converter s'appuie sur des logiciels reconnus, installés sur votre ordinateur. Il les détecte, affiche leur version et leur licence, et ne les remplace jamais sans vous le demander.", "Chud Converter relies on well-known software installed on your computer. It detects them, shows their version and license, and never replaces them without asking you.")}
       </p>
     </div>
     <button class="btn" onclick={() => store.loadEngines(true)} disabled={store.enginesLoading}>
       <Icon name="refresh" size={14} />
-      {store.enginesLoading ? "Recherche…" : "Rechercher à nouveau"}
+      {store.enginesLoading ? L("Recherche…", "Searching…") : L("Rechercher à nouveau", "Search again")}
     </button>
   </header>
 
@@ -73,7 +73,7 @@
   {/if}
 
   {#if store.engines}
-    <p class="muted small">{ready} moteur{ready > 1 ? "s" : ""} prêt{ready > 1 ? "s" : ""} sur {sorted.length} connus.</p>
+    <p class="muted small">{L(`${ready} moteur${ready > 1 ? "s" : ""} prêt${ready > 1 ? "s" : ""} sur ${sorted.length} connus.`, `${ready} of ${sorted.length} known engines ready.`)}</p>
     <div class="grid">
       {#each sorted as e (e.id)}
         <article class="card {e.state}">
@@ -83,43 +83,43 @@
           </div>
           <p class="desc">{e.description}</p>
           <dl>
-            {#if e.version}<dt>Version</dt><dd class="selectable">{e.version}</dd>{/if}
-            {#if e.origin}<dt>Origine</dt><dd>{originText[e.origin] ?? e.origin}</dd>{/if}
+            {#if e.version}<dt>{L("Version", "Version")}</dt><dd class="selectable">{e.version}</dd>{/if}
+            {#if e.origin}<dt>{L("Origine", "Origin")}</dt><dd>{originText[e.origin] ?? e.origin}</dd>{/if}
             {#if e.path}
-              <dt>Emplacement</dt>
+              <dt>{L("Emplacement", "Location")}</dt>
               <dd class="path">
                 <span class="mono selectable" title={e.path}>{e.path}</span>
-                <button class="icon-btn" title="Afficher dans le dossier" aria-label="Afficher {e.name} dans le dossier" onclick={() => reveal(e.path!)}>
+                <button class="icon-btn" title={L("Afficher dans le dossier", "Show in folder")} aria-label={L(`Afficher ${e.name} dans le dossier`, `Show ${e.name} in its folder`)} onclick={() => reveal(e.path!)}>
                   <Icon name="reveal" size={14} />
                 </button>
               </dd>
             {/if}
-            <dt>Licence</dt>
+            <dt>{L("Licence", "License")}</dt>
             <dd>{e.license}</dd>
           </dl>
           {#if e.problem}<p class="bad selectable">{e.problem}</p>{/if}
           {#if e.state === "no_adapter"}
-            <p class="faint small">Trouvé sur votre ordinateur ; son intégration arrive dans une prochaine version.</p>
+            <p class="faint small">{L("Trouvé sur votre ordinateur ; son intégration arrive dans une prochaine version.", "Found on your computer; support for it comes in a future version.")}</p>
           {/if}
           {#if e.hint && e.state === "missing"}
             <div class="hint">
-              <span class="small muted">Pour l'installer avec le gestionnaire de paquets de votre système :</span>
+              <span class="small muted">{L("Pour l'installer avec le gestionnaire de paquets de votre système :", "To install it with your system's package manager:")}</span>
               <div class="cmd">
                 <code>{e.hint}</code>
-                <button class="icon-btn" title="Copier" aria-label="Copier la commande" onclick={() => copy(e)}>
+                <button class="icon-btn" title={L("Copier", "Copy")} aria-label={L("Copier la commande", "Copy the command")} onclick={() => copy(e)}>
                   <Icon name={copied === e.id ? "check" : "copy"} size={14} />
                 </button>
               </div>
             </div>
           {/if}
           <button class="link" onclick={() => open(e.homepage)}>
-            Site officiel <Icon name="external" size={12} />
+            {L("Site officiel", "Official website")} <Icon name="external" size={12} />
           </button>
         </article>
       {/each}
     </div>
   {:else if store.enginesLoading}
-    <p class="muted">Recherche des moteurs installés…</p>
+    <p class="muted">{L("Recherche des moteurs installés…", "Looking for installed engines…")}</p>
   {/if}
 </div>
 

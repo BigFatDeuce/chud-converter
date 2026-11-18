@@ -47,7 +47,29 @@ fn enabled_default() -> bool {
     true
 }
 
+/// Noms des préréglages fournis dont le nom se traduit (identifiant, français, anglais).
+const BUILTIN_NAMES: &[(&str, &str, &str)] = &[
+    ("mp4", "MP4 (compatible)", "MP4 (compatible)"),
+    ("mp4-leger", "MP4 léger (720p)", "Light MP4 (720p)"),
+    ("mkv", "MKV (sans réencodage)", "MKV (no re-encoding)"),
+    ("gif", "GIF animé", "Animated GIF"),
+    ("flac", "FLAC (sans perte)", "FLAC (lossless)"),
+    ("jpeg-reduit", "JPEG réduit (1920 px)", "Smaller JPEG (1920 px)"),
+    ("extraire", "Extraire ici", "Extract here"),
+    ("zip", "Compresser en ZIP", "Compress to ZIP"),
+    ("7z", "Compresser en 7z", "Compress to 7z"),
+];
+
 impl Preset {
+    /// Nom affiché : un préréglage fourni dont le nom n'a pas été modifié suit la langue de
+    /// l'interface ; un nom choisi par l'utilisateur est affiché tel quel.
+    pub fn display_name(&self) -> &str {
+        match BUILTIN_NAMES.iter().find(|(id, fr, en)| *id == self.id && (self.name == *fr || self.name == *en)) {
+            Some((_, fr, en)) => chud_core::tr!(*fr, *en),
+            None => &self.name,
+        }
+    }
+
     fn new(id: &str, name: &str, target: &str, applies_to: &[&str]) -> Self {
         Self {
             id: id.into(),
@@ -108,13 +130,13 @@ pub fn kind_of_path(path: &Path, catalog: &FormatCatalog) -> Option<String> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum PresetError {
-    #[error("préréglages illisibles ({0}) : {1}")]
+    #[error("{}", chud_core::trf!("préréglages illisibles ({}) : {}", "unreadable presets ({}): {}", .0.display(), .1))]
     Parse(PathBuf, String),
-    #[error("préréglage invalide « {id} » : {message}")]
+    #[error("{}", chud_core::trf!("préréglage invalide « {id} » : {message}", "invalid preset “{id}”: {message}"))]
     Invalid { id: String, message: String },
-    #[error("préréglage inconnu : {0}")]
+    #[error("{}", chud_core::trf!("préréglage inconnu : {}", "unknown preset: {}", .0))]
     Unknown(String),
-    #[error("écriture des préréglages impossible : {0}")]
+    #[error("{}", chud_core::trf!("écriture des préréglages impossible : {}", "cannot write the presets: {}", .0))]
     Io(#[from] std::io::Error),
 }
 
@@ -177,7 +199,11 @@ impl PresetStore {
             p("srt", "SRT", "srt", &["subtitle"]),
             p("vtt", "WebVTT", "vtt", &["subtitle"]),
         ];
-        Self { version: 1, presets }
+        let mut store = Self { version: 1, presets };
+        for p in &mut store.presets {
+            p.name = p.display_name().to_owned();
+        }
+        store
     }
 
     /// Lit `file` ; s'il n'existe pas, renvoie les préréglages par défaut (sans rien écrire).
@@ -210,24 +236,33 @@ impl PresetStore {
         for p in &self.presets {
             let bad = |message: &str| Err(PresetError::Invalid { id: p.id.clone(), message: message.into() });
             if p.id.is_empty() || p.id.len() > 40 || !p.id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
-                return bad("identifiant : 1 à 40 lettres minuscules, chiffres ou tirets");
+                return bad(chud_core::tr!(
+                    "identifiant : 1 à 40 lettres minuscules, chiffres ou tirets",
+                    "identifier: 1 to 40 lowercase letters, digits or hyphens"
+                ));
             }
             if !seen.insert(p.id.as_str()) {
                 return bad("identifiant en double");
             }
             if p.name.trim().is_empty() || p.name.chars().count() > 60 {
-                return bad("nom vide ou trop long (60 caractères au plus)");
+                return bad(chud_core::tr!(
+                    "nom vide ou trop long (60 caractères au plus)",
+                    "name empty or too long (60 characters at most)"
+                ));
             }
             if catalog.get(p.target.as_str()).is_none() {
                 return bad(&format!("format cible inconnu : {}", p.target));
             }
             if p.applies_to.is_empty() {
-                return bad("aucune sorte de fichier visée (applies_to)");
+                return bad(chud_core::tr!("aucune sorte de fichier visée (applies_to)", "no kind of file targeted (applies_to)"));
             }
             if let Some(t) = &p.name_template
                 && (t.contains(['/', '\\']) || t.trim().is_empty())
             {
-                return bad("modèle de nom vide ou contenant un séparateur de dossier");
+                return bad(chud_core::tr!(
+                    "modèle de nom vide ou contenant un séparateur de dossier",
+                    "name template empty or containing a folder separator"
+                ));
             }
         }
         Ok(())
@@ -346,5 +381,17 @@ mod tests {
         assert_eq!(s.target.as_str(), "mp4");
         assert_eq!(s.options.get("max_height"), Some(&OptionValue::Int(720)));
         assert!(matches!(store.get("nope"), Err(PresetError::Unknown(_))));
+    }
+
+    #[test]
+    fn builtin_names_follow_the_language_but_custom_names_stay() {
+        use chud_core::{Lang, i18n::with_lang};
+        let store = with_lang(Lang::En, PresetStore::builtin);
+        let zip = store.get("zip").unwrap();
+        assert_eq!(zip.name, "Compress to ZIP");
+        assert_eq!(with_lang(Lang::Fr, || zip.display_name().to_owned()), "Compresser en ZIP");
+        let mut mine = zip.clone();
+        mine.name = "Mes archives".into();
+        assert_eq!(with_lang(Lang::En, || mine.display_name().to_owned()), "Mes archives");
     }
 }

@@ -44,7 +44,7 @@ fn show_quick(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
     WebviewWindowBuilder::new(app, "quick", WebviewUrl::App("index.html".into()))
-        .title("Chud Converter — conversion")
+        .title(chud_core::tr!("Chud Converter — conversion", "Chud Converter — conversion"))
         .inner_size(520.0, 400.0)
         .min_inner_size(380.0, 260.0)
         .center()
@@ -72,7 +72,7 @@ fn handle_launch(app: &AppHandle, launch: Launch) {
         }
     };
     if let Err(e) = result {
-        eprintln!("chud-converter : fenêtre impossible à ouvrir : {e}");
+        eprintln!("chud-converter: {e}");
     }
 }
 
@@ -131,6 +131,8 @@ fn main() {
             commands::shell_status,
             commands::shell_install,
             commands::shell_uninstall,
+            commands::settings,
+            commands::set_language,
         ])
         .build(tauri::generate_context!())
         .expect("impossible de démarrer Chud Converter");

@@ -13,6 +13,7 @@ pub mod engine;
 pub mod error;
 pub mod feature;
 pub mod format;
+pub mod i18n;
 pub mod options;
 pub mod planner;
 pub mod registry;
@@ -26,6 +27,7 @@ pub use engine::{
 pub use error::CoreError;
 pub use feature::{Feature, FeatureSet};
 pub use format::{Category, Compression, FormatCatalog, FormatDef, FormatId};
+pub use i18n::{Lang, LangChoice, lang, set_lang};
 pub use options::{OptionKind, OptionSpec, OptionValue, OptionValues};
 pub use planner::{FidelityReport, Plan, PlanCost, PlanStep, Planner, Warning};
 pub use registry::{PlanError, Registry, TargetChoice};

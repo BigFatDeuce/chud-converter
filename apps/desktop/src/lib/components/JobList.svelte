@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { L } from "../i18n.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import FidelityBadge from "./FidelityBadge.svelte";
   import { store, type Job, type JobStatus } from "../store.svelte";
@@ -8,12 +9,12 @@
   let open = $state<Record<number, boolean>>({});
 
   const statusText: Record<JobStatus, string> = {
-    waiting: "En attente",
-    running: "En cours",
-    done: "Terminé",
-    skipped: "Rien à faire",
-    failed: "Échec",
-    cancelled: "Annulée",
+    waiting: L("En attente", "Waiting"),
+    running: L("En cours", "Running"),
+    done: L("Terminé", "Done"),
+    skipped: L("Rien à faire", "Nothing to do"),
+    failed: L("Échec", "Failed"),
+    cancelled: L("Annulée", "Cancelled"),
   };
   const statusIcon: Record<JobStatus, IconName> = {
     waiting: "clock",
@@ -39,9 +40,9 @@
   function checkedLabel(j: Job): string {
     const levels = j.verifications.map((v) => v.level);
     if (!levels.length) return "";
-    if (levels.includes("signature_only")) return "signature contrôlée seulement";
-    if (levels.includes("structural")) return "structure vérifiée";
-    return "vérifié par décodage complet";
+    if (levels.includes("signature_only")) return L("signature contrôlée seulement", "signature checked only");
+    if (levels.includes("structural")) return L("structure vérifiée", "structure verified");
+    return L("vérifié par décodage complet", "verified by full decoding");
   }
 
   // Les remarques des moteurs figurent souvent déjà dans le rapport (« Étape 1 : … ») : pas de doublon.
@@ -52,7 +53,7 @@
   function progressLabel(j: Job): string {
     if (j.status !== "running") return "";
     const parts: string[] = [];
-    if (j.step && j.step.count > 1) parts.push(`étape ${j.step.index + 1}/${j.step.count}`);
+    if (j.step && j.step.count > 1) parts.push(L(`étape ${j.step.index + 1}/${j.step.count}`, `step ${j.step.index + 1}/${j.step.count}`));
     if (j.step) parts.push(j.step.engine);
     if (j.fraction != null) parts.push(`${Math.floor(j.fraction * 100)} %`);
     if (j.speed) parts.push(j.speed);
@@ -64,17 +65,17 @@
   <header>
     <h2>Conversions</h2>
     <span class="muted summary">
-      {#if store.active}{store.active} en cours ou en attente{/if}
+      {#if store.active}{L(`${store.active} en cours ou en attente`, `${store.active} running or waiting`)}{/if}
       {#if store.active && finished}·{/if}
-      {#if finished}{finished} terminée{finished > 1 ? "s" : ""}{/if}
-      {#if failed}<span class="bad">· {failed} en échec</span>{/if}
+      {#if finished}{L(`${finished} terminée${finished > 1 ? "s" : ""}`, `${finished} done`)}{/if}
+      {#if failed}<span class="bad">{L(`· ${failed} en échec`, `· ${failed} failed`)}</span>{/if}
     </span>
     <div class="actions">
       {#if store.active}
-        <button class="btn" onclick={() => store.cancelAll()}><Icon name="stop" size={13} /> Tout annuler</button>
+        <button class="btn" onclick={() => store.cancelAll()}><Icon name="stop" size={13} /> {L("Tout annuler", "Cancel all")}</button>
       {/if}
       {#if finished}
-        <button class="btn ghost" onclick={() => store.clearFinished()}>Effacer les terminées</button>
+        <button class="btn ghost" onclick={() => store.clearFinished()}>{L("Effacer les terminées", "Clear finished")}</button>
       {/if}
     </div>
   </header>
@@ -95,7 +96,7 @@
               <div class="bar" class:indeterminate={j.fraction == null}>
                 <span style:width={j.fraction != null ? `${Math.max(2, j.fraction * 100)}%` : undefined}></span>
               </div>
-              <div class="sub faint">{progressLabel(j) || "démarrage…"}</div>
+              <div class="sub faint">{progressLabel(j) || L("démarrage…", "starting…")}</div>
             {:else}
               <div class="sub">
                 <span class="label">{statusText[j.status]}</span>
@@ -115,10 +116,10 @@
             <FidelityBadge level={j.fidelity} title={j.headline ?? ""} />
           {/if}
           {#if j.status === "waiting" || j.status === "running"}
-            <button class="icon-btn" title="Annuler" aria-label="Annuler {j.name}" onclick={() => store.cancel(j.id)}><Icon name="stop" size={14} /></button>
+            <button class="icon-btn" title={L("Annuler", "Cancel")} aria-label={L(`Annuler ${j.name}`, `Cancel ${j.name}`)} onclick={() => store.cancel(j.id)}><Icon name="stop" size={14} /></button>
           {/if}
           {#if j.status === "done" && j.output}
-            <button class="icon-btn" title="Afficher dans le dossier" aria-label="Afficher le résultat dans le dossier" onclick={() => reveal(j.output!)}>
+            <button class="icon-btn" title={L("Afficher dans le dossier", "Show in folder")} aria-label={L("Afficher le résultat dans le dossier", "Show the result in its folder")} onclick={() => reveal(j.output!)}>
               <Icon name="reveal" size={16} />
             </button>
           {/if}
@@ -126,8 +127,8 @@
             <button
               class="icon-btn"
               class:turned={open[j.id]}
-              title="Rapport détaillé"
-              aria-label="Rapport détaillé"
+              title={L("Rapport détaillé", "Detailed report")}
+              aria-label={L("Rapport détaillé", "Detailed report")}
               aria-expanded={!!open[j.id]}
               onclick={() => (open[j.id] = !open[j.id])}
             >
@@ -138,12 +139,12 @@
 
         {#if open[j.id] && expandable}
           <div class="report selectable">
-            {#if j.headline}<p><b>Fidélité :</b> {j.headline}</p>{/if}
+            {#if j.headline}<p><b>{L("Fidélité :", "Fidelity:")}</b> {j.headline}</p>{/if}
             {#if j.details.length}
               <ul>{#each j.details as d, i (i)}<li>{d}</li>{/each}</ul>
             {/if}
             {#if j.verifications.length}
-              <p><b>Vérifications du résultat</b></p>
+              <p><b>{L("Vérifications du résultat", "Checks on the result")}</b></p>
               <ul class="checks">
                 {#each j.verifications as v, i (i)}
                   <li class:bad={v.level === "failed"}>
@@ -154,12 +155,12 @@
               </ul>
             {/if}
             {#if extraNotes(j).length}
-              <p><b>Remarques</b></p>
+              <p><b>{L("Remarques", "Notes")}</b></p>
               <ul>{#each extraNotes(j) as n, i (i)}<li>{n}</li>{/each}</ul>
             {/if}
             {#if j.error}<p class="err">{j.error}</p>{/if}
-            <p class="faint mono">Source : {j.path}</p>
-            {#if j.output}<p class="faint mono">Résultat : {j.output}</p>{/if}
+            <p class="faint mono">{L(`Source : ${j.path}`, `Source: ${j.path}`)}</p>
+            {#if j.output}<p class="faint mono">{L(`Résultat : ${j.output}`, `Result: ${j.output}`)}</p>{/if}
           </div>
         {/if}
       </div>

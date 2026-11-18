@@ -118,23 +118,24 @@ impl Category {
         }
     }
 
-    pub fn label_fr(self) -> &'static str {
+    /// Libellé dans la langue courante.
+    pub fn label(self) -> &'static str {
         match self {
-            Category::Image => "Images",
-            Category::Audio => "Audio",
-            Category::Video => "Vidéo",
-            Category::Document => "Documents",
-            Category::Spreadsheet => "Tableurs",
-            Category::Presentation => "Présentations",
-            Category::Pdf => "PDF et mise en page",
-            Category::Ebook => "Livres électroniques",
-            Category::Archive => "Archives",
-            Category::Data => "Données",
-            Category::Subtitle => "Sous-titres",
-            Category::Font => "Polices",
-            Category::Model3d => "3D et CAO",
-            Category::Geo => "Géographie",
-            Category::Other => "Divers",
+            Category::Image => crate::tr!("Images", "Images"),
+            Category::Audio => crate::tr!("Audio", "Audio"),
+            Category::Video => crate::tr!("Vidéo", "Video"),
+            Category::Document => crate::tr!("Documents", "Documents"),
+            Category::Spreadsheet => crate::tr!("Tableurs", "Spreadsheets"),
+            Category::Presentation => crate::tr!("Présentations", "Presentations"),
+            Category::Pdf => crate::tr!("PDF et mise en page", "PDF and page layout"),
+            Category::Ebook => crate::tr!("Livres électroniques", "E-books"),
+            Category::Archive => crate::tr!("Archives", "Archives"),
+            Category::Data => crate::tr!("Données", "Data"),
+            Category::Subtitle => crate::tr!("Sous-titres", "Subtitles"),
+            Category::Font => crate::tr!("Polices", "Fonts"),
+            Category::Model3d => crate::tr!("3D et CAO", "3D and CAD"),
+            Category::Geo => crate::tr!("Géographie", "Geography"),
+            Category::Other => crate::tr!("Divers", "Other"),
         }
     }
 
@@ -160,6 +161,9 @@ pub enum Compression {
 pub struct FormatDef {
     pub id: FormatId,
     pub name: String,
+    /// Nom anglais, quand il diffère du nom français.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name_en: Option<String>,
     pub category: Category,
     #[serde(default)]
     pub extensions: Vec<String>,
@@ -178,9 +182,27 @@ pub struct FormatDef {
     pub pivot: bool,
     #[serde(default)]
     pub limitations: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub limitations_en: Vec<String>,
 }
 
 impl FormatDef {
+    /// Nom dans la langue courante.
+    pub fn label(&self) -> &str {
+        match (crate::i18n::lang(), &self.name_en) {
+            (crate::i18n::Lang::En, Some(en)) => en,
+            _ => &self.name,
+        }
+    }
+
+    /// Limites du format dans la langue courante.
+    pub fn limits(&self) -> &[String] {
+        match crate::i18n::lang() {
+            crate::i18n::Lang::En if !self.limitations_en.is_empty() => &self.limitations_en,
+            _ => &self.limitations,
+        }
+    }
+
     /// Extension utilisée pour nommer les fichiers produits.
     pub fn output_extension(&self) -> Option<&str> {
         self.extensions.first().map(String::as_str)
@@ -249,6 +271,9 @@ impl FormatCatalog {
                 if !by_id.contains_key(r) {
                     return Err(CoreError::Catalog(format!("{} référence un format inconnu : {r}", f.id)));
                 }
+            }
+            if f.limitations_en.len() != f.limitations.len() {
+                return Err(CoreError::Catalog(format!("{} : limitations et limitations_en doivent avoir la même longueur", f.id)));
             }
             if let Some(unknown) = f.features.iter().find(|ft| !ft.is_known()) {
                 return Err(CoreError::Catalog(format!("{} : caractéristique inconnue « {unknown} »", f.id)));
@@ -322,8 +347,9 @@ impl FormatCatalog {
         let mut partial = Vec::new();
         for f in &self.formats {
             let is_exact = f.id.as_str() == q || f.extensions.contains(&q);
-            let is_partial =
-                f.id.as_str().contains(&q) || f.name.to_lowercase().contains(&q) || f.extensions.iter().any(|e| e.contains(&q));
+            let is_partial = f.id.as_str().contains(&q)
+                || (f.name.to_lowercase().contains(&q) || f.name_en.as_ref().is_some_and(|n| n.to_lowercase().contains(&q)))
+                || f.extensions.iter().any(|e| e.contains(&q));
             if is_exact && seen.insert(f.id.clone()) {
                 exact.push(f);
             } else if is_partial && seen.insert(f.id.clone()) {
@@ -398,5 +424,26 @@ based_on = ["nope"]"#;
         let r = cat.search("jpg");
         assert_eq!(r[0].id, "jpeg");
         assert!(cat.search("matroska").iter().any(|f| f.id == "mkv"));
+    }
+
+    #[test]
+    fn english_catalog_has_no_french_left() {
+        let french = |t: &str| t.chars().any(|c| "éèêëàâçùûôîïœ«»".contains(c));
+        crate::i18n::with_lang(crate::Lang::En, || {
+            for f in FormatCatalog::builtin().all() {
+                assert!(!french(f.label()), "{} : {}", f.id, f.label());
+                assert_eq!(f.limits().len(), f.limitations.len());
+                for l in f.limits() {
+                    assert!(!french(l), "{} : {l}", f.id);
+                }
+                assert!(!french(f.category.label()));
+                for ft in &f.features {
+                    assert!(!french(ft.label()), "{ft}");
+                }
+            }
+        });
+        crate::i18n::with_lang(crate::Lang::Fr, || {
+            assert_eq!(FormatCatalog::builtin().get("txt").unwrap().label(), "Texte brut");
+        });
     }
 }

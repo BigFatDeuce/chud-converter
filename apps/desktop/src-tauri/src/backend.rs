@@ -2,12 +2,13 @@
 //! analyse des fichiers, cibles possibles, plan et options, file de conversions.
 //!
 //! Tout ce qui part vers l'interface est une « vue » sérialisable en camelCase ; les textes
-//! (rapports de fidélité, erreurs) sont produits ici, en français, par le cœur.
+//! (rapports de fidélité, erreurs) sont produits ici par le cœur, dans la langue choisie.
 
 use chud_core::{
     Category, Fidelity, FidelityReport, FormatCatalog, FormatId, OptionSpec, OptionValue, OptionValues, Verification, detect_path,
 };
-use chud_enginemgr::{AppPaths, EngineManager, EngineState, EngineStatus};
+use chud_core::{Lang, LangChoice};
+use chud_enginemgr::{AppPaths, EngineManager, EngineState, EngineStatus, Settings};
 use chud_jobs::{Conflict, JobEvent, JobId, JobQueue, JobRunner, JobSpec, Preset, PresetStore, QueueEvent, QueueListener};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
@@ -24,7 +25,7 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 fn format_name(id: &FormatId) -> String {
-    catalog().get(id.as_str()).map(|d| d.name.clone()).unwrap_or_else(|| id.to_string())
+    catalog().get(id.as_str()).map(|d| d.label().to_owned()).unwrap_or_else(|| id.to_string())
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -172,6 +173,25 @@ pub struct AppInfo {
     pub engines_ready: usize,
 }
 
+/// Réglages de l'application montrés dans l'écran « Réglages ».
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsView {
+    /// Choix enregistré : system, fr ou en.
+    pub language: LangChoice,
+    /// Langue réellement utilisée.
+    pub effective: Lang,
+    /// Langue du système (pour l'étiquette « Système »).
+    pub system: Lang,
+    pub file: String,
+    /// Fichier de réglages illisible (il n'est jamais écrasé).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Après un changement : mise à jour du menu clic droit installé.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub menu_note: Option<String>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlanRequest {
@@ -233,7 +253,7 @@ impl PresetView {
     fn of(p: &Preset) -> Self {
         Self {
             id: p.id.clone(),
-            name: p.name.clone(),
+            name: p.display_name().to_owned(),
             target_name: format_name(&p.target),
             target: p.target.to_string(),
             applies_to: p.applies_to.clone(),
@@ -430,8 +450,8 @@ impl UiEvent {
                 JobEvent::Planned { plan } => UiEvent::Planned {
                     id,
                     fidelity: FidelityLevel::of(&plan.report),
-                    headline: plan.report.headline_fr().to_owned(),
-                    details: plan.report.details_fr(catalog()),
+                    headline: plan.report.headline().to_owned(),
+                    details: plan.report.details(catalog()),
                 },
                 JobEvent::Step { index, count, engine, from, to } => {
                     UiEvent::Step { id, index, count, engine: engine.to_string(), from: from.to_string(), to: to.to_string() }
@@ -445,8 +465,8 @@ impl UiEvent {
                 skipped: outcome.output.is_none(),
                 output: outcome.output.as_ref().map(|p| p.display().to_string()),
                 fidelity: outcome.plan.as_ref().map(|p| FidelityLevel::of(&p.report)),
-                headline: outcome.plan.as_ref().map(|p| p.report.headline_fr().to_owned()),
-                details: outcome.plan.as_ref().map(|p| p.report.details_fr(catalog())).unwrap_or_default(),
+                headline: outcome.plan.as_ref().map(|p| p.report.headline().to_owned()),
+                details: outcome.plan.as_ref().map(|p| p.report.details(catalog())).unwrap_or_default(),
                 verifications: outcome.verifications,
                 notes: outcome.notes,
                 duration_ms: outcome.duration_ms as u64,
@@ -468,7 +488,8 @@ pub struct Engines {
 
 impl Engines {
     pub fn load(paths: AppPaths) -> Result<Self, String> {
-        let manager = EngineManager::new(paths).map_err(|e| format!("réglages des moteurs illisibles : {e}"))?;
+        let manager = EngineManager::new(paths)
+            .map_err(|e| chud_core::trf!("réglages des moteurs illisibles : {e}", "unreadable engine settings: {e}"))?;
         let mut statuses = manager.discover();
         let registry = Arc::new(manager.build_registry(&mut statuses));
         let runner = Arc::new(JobRunner::new(registry, manager.paths().cache_dir.clone()));
@@ -499,7 +520,7 @@ impl Engines {
     pub fn targets(&self, path: &str) -> Result<FileTargets, String> {
         let path = absolute(path)?;
         let d = detect_path(&path, catalog()).map_err(|e| format!("{} : {e}", path.display()))?;
-        let source = d.format.clone().ok_or("format non reconnu")?;
+        let source = d.format.clone().ok_or(chud_core::tr!("format non reconnu", "unrecognized format"))?;
         let registry = self.runner.registry();
         let info = registry.probe(&path, &source);
         let targets = registry
@@ -511,7 +532,7 @@ impl Engines {
                 name: t.name,
                 category: t.category,
                 fidelity: FidelityLevel::of(&t.best.report),
-                headline: t.best.report.headline_fr().to_owned(),
+                headline: t.best.report.headline().to_owned(),
                 lost: t.best.report.lost_features.iter().map(|l| l.label.clone()).collect(),
                 engines: t.best.steps.iter().map(|s| s.engine.to_string()).collect(),
             })
@@ -542,8 +563,8 @@ impl Engines {
             source: p.plan.source.to_string(),
             target: p.plan.target.to_string(),
             fidelity: FidelityLevel::of(&p.plan.report),
-            headline: p.plan.report.headline_fr().to_owned(),
-            details: p.plan.report.details_fr(catalog()),
+            headline: p.plan.report.headline().to_owned(),
+            details: p.plan.report.details(catalog()),
             steps: p
                 .plan
                 .steps
@@ -560,7 +581,11 @@ impl Engines {
             Some(d) => {
                 let d = absolute(d)?;
                 if !d.is_dir() {
-                    return Err(format!("dossier de destination introuvable : {}", d.display()));
+                    return Err(chud_core::trf!(
+                        "dossier de destination introuvable : {}",
+                        "destination folder not found: {}",
+                        d.display()
+                    ));
                 }
                 Some(d)
             }
@@ -591,7 +616,7 @@ fn options(map: &BTreeMap<String, OptionValue>) -> OptionValues {
 
 fn absolute(p: &str) -> Result<PathBuf, String> {
     if p.trim().is_empty() {
-        return Err("chemin vide".into());
+        return Err(chud_core::tr!("chemin vide", "empty path").into());
     }
     std::path::absolute(p).map_err(|e| format!("{p} : {e}"))
 }
@@ -619,12 +644,12 @@ fn inspect_one(path: &Path) -> FileInfo {
             info.category = d.format.as_ref().and_then(|f| catalog().get(f.as_str())).map(|f| f.category);
             info.format_name = d.format.as_ref().map(format_name);
             info.format = d.format.as_ref().map(|f| f.to_string());
-            info.confidence = Some(d.confidence.label_fr());
-            info.method = Some(d.method.label_fr());
+            info.confidence = Some(d.confidence.label());
+            info.method = Some(d.method.label());
             info.extension_mismatch = d.extension_mismatch;
             info.note = d.note;
             if info.format.is_none() {
-                info.error = Some("format non reconnu".into());
+                info.error = Some(chud_core::tr!("format non reconnu", "unrecognized format").into());
             }
         }
         Err(e) => info.error = Some(e.to_string()),
@@ -669,6 +694,8 @@ pub struct App {
     initial: Mutex<Vec<String>>,
     /// Sérialise les écritures de presets.toml.
     presets_lock: Mutex<()>,
+    /// Sérialise les écritures des réglages.
+    settings_lock: Mutex<()>,
     /// Lots `--preset` pas encore affichés par la fenêtre rapide.
     quick: Mutex<Vec<QuickBatch>>,
     /// Derniers événements de chaque tâche (sans la progression), pour une fenêtre qui arrive
@@ -681,6 +708,14 @@ const HISTORY_JOBS: usize = 500;
 
 impl App {
     pub fn new(paths: AppPaths, listener: UiListener) -> Self {
+        // Langue avant tout texte : celle des réglages, sinon celle du système (réglages
+        // illisibles : signalés dans l'écran Réglages, jamais écrasés).
+        match Settings::load(&paths.settings_file()) {
+            Ok(s) => {
+                s.apply_language();
+            }
+            Err(_) => chud_core::set_lang(chud_core::i18n::system_lang()),
+        }
         Self {
             paths,
             engines: Mutex::new(None),
@@ -688,6 +723,7 @@ impl App {
             listener,
             initial: Mutex::default(),
             presets_lock: Mutex::default(),
+            settings_lock: Mutex::default(),
             quick: Mutex::default(),
             history: Arc::default(),
         }
@@ -771,7 +807,12 @@ impl App {
     /// Refusé si le fichier actuel est illisible : on ne l'écrase jamais sans le dire.
     pub fn save_presets(&self, presets: Vec<PresetView>) -> Result<PresetsView, String> {
         let _g = lock(&self.presets_lock);
-        self.load_presets().map_err(|e| format!("{e} — corrigez le fichier ou rétablissez les préréglages par défaut"))?;
+        self.load_presets().map_err(|e| {
+            chud_core::trf!(
+                "{e} — corrigez le fichier ou rétablissez les préréglages par défaut",
+                "{e} — fix the file or restore the default presets"
+            )
+        })?;
         let store = PresetStore { version: 1, presets: presets.into_iter().map(PresetView::into_preset).collect() };
         store.save(&self.paths.presets_file(), catalog()).map_err(|e| e.to_string())?;
         Ok(PresetsView { menu_note: self.refresh_menu(), ..self.presets() })
@@ -786,7 +827,8 @@ impl App {
         if file.exists() {
             let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
             let b = file.with_extension(format!("toml.bak-{stamp}"));
-            std::fs::copy(&file, &b).map_err(|e| format!("copie de sauvegarde impossible : {e}"))?;
+            std::fs::copy(&file, &b)
+                .map_err(|e| chud_core::trf!("copie de sauvegarde impossible : {e}", "cannot make a backup copy: {e}"))?;
             backup = Some(b.display().to_string());
         }
         PresetStore::builtin().save(&file, catalog()).map_err(|e| e.to_string())?;
@@ -808,7 +850,12 @@ impl App {
         if let Some(d) = &preset.output_dir
             && !d.is_dir()
         {
-            return Err(format!("« {} » : dossier de destination introuvable : {}", preset.name, d.display()));
+            return Err(chud_core::trf!(
+                "« {} » : dossier de destination introuvable : {}",
+                "“{}”: destination folder not found: {}",
+                preset.display_name(),
+                d.display()
+            ));
         }
         let engines = self.engines()?;
         let mut specs = Vec::new();
@@ -818,10 +865,10 @@ impl App {
             let same = !path.is_dir()
                 && detect_path(&path, catalog()).ok().and_then(|d| d.format).is_some_and(|src| preset.is_pointless_for(&src));
             if same {
-                ignored
-                    .push(Ignored {
-                        path: path.display().to_string(), reason: format!("déjà au format {}", format_name(&preset.target))
-                    });
+                ignored.push(Ignored {
+                    path: path.display().to_string(),
+                    reason: chud_core::trf!("déjà au format {}", "already in {} format", format_name(&preset.target)),
+                });
             } else {
                 specs.push(preset.job_spec(path));
             }
@@ -916,9 +963,49 @@ impl App {
         }
         let r = self.menus().and_then(|m| chud_shell::refresh_if_installed(&exe, &m).map_err(|e| e.to_string()));
         Some(match r {
-            Ok(_) => "Menu clic droit mis à jour.".into(),
-            Err(e) => format!("Le menu clic droit n'a pas pu être mis à jour : {e}"),
+            Ok(_) => chud_core::tr!("Menu clic droit mis à jour.", "Right-click menu updated.").into(),
+            Err(e) => {
+                chud_core::trf!("Le menu clic droit n'a pas pu être mis à jour : {e}", "The right-click menu could not be updated: {e}")
+            }
         })
+    }
+
+    // ------------------------------------------------------------------ réglages
+
+    pub fn settings(&self) -> SettingsView {
+        let file = self.paths.settings_file();
+        let (language, error) = match Settings::load(&file) {
+            Ok(s) => (s.language, None),
+            Err(e) => (LangChoice::System, Some(e.to_string())),
+        };
+        SettingsView {
+            language,
+            effective: chud_core::lang(),
+            system: chud_core::i18n::system_lang(),
+            file: file.display().to_string(),
+            error,
+            menu_note: None,
+        }
+    }
+
+    /// Change la langue : enregistrée dans les réglages (partagés avec la ligne de commande),
+    /// appliquée tout de suite. Les autres réglages du fichier sont conservés ; un fichier
+    /// illisible n'est jamais écrasé.
+    pub fn set_language(&self, choice: LangChoice) -> Result<SettingsView, String> {
+        let file = self.paths.settings_file();
+        {
+            let _g = lock(&self.settings_lock);
+            let mut s = Settings::load(&file).map_err(|e| e.to_string())?;
+            s.language = choice;
+            s.save(&file).map_err(|e| e.to_string())?;
+            s.apply_language();
+        }
+        // Descriptions des moteurs et libellés des options sont produits dans la langue courante :
+        // nouvelle détection au prochain besoin.
+        *lock(&self.engines) = None;
+        let mut view = self.settings();
+        view.menu_note = self.refresh_menu();
+        Ok(view)
     }
 
     pub fn cancel(&self, id: JobId) -> bool {
@@ -949,19 +1036,30 @@ mod tests {
         0x42, 0x60, 0x82,
     ];
 
-    fn setup(name: &str) -> (PathBuf, App, Arc<Mutex<Vec<UiEvent>>>) {
+    /// La langue est un réglage du processus : les tests de ce module passent un par un.
+    static SERIAL: Mutex<()> = Mutex::new(());
+
+    type Setup = (PathBuf, App, Arc<Mutex<Vec<UiEvent>>>, MutexGuard<'static, ()>);
+
+    /// Application de test en français (réglage écrit comme le ferait l'écran Réglages).
+    fn setup(name: &str) -> Setup {
+        let serial = lock(&SERIAL);
         let dir = std::env::temp_dir().join(format!("chud-desktop-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        let paths = AppPaths::at(&dir.join("app"));
+        std::fs::create_dir_all(&paths.config_dir).unwrap();
+        std::fs::write(paths.settings_file(), "language = \"fr\"\n").unwrap();
         let events: Arc<Mutex<Vec<UiEvent>>> = Arc::default();
         let ev = events.clone();
-        let app = App::new(AppPaths::at(&dir.join("app")), Arc::new(move |e| ev.lock().unwrap().push(e)));
-        (dir, app, events)
+        let app = App::new(paths, Arc::new(move |e| ev.lock().unwrap().push(e)));
+        assert_eq!(chud_core::lang(), Lang::Fr);
+        (dir, app, events, serial)
     }
 
     #[test]
     fn inspect_targets_plan_and_convert() {
-        let (dir, app, events) = setup("flow");
+        let (dir, app, events, _serial) = setup("flow");
         let png = dir.join("-photo é.png");
         std::fs::write(&png, PNG_1X1).unwrap();
         let fake = dir.join("faux.jpg");
@@ -1021,7 +1119,7 @@ mod tests {
 
     #[test]
     fn presets_round_trip_never_overwrite_broken_file_and_run() {
-        let (dir, app, events) = setup("presets");
+        let (dir, app, events, _serial) = setup("presets");
         let v = app.presets();
         assert!(v.error.is_none());
         assert!(v.presets.iter().all(|p| p.builtin));
@@ -1090,7 +1188,7 @@ mod tests {
 
     #[test]
     fn quick_batches_keep_errors_visible() {
-        let (dir, app, _) = setup("quick");
+        let (dir, app, _, _serial) = setup("quick");
         app.quick("inconnu", vec!["x.png".into()]);
         let b = app.take_quick();
         assert_eq!(b.len(), 1);
@@ -1115,7 +1213,7 @@ mod tests {
 
     #[test]
     fn rejects_missing_destination_and_serializes_camel_case() {
-        let (dir, app, _) = setup("dest");
+        let (dir, app, _, _serial) = setup("dest");
         let req: ConvertRequest = serde_json::from_value(serde_json::json!({
             "files": ["x.png"], "target": "bmp", "outputDir": dir.join("nope").display().to_string(), "conflict": "skip", "keepDate": true
         }))
@@ -1126,6 +1224,38 @@ mod tests {
         assert_eq!(ev, serde_json::json!({"kind": "failed", "id": 3, "code": "cancelled", "message": "x"}));
         let ev = serde_json::to_value(UiEvent::Progress { id: 1, fraction: Some(0.5), speed: None }).unwrap();
         assert_eq!(ev["kind"], "progress");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn language_switch_is_saved_applied_and_keeps_other_settings() {
+        let (dir, app, _, _serial) = setup("lang");
+        let file = app.paths.settings_file();
+        std::fs::write(&file, "language = \"fr\"\n\n[engines.ffmpeg]\nenabled = false\n").unwrap();
+        let png = dir.join("a.png");
+        std::fs::write(&png, PNG_1X1).unwrap();
+        let req = || PlanRequest { path: png.display().to_string(), target: "bmp".into(), options: Default::default() };
+        let fr = app.engines().unwrap().plan(&req()).unwrap();
+
+        let v = app.set_language(LangChoice::En).unwrap();
+        assert_eq!((v.language, v.effective), (LangChoice::En, Lang::En));
+        assert_eq!(chud_core::lang(), Lang::En);
+        let en = app.engines().unwrap().plan(&req()).unwrap();
+        assert_ne!(fr.headline, en.headline, "le rapport suit la langue");
+        assert_eq!(en.headline, "Lossless");
+        let names: Vec<String> = app.presets().presets.into_iter().map(|p| p.name).collect();
+        assert!(names.iter().any(|n| n == "Compress to ZIP"), "{names:?}");
+        let saved = std::fs::read_to_string(&file).unwrap();
+        assert!(saved.contains("language = \"en\"") && saved.contains("enabled = false"), "{saved}");
+
+        // Fichier illisible : refus, rien n'est écrasé.
+        std::fs::write(&file, "language = [").unwrap();
+        assert!(app.set_language(LangChoice::Fr).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "language = [");
+
+        std::fs::write(&file, "").unwrap();
+        app.set_language(LangChoice::Fr).unwrap();
+        assert_eq!(chud_core::lang(), Lang::Fr);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

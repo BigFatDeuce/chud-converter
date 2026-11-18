@@ -4,6 +4,7 @@ adapter = "none"
 homepage = "https://mkvtoolnix.download"
 license = "GPL-2.0-or-later"
 description = "Matroska : assemblage, découpe, pistes, chapitres, pièces jointes."
+description_en = "Matroska: muxing, splitting, tracks, chapters, attachments."
 categories = ['video']
 executables = ['mkvmerge']
 

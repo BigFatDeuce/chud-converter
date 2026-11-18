@@ -35,8 +35,8 @@ Your originals are never touched.
 > [!NOTE]
 > **Version 0.1 — alpha.** The conversion engine, the desktop app (Tauri 2 + Svelte 5) and the
 > `chud` command line work and are tested on real files. The app is tested on Windows and built
-> on Linux by the CI. Presets and the File Explorer right-click menu work on Windows. The program currently
-> speaks **French**; English is planned.
+> on Linux by the CI. Presets and the File Explorer right-click menu work on Windows. The whole program
+> speaks **English and French**.
 
 ## Principles
 
@@ -48,6 +48,7 @@ Your originals are never touched.
 | **Local** | Everything happens on your machine. No file, no file name is ever sent over the Internet. No telemetry. |
 | **Safe** | Command lines are never built from your file names. Booby-trapped archives are refused. External engines are confined, time-limited and cleanly stopped on cancel. |
 | **Transparent** | FFmpeg, 7-Zip and the other engines are detected, never silently replaced; their version, origin and license are shown. |
+| **Bilingual** | English and French everywhere: app, fidelity reports, errors, command line, right-click menu. It follows the system language until you pick one. |
 
 ## Screenshots
 
@@ -191,6 +192,11 @@ everything succeeded. The menu is installed for your account only, without admin
 rights, and `chud shell uninstall` removes exactly what was added. On Windows 11 it is under
 *Show more options* (Shift+F10).
 
+**Language:** English or French, in the app's *Settings* screen, with `chud language en|fr|system`,
+or for one command with `--lang en`. The choice is shared by the app, the command line and the
+right-click menu (an installed menu is rewritten in the new language). By default the system
+language is used: French on a French system, English otherwise.
+
 **Command line:**
 
 | Command | Purpose |
@@ -202,6 +208,7 @@ rights, and `chud shell uninstall` removes exactly what was added. On Windows 11
 | `chud convert <files> --to <format>` | conversion, verification and report |
 | `chud convert <files> --preset <id>` | conversion with a preset (`chud presets` lists them) |
 | `chud shell install` · `uninstall` · `status` | right-click menu of the file manager |
+| `chud language [en\|fr\|system]` | shows or changes the language |
 | `chud formats [search]` | known formats, by category |
 | `chud matrix` | conversions offered by each engine |
 
@@ -222,7 +229,7 @@ chud convert backup.zip --to directory
 - `-s key=value` sets an option; `chud plan` lists the options of each step.
 - `--on-conflict rename|skip|overwrite`: rename (default), skip or replace — never the source.
 - `--name "{stem}-web"`: output name template.
-- `--json` on every command, for scripts.
+- `--json` on every command, for scripts; `--lang en|fr` for the messages of one command.
 - Exit code: `0` all succeeded, `1` at least one failure, `2` usage error.
 
 **Portable mode**: put an empty file named `portable` next to `chud.exe`; settings, cache and
@@ -238,7 +245,7 @@ managed engines then stay in a `data` folder beside it — nothing in your user 
 - [x] Desktop app, Tauri 2 + Svelte 5 — first version
 - [x] Presets, quick-convert window, right-click menu in Windows File Explorer
 - [ ] Right-click menu on Linux: Dolphin, Nemo, Nautilus written but not yet tried on a real desktop; Thunar to do
-- [ ] English localization
+- [x] English and French, switchable in the settings
 - [ ] Verified installation and updates of engines
 - [ ] PDF, documents, e-books (qpdf, LibreOffice, Pandoc, Calibre), OCR
 - [ ] Universal inspector, duplicate finder, automatic optimization

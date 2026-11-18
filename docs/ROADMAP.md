@@ -18,7 +18,7 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [x] Moteurs : image natif, données natif (JSON/YAML/TOML/CSV/TSV/NDJSON), FFmpeg, 7-Zip
 - [x] Détection des moteurs installés (gérés, emplacements connus, PATH) et sonde de capacités
 - [x] CLI `chud` : `formats`, `engines`, `detect`, `targets`, `plan`, `convert`, `matrix`, sortie JSON, motifs `*.ext` sous Windows
-- [x] Tests unitaires et d'intégration sur fichiers réels générés (97 tests ; conflits, annulation, fichier tronqué, attaques d'archives, file d'attente, application, préréglages, menu clic droit)
+- [x] Tests unitaires et d'intégration sur fichiers réels générés (102 tests ; conflits, annulation, fichier tronqué, attaques d'archives, file d'attente, application, préréglages, menu clic droit, langues)
 - [x] Qualité : `clippy` sans avertissement, `rustfmt`, documentation utilisateur (README, BUILDING)
 
 ### 2b. Gestionnaire de moteurs complet
@@ -42,7 +42,8 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [ ] Favoris et formats récents
 - [ ] Installation des moteurs à la demande depuis l'écran Moteurs
 - [ ] Préférences complètes (modèle de nom, métadonnées, parallélisme, cache, thème forcé, portable)
-- [ ] Internationalisation FR/EN, contrôle complet au clavier, tests d'interface automatisés
+- [x] Français et anglais partout (application, rapports, erreurs, ligne de commande, menu clic droit), choix dans **Réglages**, `chud language`, `--lang` ; langue du système par défaut
+- [ ] Contrôle complet au clavier, tests d'interface automatisés
 
 ### 2c bis. Menu contextuel (demandé par le porteur — avancé depuis la phase 3)
 - [x] Conception (ADR-017, `docs/SHELL-INTEGRATION.md`)

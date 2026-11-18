@@ -3,9 +3,11 @@
 use anyhow::{Context, Result, bail};
 use chud_core::detect::detect_path;
 use chud_core::{CancelToken, Category, EngineId, FormatCatalog, FormatId, OptionValues, Plan, Registry, Verification};
-use chud_enginemgr::{AppPaths, EngineManager, EngineState, EngineStatus};
+use chud_core::{LangChoice, set_lang};
+use chud_core::{tr, trf};
+use chud_enginemgr::{AppPaths, EngineManager, EngineState, EngineStatus, Settings};
 use chud_jobs::{Conflict, JobEvent, JobRunner, JobSpec, PresetStore, run_batch};
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -17,6 +19,9 @@ struct Cli {
     /// Sortie JSON (machine).
     #[arg(long, global = true)]
     json: bool,
+    /// Langue des messages : system, fr ou en (par défaut : celle choisie dans l'application).
+    #[arg(long, global = true, value_name = "LANGUE", value_parser = ["system", "fr", "en"])]
+    lang: Option<String>,
     #[command(subcommand)]
     cmd: Cmd,
 }
@@ -94,6 +99,11 @@ enum Cmd {
         #[command(subcommand)]
         action: ShellAction,
     },
+    /// Affiche ou change la langue, partagée avec l'application (system, fr, en).
+    Language {
+        #[arg(value_parser = ["system", "fr", "en"])]
+        value: Option<String>,
+    },
     /// Matrice des conversions disponibles par moteur.
     Matrix {
         /// Limite à un format source.
@@ -127,14 +137,93 @@ enum ConflictArg {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    init_language();
+    let cli = Cli::from_arg_matches(&localized_command().get_matches()).unwrap_or_else(|e| e.exit());
     match run(cli) {
         Ok(code) => std::process::exit(code),
         Err(e) => {
-            eprintln!("erreur : {e:#}");
+            eprintln!("{}", trf!("erreur : {e:#}", "error: {e:#}"));
             std::process::exit(2);
         }
     }
+}
+
+/// Langue : `--lang` d'abord (lu avant l'analyse, pour que l'aide soit déjà dans la bonne
+/// langue), sinon le réglage de l'application, sinon la langue du système.
+fn init_language() {
+    let mut args = std::env::args_os().skip(1);
+    let mut flag = None;
+    while let Some(a) = args.next() {
+        let a = a.to_string_lossy().into_owned();
+        if a == "--" {
+            break;
+        }
+        if let Some(v) = a.strip_prefix("--lang=") {
+            flag = Some(v.to_owned());
+        } else if a == "--lang" {
+            flag = args.next().map(|v| v.to_string_lossy().into_owned());
+        }
+    }
+    let choice = flag.as_deref().and_then(LangChoice::parse).unwrap_or_else(|| {
+        // Réglages illisibles : la langue du système ; l'erreur sera signalée par la commande qui
+        // en a besoin.
+        Settings::load(&AppPaths::detect().settings_file()).map(|s| s.language).unwrap_or_default()
+    });
+    set_lang(choice.resolve());
+}
+
+/// Aide de la ligne de commande : écrite en français dans le code, traduite ici pour l'anglais.
+fn localized_command() -> clap::Command {
+    let cmd = Cli::command();
+    if chud_core::lang() == chud_core::Lang::Fr {
+        return cmd;
+    }
+    let help = |text: &'static str| move |a: clap::Arg| a.help(text);
+    cmd.about("Chud Converter: local, honest and verified file conversion")
+        .mut_arg("json", help("JSON output (for machines)."))
+        .mut_arg("lang", |a| a.help("Message language: system, fr or en (default: the one chosen in the app).").value_name("LANGUAGE"))
+        .mut_subcommand("formats", |c| {
+            c.about("Lists the known formats.")
+                .mut_arg("category", help("Filter by category (image, audio, video, document, archive…)."))
+                .mut_arg("query", help("Search in names and extensions."))
+        })
+        .mut_subcommand("engines", |c| c.about("Detects the installed engines (FFmpeg, 7-Zip, LibreOffice…)."))
+        .mut_subcommand("detect", |c| c.about("Detects the real format of files."))
+        .mut_subcommand("targets", |c| c.about("Possible target formats for a file, with the expected fidelity."))
+        .mut_subcommand("plan", |c| {
+            c.about("Shows the conversion plan and the fidelity report, without writing anything.")
+                .mut_arg("set", help("Conversion option “key=value” (repeatable)."))
+        })
+        .mut_subcommand("convert", |c| {
+            c.about("Converts one or more files (to a format, or with a preset).")
+                .mut_arg("preset", help("Preset (see `chud presets`): saved format, options and output choices."))
+                .mut_arg("output", help("Output folder (default: the folder of each source)."))
+                .mut_arg("set", help("Conversion option “key=value” (repeatable)."))
+                .mut_arg("name", help("Output name template: {stem}, {target} (default {stem})."))
+                .mut_arg("on_conflict", help("Output file already there: rename (default), skip or overwrite."))
+                .mut_arg("jobs", help("Number of simultaneous conversions."))
+                .mut_arg("keep_date", help("Copies the source's modification date."))
+                .mut_arg("engine", help("Engine to prefer (ffmpeg, image, 7zip…)."))
+                .mut_arg("timeout", help("Time limit per step, in seconds."))
+        })
+        .mut_subcommand("presets", |c| {
+            c.about("Presets: all of them, or those offered for given files (like the right-click menu).").mut_arg(
+                "write_defaults",
+                help("Writes the default presets to the presets file if it does not exist yet (to edit them by hand). An existing file is never replaced."),
+            )
+        })
+        .mut_subcommand("shell", |c| {
+            c.about("File manager right-click menu (Windows: the user's registry; Linux: Dolphin, Nemo, Nautilus). No administrator rights needed.")
+                .mut_subcommand("install", |c| {
+                    c.about("Adds (or updates) the “Chud Converter” menu from the active presets.")
+                        .mut_arg("exe", help("Program to launch (default: chud-converter next to chud)."))
+                        .mut_arg("dry_run", help("Shows what would be installed, without changing anything."))
+                })
+                .mut_subcommand("uninstall", |c| c.about("Removes the menu: only the items created by Chud Converter."))
+                .mut_subcommand("status", |c| c.about("Tells whether the menu is installed and which program it launches."))
+        })
+        .mut_subcommand("language", |c| c.about("Shows or changes the language, shared with the app (system, fr, en)."))
+        .mut_subcommand("matrix", |c| c.about("Matrix of the conversions available per engine.").mut_arg("from", help("Limit to one source format.")))
 }
 
 fn catalog() -> &'static FormatCatalog {
@@ -153,7 +242,8 @@ struct Env {
 }
 
 fn load_engines() -> Result<Env> {
-    let manager = EngineManager::new(AppPaths::detect()).context("chargement des réglages des moteurs")?;
+    let manager =
+        EngineManager::new(AppPaths::detect()).context(tr!("chargement des réglages des moteurs", "loading the engine settings"))?;
     let mut statuses = manager.discover();
     let registry = Arc::new(manager.build_registry(&mut statuses));
     Ok(Env { manager, statuses, registry })
@@ -162,7 +252,7 @@ fn load_engines() -> Result<Env> {
 fn parse_options(set: &[String]) -> Result<OptionValues> {
     let mut o = OptionValues::new();
     for s in set {
-        o.parse_assignment(s).map_err(|e| anyhow::anyhow!("--set {s} : {e}"))?;
+        o.parse_assignment(s).map_err(|e| anyhow::anyhow!("{}", trf!("--set {s} : {e}", "--set {s}: {e}")))?;
     }
     Ok(o)
 }
@@ -178,22 +268,29 @@ fn resolve_target(s: &str) -> Result<FormatId> {
     }
     let suggestions: Vec<String> = c.search(&lower).into_iter().take(5).map(|d| d.id.to_string()).collect();
     if suggestions.is_empty() {
-        bail!("format cible inconnu : « {s} » (voir `chud formats`)");
+        bail!("{}", trf!("format cible inconnu : « {s} » (voir `chud formats`)", "unknown target format: “{s}” (see `chud formats`)"));
     }
-    bail!("format cible inconnu : « {s} ». Vouliez-vous dire : {} ?", suggestions.join(", "))
+    bail!(
+        "{}",
+        trf!(
+            "format cible inconnu : « {s} ». Vouliez-vous dire : {} ?",
+            "unknown target format: “{s}”. Did you mean: {}?",
+            suggestions.join(", ")
+        )
+    )
 }
 
 fn fmt_name(id: &FormatId) -> String {
-    catalog().get(id.as_str()).map_or_else(|| id.to_string(), |d| format!("{} ({})", d.name, id))
+    catalog().get(id.as_str()).map_or_else(|| id.to_string(), |d| format!("{} ({})", d.label(), id))
 }
 
 fn print_plan(plan: &Plan) {
-    println!("Plan : {} → {}", fmt_name(&plan.source), fmt_name(&plan.target));
+    println!("{}", trf!("Plan : {} → {}", "Plan: {} → {}", fmt_name(&plan.source), fmt_name(&plan.target)));
     for (i, s) in plan.steps.iter().enumerate() {
-        println!("  {}. {} → {} avec {} — {}", i + 1, s.from, s.to, s.engine, s.fidelity.label_fr());
+        println!("{}", trf!("  {}. {} → {} avec {} — {}", "  {}. {} → {} with {} — {}", i + 1, s.from, s.to, s.engine, s.fidelity.label()));
     }
-    println!("Fidélité : {}", plan.report.headline_fr());
-    for d in plan.report.details_fr(catalog()) {
+    println!("{}", trf!("Fidélité : {}", "Fidelity: {}", plan.report.headline()));
+    for d in plan.report.details(catalog()) {
         println!("  • {d}");
     }
 }
@@ -234,14 +331,14 @@ fn expand_patterns(args: Vec<PathBuf>) -> Result<Vec<PathBuf>> {
         }
         let parent = a.parent().filter(|p| !p.as_os_str().is_empty()).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
         let mut found: Vec<PathBuf> = std::fs::read_dir(&parent)
-            .with_context(|| format!("dossier illisible : {}", parent.display()))?
+            .with_context(|| trf!("dossier illisible : {}", "unreadable folder: {}", parent.display()))?
             .filter_map(|e| e.ok())
             .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
             .filter(|e| wildcard_match(&name, &e.file_name().to_string_lossy()))
             .map(|e| if parent == *"." { PathBuf::from(e.file_name()) } else { e.path() })
             .collect();
         if found.is_empty() {
-            bail!("aucun fichier ne correspond à « {} »", a.display());
+            bail!("{}", trf!("aucun fichier ne correspond à « {} »", "no file matches “{}”", a.display()));
         }
         found.sort();
         out.extend(found);
@@ -253,7 +350,7 @@ fn run(cli: Cli) -> Result<i32> {
     match cli.cmd {
         Cmd::Formats { category, query } => {
             let cat = match &category {
-                Some(c) => Some(Category::parse(c).with_context(|| format!("catégorie inconnue : {c}"))?),
+                Some(c) => Some(Category::parse(c).with_context(|| trf!("catégorie inconnue : {c}", "unknown category: {c}"))?),
                 None => None,
             };
             let mut list: Vec<_> = match &query {
@@ -268,9 +365,9 @@ fn run(cli: Cli) -> Result<i32> {
             for d in list {
                 if current != Some(d.category) {
                     current = Some(d.category);
-                    println!("\n{}", d.category.label_fr());
+                    println!("\n{}", d.category.label());
                 }
-                println!("  {:<12} {:<40} .{}", d.id.as_str(), d.name, d.extensions.join(" ."));
+                println!("  {:<12} {:<40} .{}", d.id.as_str(), d.label(), d.extensions.join(" ."));
             }
             Ok(0)
         }
@@ -280,23 +377,30 @@ fn run(cli: Cli) -> Result<i32> {
                 return print_json(&env.statuses).map(|_| 0);
             }
             println!(
-                "Données : {}{}",
-                env.manager.paths().data_dir.display(),
-                if env.manager.paths().portable { " (portable)" } else { "" }
+                "{}",
+                trf!(
+                    "Données : {}{}",
+                    "Data: {}{}",
+                    env.manager.paths().data_dir.display(),
+                    if env.manager.paths().portable { " (portable)" } else { "" }
+                )
             );
-            println!("Moteurs intégrés : images (natif), données (natif)\n");
+            println!(
+                "{}",
+                trf!("Moteurs intégrés : images (natif), données (natif)\n", "Built-in engines: images (native), data (native)\n")
+            );
             for s in &env.statuses {
                 let state = match &s.state {
-                    EngineState::Ready => "prêt".to_string(),
-                    EngineState::NoAdapter => "détecté (intégration à venir)".to_string(),
-                    EngineState::Broken(e) => format!("en panne : {e}"),
-                    EngineState::Missing => "absent".to_string(),
-                    EngineState::Disabled => "désactivé".to_string(),
+                    EngineState::Ready => tr!("prêt", "ready").to_string(),
+                    EngineState::NoAdapter => tr!("détecté (intégration à venir)", "detected (integration to come)").to_string(),
+                    EngineState::Broken(e) => trf!("en panne : {e}", "broken: {e}"),
+                    EngineState::Missing => tr!("absent", "missing").to_string(),
+                    EngineState::Disabled => tr!("désactivé", "disabled").to_string(),
                 };
                 let origin = match s.origin {
-                    Some(chud_core::EngineOrigin::Custom) => " [chemin personnalisé]",
-                    Some(chud_core::EngineOrigin::Managed) => " [géré]",
-                    Some(chud_core::EngineOrigin::System) => " [système]",
+                    Some(chud_core::EngineOrigin::Custom) => tr!(" [chemin personnalisé]", " [custom path]"),
+                    Some(chud_core::EngineOrigin::Managed) => tr!(" [géré]", " [managed]"),
+                    Some(chud_core::EngineOrigin::System) => tr!(" [système]", " [system]"),
                     _ => "",
                 };
                 println!("{:<26} {}{}", s.name, state, s.version.as_ref().map(|v| format!(" — {v}")).unwrap_or_default());
@@ -306,11 +410,11 @@ fn run(cli: Cli) -> Result<i32> {
                 if s.state == EngineState::Missing
                     && let Some(h) = &s.hint
                 {
-                    println!("{:<26} installation : {h}", "");
+                    println!("{}", trf!("{:<26} installation : {h}", "{:<26} install: {h}", ""));
                 }
             }
             let n: usize = env.registry.engines().iter().map(|e| e.conversions().len()).sum();
-            println!("\n{} conversions directes disponibles.", n);
+            println!("{}", trf!("\n{} conversions directes disponibles.", "\n{} direct conversions available.", n));
             Ok(0)
         }
         Cmd::Detect { files } => {
@@ -321,16 +425,23 @@ fn run(cli: Cli) -> Result<i32> {
                 match detect_path(f, catalog()) {
                     Ok(d) => {
                         if !cli.json {
-                            let name = d.format.as_ref().map_or("inconnu".into(), fmt_name);
+                            let name = d.format.as_ref().map_or(tr!("inconnu", "unknown").into(), fmt_name);
                             println!(
-                                "{} : {} — confiance {}, méthode : {}",
-                                f.display(),
-                                name,
-                                d.confidence.label_fr(),
-                                d.method.label_fr()
+                                "{}",
+                                trf!(
+                                    "{} : {} — confiance {}, méthode : {}",
+                                    "{}: {} — confidence {}, method: {}",
+                                    f.display(),
+                                    name,
+                                    d.confidence.label(),
+                                    d.method.label()
+                                )
                             );
                             if d.extension_mismatch {
-                                println!("  ⚠ l'extension ne correspond pas au contenu");
+                                println!(
+                                    "{}",
+                                    trf!("  ⚠ l'extension ne correspond pas au contenu", "  ⚠ the extension does not match the content")
+                                );
                             }
                             if let Some(n) = &d.note {
                                 println!("  {n}");
@@ -340,7 +451,7 @@ fn run(cli: Cli) -> Result<i32> {
                     }
                     Err(e) => {
                         code = 1;
-                        eprintln!("{} : {e}", f.display());
+                        eprintln!("{}", trf!("{} : {e}", "{}: {e}", f.display()));
                         out.push(serde_json::json!({ "file": f, "error": e.to_string() }));
                     }
                 }
@@ -353,26 +464,26 @@ fn run(cli: Cli) -> Result<i32> {
         Cmd::Targets { file } => {
             let env = load_engines()?;
             let d = detect_path(&file, catalog())?;
-            let src = d.format.clone().context("format non reconnu")?;
+            let src = d.format.clone().context(tr!("format non reconnu", "unrecognized format"))?;
             let info = env.registry.probe(&std::path::absolute(&file)?, &src);
             let targets = env.registry.targets(&src, info.as_ref(), &OptionValues::new());
             if cli.json {
                 return print_json(&serde_json::json!({ "source": src, "probe": info, "targets": targets })).map(|_| 0);
             }
-            println!("{} : {}", file.display(), fmt_name(&src));
+            println!("{}", trf!("{} : {}", "{}: {}", file.display(), fmt_name(&src)));
             if let Some(i) = &info {
                 for (k, v) in &i.summary {
-                    println!("  {k} : {v}");
+                    println!("{}", trf!("  {k} : {v}", "  {k}: {v}"));
                 }
             }
             let mut current = None;
             for t in &targets {
                 if current != Some(t.category) {
                     current = Some(t.category);
-                    println!("\n{}", t.category.label_fr());
+                    println!("\n{}", t.category.label());
                 }
                 let via: Vec<String> = t.best.steps.iter().map(|s| s.engine.to_string()).collect();
-                println!("  {:<12} {:<34} {:<18} via {}", t.format.as_str(), t.name, t.best.report.headline_fr(), via.join(" + "));
+                println!("  {:<12} {:<34} {:<18} via {}", t.format.as_str(), t.name, t.best.report.headline(), via.join(" + "));
             }
             Ok(0)
         }
@@ -391,20 +502,20 @@ fn run(cli: Cli) -> Result<i32> {
                 if let Some(e) = env.registry.engine(&s.engine) {
                     let opts = e.options(&s.from, &s.to);
                     if !opts.is_empty() {
-                        println!("Options de l'étape {} → {} ({}) :", s.from, s.to, s.engine);
+                        println!("{}", trf!("Options de l'étape {} → {} ({}) :", "Options for step {} → {} ({}):", s.from, s.to, s.engine));
                         for o in opts {
-                            println!("  --set {}=…  {}{}", o.key, o.label, if o.advanced { " (avancé)" } else { "" });
+                            println!("  --set {}=…  {}{}", o.key, o.label, if o.advanced { tr!(" (avancé)", " (advanced)") } else { "" });
                         }
                     }
                 }
             }
-            println!("Sortie prévue : {}", p.output.display());
+            println!("{}", trf!("Sortie prévue : {}", "Planned output: {}", p.output.display()));
             Ok(0)
         }
         Cmd::Convert { files, to, preset, output, set, name, on_conflict, jobs, keep_date, engine, timeout } => {
             let files = expand_patterns(files)?;
             if files.is_empty() {
-                bail!("aucun fichier à convertir");
+                bail!("{}", trf!("aucun fichier à convertir", "no file to convert"));
             }
             let env = load_engines()?;
             let runner = JobRunner::new(env.registry.clone(), env.manager.paths().cache_dir.clone());
@@ -419,7 +530,7 @@ fn run(cli: Cli) -> Result<i32> {
             let target = match (&to, &preset) {
                 (Some(to), _) => resolve_target(to)?,
                 (None, Some(p)) => p.target.clone(),
-                (None, None) => bail!("indiquez --to ou --preset"),
+                (None, None) => bail!("{}", trf!("indiquez --to ou --preset", "give --to or --preset")),
             };
             let extra = parse_options(&set)?;
             let specs: Vec<JobSpec> = files
@@ -469,7 +580,7 @@ fn run(cli: Cli) -> Result<i32> {
                         let b = multi.add(ProgressBar::new(1000));
                         b.set_style(style.clone());
                         b.set_prefix(s.input.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
-                        b.set_message("en attente");
+                        b.set_message(tr!("en attente", "waiting"));
                         b
                     })
                     .collect()
@@ -485,17 +596,21 @@ fn run(cli: Cli) -> Result<i32> {
                 let b = &bars[idx];
                 match ev {
                     JobEvent::Step { index, count, engine, from, to, .. } => {
-                        b.set_message(format!("étape {}/{count} : {from} → {to} ({engine})", index + 1));
+                        b.set_message(trf!(
+                            "étape {}/{count} : {from} → {to} ({engine})",
+                            "step {}/{count}: {from} → {to} ({engine})",
+                            index + 1
+                        ));
                     }
                     JobEvent::Progress { fraction, speed, .. } => {
                         if let Some(f) = fraction {
                             b.set_position((f * 1000.0) as u64);
                         }
                         if let Some(s) = speed {
-                            b.set_message(format!("vitesse {s}"));
+                            b.set_message(trf!("vitesse {s}", "speed {s}"));
                         }
                     }
-                    JobEvent::Verified { .. } => b.set_message("vérifié"),
+                    JobEvent::Verified { .. } => b.set_message(tr!("vérifié", "verified")),
                     _ => {}
                 }
             });
@@ -512,20 +627,20 @@ fn run(cli: Cli) -> Result<i32> {
                         }
                         match &o.output {
                             Some(out) => println!("✔ {input} → {}", out.display()),
-                            None => println!("↷ {input} : ignoré"),
+                            None => println!("{}", trf!("↷ {input} : ignoré", "↷ {input}: skipped")),
                         }
                         if let Some(p) = &o.plan {
-                            println!("    Fidélité : {}", p.report.headline_fr());
-                            for d in p.report.details_fr(catalog()) {
+                            println!("{}", trf!("    Fidélité : {}", "    Fidelity: {}", p.report.headline()));
+                            for d in p.report.details(catalog()) {
                                 println!("    • {d}");
                             }
                         }
                         for v in &o.verifications {
                             let t = match v {
-                                Verification::Decoded(d) => format!("vérifié : {d}"),
-                                Verification::Structural(d) => format!("contrôlé : {d}"),
-                                Verification::SignatureOnly => "signature contrôlée seulement".into(),
-                                Verification::Failed(d) => format!("ÉCHEC : {d}"),
+                                Verification::Decoded(d) => trf!("vérifié : {d}", "verified: {d}"),
+                                Verification::Structural(d) => trf!("contrôlé : {d}", "checked: {d}"),
+                                Verification::SignatureOnly => tr!("signature contrôlée seulement", "signature checked only").into(),
+                                Verification::Failed(d) => trf!("ÉCHEC : {d}", "FAILED: {d}"),
                             };
                             println!("    ✓ {t}");
                         }
@@ -539,13 +654,13 @@ fn run(cli: Cli) -> Result<i32> {
                         if json {
                             println!("{}", serde_json::json!({ "job": i, "error": { "code": e.code(), "message": e.to_string() } }));
                         } else {
-                            println!("✘ {input} : {e}");
+                            println!("{}", trf!("✘ {input} : {e}", "✘ {input}: {e}"));
                         }
                     }
                 }
             }
             if !json && specs.len() > 1 {
-                println!("\n{} réussie(s), {failed} échec(s).", specs.len() - failed);
+                println!("{}", trf!("\n{} réussie(s), {failed} échec(s).", "\n{} succeeded, {failed} failed.", specs.len() - failed));
             }
             Ok(if failed > 0 { 1 } else { 0 })
         }
@@ -554,10 +669,13 @@ fn run(cli: Cli) -> Result<i32> {
             let file = paths.presets_file();
             if write_defaults {
                 if file.exists() {
-                    bail!("{} existe déjà : il n'est jamais remplacé", file.display());
+                    bail!(
+                        "{}",
+                        trf!("{} existe déjà : il n'est jamais remplacé", "{} already exists: it is never replaced", file.display())
+                    );
                 }
                 PresetStore::builtin().save(&file, catalog())?;
-                eprintln!("Préréglages par défaut écrits dans {}", file.display());
+                eprintln!("{}", trf!("Préréglages par défaut écrits dans {}", "Default presets written to {}", file.display()));
             }
             let store = PresetStore::load(&file, catalog())?;
             let files = expand_patterns(files)?;
@@ -567,23 +685,58 @@ fn run(cli: Cli) -> Result<i32> {
                 print_json(&serde_json::json!({ "file": file, "exists": file.exists(), "presets": shown }))?;
                 return Ok(0);
             }
-            let origin = if file.exists() { "fichier" } else { "valeurs par défaut, fichier non créé" };
-            println!("Préréglages ({origin}) : {}", file.display());
+            let origin = if file.exists() {
+                tr!("fichier", "file")
+            } else {
+                tr!("valeurs par défaut, fichier non créé", "defaults, file not created")
+            };
+            println!("{}", trf!("Préréglages ({origin}) : {}", "Presets ({origin}): {}", file.display()));
             if !files.is_empty() && shown.is_empty() {
-                println!("Aucun préréglage pour cette sélection (type inconnu ou sans préréglage commun).");
+                println!(
+                    "{}",
+                    trf!(
+                        "Aucun préréglage pour cette sélection (type inconnu ou sans préréglage commun).",
+                        "No preset for this selection (unknown type or no common preset)."
+                    )
+                );
             }
             for p in shown {
-                let name = catalog().get(p.target.as_str()).map(|f| f.name.as_str()).unwrap_or(p.target.as_str());
-                let state = if p.enabled { "" } else { "  (désactivé)" };
-                println!("  {:<14} {:<26} → {:<26} [{}]{state}", p.id, p.name, name, p.applies_to.join(", "));
+                let name = catalog().get(p.target.as_str()).map(|f| f.label()).unwrap_or(p.target.as_str());
+                let state = if p.enabled { "" } else { tr!("  (désactivé)", "  (disabled)") };
+                println!("  {:<14} {:<26} → {:<26} [{}]{state}", p.id, p.display_name(), name, p.applies_to.join(", "));
                 if !p.options.is_empty() {
                     let opts: Vec<String> = p.options.iter().map(|(k, v)| format!("{k}={v}")).collect();
-                    println!("  {:<14} options : {}", "", opts.join(", "));
+                    println!("{}", trf!("  {:<14} options : {}", "  {:<14} options: {}", "", opts.join(", ")));
                 }
             }
             Ok(0)
         }
         Cmd::Shell { action } => shell(action, cli.json),
+        Cmd::Language { value } => {
+            let paths = AppPaths::detect();
+            let file = paths.settings_file();
+            let mut settings = Settings::load(&file)?;
+            if let Some(v) = value {
+                settings.language = LangChoice::parse(&v).context("system, fr, en")?;
+                settings.save(&file)?;
+                // Les menus clic droit installés suivent la langue.
+                settings.apply_language();
+                if let Ok(env) = load_engines() {
+                    let _ = refresh_menu(&env);
+                }
+            }
+            let effective = settings.language.resolve();
+            if cli.json {
+                return print_json(&serde_json::json!({ "setting": settings.language, "effective": effective, "file": file })).map(|_| 0);
+            }
+            let setting = match settings.language {
+                LangChoice::System => tr!("langue du système", "system language"),
+                LangChoice::Fr => "français",
+                LangChoice::En => "English",
+            };
+            println!("{}", trf!("Langue : {setting} ({}) — {}", "Language: {setting} ({}) — {}", effective.code(), file.display()));
+            Ok(0)
+        }
         Cmd::Matrix { from } => {
             let env = load_engines()?;
             let mut rows = Vec::new();
@@ -618,6 +771,27 @@ fn run(cli: Cli) -> Result<i32> {
     }
 }
 
+/// Contenu du menu : seules les conversions réalisables avec les moteurs présents y entrent.
+fn plan_menus(env: &Env) -> Result<Vec<chud_shell::Menu>> {
+    let store = PresetStore::load(&env.manager.paths().presets_file(), catalog())?;
+    let mut cache: std::collections::HashMap<FormatId, Vec<FormatId>> = Default::default();
+    Ok(chud_shell::plan_menus_with(&store, catalog(), |src, dst| {
+        cache
+            .entry(src.clone())
+            .or_insert_with(|| env.registry.targets(src, None, &OptionValues::new()).into_iter().map(|t| t.format).collect())
+            .contains(dst)
+    }))
+}
+
+/// Réécrit le menu s'il est installé (ses libellés suivent la langue).
+fn refresh_menu(env: &Env) -> Result<bool> {
+    let st = chud_shell::status()?;
+    match (&st.exe, st.installed) {
+        (Some(exe), true) => Ok(chud_shell::refresh_if_installed(exe, &plan_menus(env)?)?),
+        _ => Ok(false),
+    }
+}
+
 fn shell(action: ShellAction, json: bool) -> Result<i32> {
     match action {
         ShellAction::Install { exe, dry_run } => {
@@ -625,16 +799,8 @@ fn shell(action: ShellAction, json: bool) -> Result<i32> {
                 Some(e) => std::path::absolute(e)?,
                 None => chud_shell::default_gui_exe()?,
             };
-            let store = PresetStore::load(&AppPaths::detect().presets_file(), catalog())?;
-            // Seules les conversions réalisables avec les moteurs présents entrent dans le menu.
             let env = load_engines()?;
-            let mut cache: std::collections::HashMap<FormatId, Vec<FormatId>> = Default::default();
-            let menus = chud_shell::plan_menus_with(&store, catalog(), |src, dst| {
-                cache
-                    .entry(src.clone())
-                    .or_insert_with(|| env.registry.targets(src, None, &OptionValues::new()).into_iter().map(|t| t.format).collect())
-                    .contains(dst)
-            });
+            let menus = plan_menus(&env)?;
             if dry_run {
                 if json {
                     let v: Vec<_> = menus
@@ -644,29 +810,43 @@ fn shell(action: ShellAction, json: bool) -> Result<i32> {
                         .collect();
                     return print_json(&serde_json::json!({ "exe": exe, "menus": v })).map(|_| 0);
                 }
-                println!("Programme lancé : {}", exe.display());
+                println!("{}", trf!("Programme lancé : {}", "Program launched: {}", exe.display()));
                 for m in &menus {
                     let names: Vec<&str> = m.items.iter().map(|i| i.name.as_str()).collect();
                     let target = if m.folder {
-                        "dossiers".to_owned()
+                        tr!("dossiers", "folders").to_owned()
                     } else {
                         m.extensions.iter().map(|e| format!(".{e}")).collect::<Vec<_>>().join(" ")
                     };
                     println!("  {target}\n    → {}", names.join(", "));
                 }
-                println!("(simulation : rien n'a été modifié)");
+                println!("{}", trf!("(simulation : rien n'a été modifié)", "(dry run: nothing was changed)"));
                 return Ok(0);
             }
             let st = chud_shell::install(&exe, &menus)?;
             if json {
                 return print_status(&st, true);
             }
-            println!("Menu clic droit installé : {} types de fichiers, programme {}", st.entries, exe.display());
-            println!("Emplacement : {}", st.location);
+            println!(
+                "{}",
+                trf!(
+                    "Menu clic droit installé : {} types de fichiers, programme {}",
+                    "Right-click menu installed: {} file types, program {}",
+                    st.entries,
+                    exe.display()
+                )
+            );
+            println!("{}", trf!("Emplacement : {}", "Location: {}", st.location));
             if cfg!(windows) {
-                println!("Sous Windows 11, il apparaît dans « Afficher plus d'options » (ou Maj+F10).");
+                println!(
+                    "{}",
+                    trf!(
+                        "Sous Windows 11, il apparaît dans « Afficher plus d'options » (ou Maj+F10).",
+                        "On Windows 11 it is under “Show more options” (or Shift+F10)."
+                    )
+                );
             }
-            println!("Pour le retirer : chud shell uninstall");
+            println!("{}", trf!("Pour le retirer : chud shell uninstall", "To remove it: chud shell uninstall"));
             Ok(0)
         }
         ShellAction::Uninstall => {
@@ -676,7 +856,11 @@ fn shell(action: ShellAction, json: bool) -> Result<i32> {
             }
             println!(
                 "{}",
-                if n == 0 { "Le menu n'était pas installé.".to_owned() } else { format!("Menu retiré ({n} éléments supprimés).") }
+                if n == 0 {
+                    tr!("Le menu n'était pas installé.", "The menu was not installed.").to_owned()
+                } else {
+                    trf!("Menu retiré ({n} éléments supprimés).", "Menu removed ({n} items deleted).")
+                }
             );
             Ok(0)
         }
@@ -691,14 +875,25 @@ fn print_status(st: &chud_shell::Status, json: bool) -> Result<i32> {
         return Ok(0);
     }
     if !st.installed {
-        println!("Menu clic droit : non installé (chud shell install).");
+        println!(
+            "{}",
+            trf!("Menu clic droit : non installé (chud shell install).", "Right-click menu: not installed (chud shell install).")
+        );
         return Ok(0);
     }
-    println!("Menu clic droit : installé, {} types de fichiers.", st.entries);
+    println!("{}", trf!("Menu clic droit : installé, {} types de fichiers.", "Right-click menu: installed, {} file types.", st.entries));
     if let Some(e) = &st.exe {
-        println!("Programme : {}{}", e.display(), if st.exe_missing { "  (INTROUVABLE : réinstallez le menu)" } else { "" });
+        println!(
+            "{}",
+            trf!(
+                "Programme : {}{}",
+                "Program: {}{}",
+                e.display(),
+                if st.exe_missing { tr!("  (INTROUVABLE : réinstallez le menu)", "  (NOT FOUND: reinstall the menu)") } else { "" }
+            )
+        );
     }
-    println!("Emplacement : {}", st.location);
+    println!("{}", trf!("Emplacement : {}", "Location: {}", st.location));
     Ok(if st.exe_missing { 1 } else { 0 })
 }
 

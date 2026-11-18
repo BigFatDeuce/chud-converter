@@ -4,6 +4,7 @@ adapter = "none"
 homepage = "https://pandoc.org"
 license = "GPL-2.0-or-later"
 description = "Documents texte : Markdown, HTML, DOCX, ODT, EPUB, LaTeX…"
+description_en = "Text documents: Markdown, HTML, DOCX, ODT, EPUB, LaTeX…"
 categories = ['document', 'ebook']
 executables = ['pandoc']
 

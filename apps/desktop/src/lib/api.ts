@@ -2,6 +2,7 @@
 // navigateur (développement de l'interface uniquement), une imitation affiche des données
 // fictives, clairement signalées. Cette imitation n'existe pas dans la version compilée.
 
+import { L, type Lang, type LangChoice } from "./i18n.svelte";
 import type {
   AppInfo,
   ConvertRequest,
@@ -16,6 +17,7 @@ import type {
   RunPreset,
   ShellView,
   Submitted,
+  SettingsView,
   UiEvent,
 } from "./types";
 
@@ -60,6 +62,11 @@ export interface Api {
   shellStatus(): Promise<ShellView>;
   shellInstall(): Promise<ShellView>;
   shellUninstall(): Promise<ShellView>;
+
+  settings(): Promise<SettingsView>;
+  setLanguage(language: LangChoice): Promise<SettingsView>;
+  /** La langue a changé (depuis n'importe quelle fenêtre). */
+  onLanguage(cb: (lang: Lang) => void): Promise<() => void>;
 }
 
 function tauriApi(): Api {
@@ -94,7 +101,7 @@ function tauriApi(): Api {
     },
     async pickFiles() {
       const { open } = await import("@tauri-apps/plugin-dialog");
-      const r = await open({ multiple: true, directory: false, title: "Fichiers à convertir" });
+      const r = await open({ multiple: true, directory: false, title: L("Fichiers à convertir", "Files to convert") });
       return r ?? [];
     },
     async pickFolder(title) {
@@ -131,6 +138,12 @@ function tauriApi(): Api {
     shellStatus: () => call("shell_status"),
     shellInstall: () => call("shell_install"),
     shellUninstall: () => call("shell_uninstall"),
+    settings: () => call("settings"),
+    setLanguage: (language) => call("set_language", { language }),
+    async onLanguage(cb) {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<Lang>("language", (e) => cb(e.payload));
+    },
     async closeWindow() {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().close();
@@ -141,7 +154,7 @@ function tauriApi(): Api {
 async function load(): Promise<Api> {
   if ("__TAURI_INTERNALS__" in window) return tauriApi();
   if (import.meta.env.DEV) return (await import("./mock")).mockApi();
-  throw new Error("Chud Converter doit être lancé comme application de bureau.");
+  throw new Error(L("Chud Converter doit être lancé comme application de bureau.", "Chud Converter must be run as a desktop app."));
 }
 
 export const api: Promise<Api> = load();

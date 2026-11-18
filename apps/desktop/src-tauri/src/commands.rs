@@ -3,16 +3,18 @@
 
 use crate::backend::{
     App, AppInfo, ConvertRequest, EngineView, FileInfo, FileTargets, PlanRequest, PlanView, PresetView, PresetsView, QuickBatch, RunPreset,
-    ShellView, Submitted,
+    SettingsView, ShellView, Submitted,
 };
+use chud_core::LangChoice;
 use chud_jobs::JobId;
 use std::sync::Arc;
 use tauri::State;
+use tauri::{AppHandle, Emitter};
 
 type Shared<'a> = State<'a, Arc<App>>;
 
 async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T, String> + Send + 'static) -> Result<T, String> {
-    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| format!("tâche interrompue : {e}"))?
+    tauri::async_runtime::spawn_blocking(f).await.map_err(|e| chud_core::trf!("tâche interrompue : {e}", "task interrupted: {e}"))?
 }
 
 #[tauri::command]
@@ -131,6 +133,21 @@ pub async fn shell_status(app: Shared<'_>) -> Result<ShellView, String> {
 pub async fn shell_install(app: Shared<'_>) -> Result<ShellView, String> {
     let app = app.inner().clone();
     blocking(move || app.shell_install()).await
+}
+
+#[tauri::command]
+pub async fn settings(app: Shared<'_>) -> Result<SettingsView, String> {
+    let app = app.inner().clone();
+    blocking(move || Ok(app.settings())).await
+}
+
+/// Change la langue et prévient toutes les fenêtres ouvertes.
+#[tauri::command]
+pub async fn set_language(handle: AppHandle, app: Shared<'_>, language: LangChoice) -> Result<SettingsView, String> {
+    let app = app.inner().clone();
+    let view = blocking(move || app.set_language(language)).await?;
+    let _ = handle.emit("language", view.effective);
+    Ok(view)
 }
 
 #[tauri::command]

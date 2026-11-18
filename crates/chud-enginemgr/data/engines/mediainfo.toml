@@ -4,6 +4,7 @@ adapter = "none"
 homepage = "https://mediaarea.net/MediaInfo"
 license = "BSD-2-Clause"
 description = "Analyse technique détaillée des fichiers audio et vidéo."
+description_en = "Detailed technical analysis of audio and video files."
 categories = ['video', 'audio']
 executables = ['mediainfo']
 

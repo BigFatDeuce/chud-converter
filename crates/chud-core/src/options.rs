@@ -110,17 +110,19 @@ impl OptionSpec {
             (OptionKind::Bool, OptionValue::Text(s)) => match s.to_ascii_lowercase().as_str() {
                 "1" | "true" | "yes" | "oui" | "on" => Ok(OptionValue::Bool(true)),
                 "0" | "false" | "no" | "non" | "off" => Ok(OptionValue::Bool(false)),
-                _ => Err(format!("valeur booléenne attendue, reçu « {s} »")),
+                _ => Err(crate::trf!("valeur booléenne attendue, reçu « {s} »", "expected a boolean, got “{s}”")),
             },
             (OptionKind::Int { min, max }, v) => {
                 let i = match v {
                     OptionValue::Int(i) => *i,
                     OptionValue::Float(f) if f.fract() == 0.0 => *f as i64,
-                    OptionValue::Text(s) => s.trim().parse().map_err(|_| format!("entier attendu, reçu « {s} »"))?,
-                    other => return Err(format!("entier attendu, reçu « {other} »")),
+                    OptionValue::Text(s) => {
+                        s.trim().parse().map_err(|_| crate::trf!("entier attendu, reçu « {s} »", "expected an integer, got “{s}”"))?
+                    }
+                    other => return Err(crate::trf!("entier attendu, reçu « {other} »", "expected an integer, got “{other}”")),
                 };
                 if i < *min || i > *max {
-                    return Err(format!("doit être compris entre {min} et {max}"));
+                    return Err(crate::trf!("doit être compris entre {min} et {max}", "must be between {min} and {max}"));
                 }
                 Ok(OptionValue::Int(i))
             }
@@ -128,11 +130,15 @@ impl OptionSpec {
                 let x = match v {
                     OptionValue::Float(f) => *f,
                     OptionValue::Int(i) => *i as f64,
-                    OptionValue::Text(s) => s.trim().replace(',', ".").parse().map_err(|_| format!("nombre attendu, reçu « {s} »"))?,
-                    other => return Err(format!("nombre attendu, reçu « {other} »")),
+                    OptionValue::Text(s) => s
+                        .trim()
+                        .replace(',', ".")
+                        .parse()
+                        .map_err(|_| crate::trf!("nombre attendu, reçu « {s} »", "expected a number, got “{s}”"))?,
+                    other => return Err(crate::trf!("nombre attendu, reçu « {other} »", "expected a number, got “{other}”")),
                 };
                 if !x.is_finite() || x < *min || x > *max {
-                    return Err(format!("doit être compris entre {min} et {max}"));
+                    return Err(crate::trf!("doit être compris entre {min} et {max}", "must be between {min} and {max}"));
                 }
                 Ok(OptionValue::Float(x))
             }
@@ -142,20 +148,25 @@ impl OptionSpec {
                     Ok(OptionValue::Text(s))
                 } else {
                     let list: Vec<&str> = choices.iter().map(|c| c.value.as_str()).collect();
-                    Err(format!("valeur « {s} » invalide (attendu : {})", list.join(", ")))
+                    Err(crate::trf!("valeur « {s} » invalide (attendu : {})", "invalid value “{s}” (expected: {})", list.join(", ")))
                 }
             }
             (OptionKind::Text { max_len }, v) => {
                 let s = v.to_string();
                 if s.chars().count() > *max_len {
-                    return Err(format!("texte trop long ({max_len} caractères maximum)"));
+                    return Err(crate::trf!(
+                        "texte trop long ({max_len} caractères maximum)",
+                        "text too long ({max_len} characters maximum)"
+                    ));
                 }
                 if s.chars().any(|c| c.is_control()) {
-                    return Err("caractères de contrôle interdits".into());
+                    return Err(crate::tr!("caractères de contrôle interdits", "control characters are not allowed").into());
                 }
                 Ok(OptionValue::Text(s))
             }
-            (OptionKind::Bool, other) => Err(format!("valeur booléenne attendue, reçu « {other} »")),
+            (OptionKind::Bool, other) => {
+                Err(crate::trf!("valeur booléenne attendue, reçu « {other} »", "expected a boolean, got “{other}”"))
+            }
         }
     }
 }
@@ -168,7 +179,7 @@ pub struct OptionError {
 
 impl fmt::Display for OptionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "option « {} » : {}", self.key, self.message)
+        f.write_str(&crate::trf!("option « {} » : {}", "option “{}”: {}", self.key, self.message))
     }
 }
 
@@ -206,10 +217,10 @@ impl OptionValues {
 
     /// Analyse une affectation `clé=valeur` (CLI, profils texte).
     pub fn parse_assignment(&mut self, s: &str) -> Result<(), String> {
-        let (k, v) = s.split_once('=').ok_or_else(|| format!("« {s} » : format attendu clé=valeur"))?;
+        let (k, v) = s.split_once('=').ok_or_else(|| crate::trf!("« {s} » : format attendu clé=valeur", "“{s}”: expected key=value"))?;
         let k = k.trim();
         if k.is_empty() {
-            return Err(format!("« {s} » : clé vide"));
+            return Err(crate::trf!("« {s} » : clé vide", "“{s}”: empty key"));
         }
         self.set(k, OptionValue::Text(v.trim().to_owned()));
         Ok(())
