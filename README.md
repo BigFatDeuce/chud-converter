@@ -27,16 +27,16 @@ Your originals are never touched.
 </div>
 
 <p align="center">
-  <img src="docs/screenshots/cli-convert.svg" width="820" alt="Terminal: chud converts vacances.mkv to WebM, lists exactly what is lost, verifies the result by decoding it, and refuses a truncated reunion.mp4 with a clear reason">
+  <img src="docs/screenshots/app-report.png" width="900" alt="Chud Converter desktop app: vacances.mkv converted to MP4. Before converting, the plan says video and audio are copied without re-encoding but styled ASS subtitles lose their styling; after converting, the report shows the result was fully decoded without error.">
   <br>
-  <sub><i>Real output. One video converted, its losses listed and the result decoded end to end; one truncated file refused with the reason why.</i></sub>
+  <sub><i>The real desktop app. The losses are announced before converting (styled subtitles in MP4), the original is untouched, and the result is fully decoded to verify it.</i></sub>
 </p>
 
 > [!NOTE]
-> **Version 0.1 — alpha.** The conversion engine and the `chud` command line work and are tested
-> on real files, on Windows and Linux. The desktop app (Tauri 2 + Svelte 5) is the next step,
-> followed by the File Explorer right-click menu. The program currently speaks **French**;
-> English is planned with the desktop app.
+> **Version 0.1 — alpha.** The conversion engine, the desktop app (Tauri 2 + Svelte 5) and the
+> `chud` command line work and are tested on real files. The app is tested on Windows and built
+> on Linux by the CI. The File Explorer right-click menu comes next. The program currently
+> speaks **French**; English is planned.
 
 ## Principles
 
@@ -51,8 +51,28 @@ Your originals are never touched.
 
 ## Screenshots
 
-All screenshots are real output of the current version. Only local paths were replaced with
-neutral ones. Screenshots of the desktop app will be added here as soon as it exists.
+All screenshots are real output of the current version, made with real files. Only local paths
+in the terminal screenshots were replaced with neutral ones.
+
+### Desktop app
+
+**Pick a format.** Files are identified by their content (here `faux.jpg` is flagged: it is
+really a PNG). Every possible output format carries a colored dot for its fidelity: green
+lossless, blue content intact, yellow depends on content, red lossy. With several files
+selected, only the formats they all support are offered, with the worst fidelity among them.
+
+<p align="center"><img src="docs/screenshots/app-formats.png" width="900" alt="Chud Converter desktop app: two files in the list, faux.jpg flagged as a misleading extension, and the format picker grouped by Video, Audio and Images with fidelity dots"></p>
+
+The app also offers options generated from each engine (codec, quality, size, subtitles…),
+the destination (next to the original or another folder), what to do when the file already
+exists, a queue you can add to while it runs, per-file cancellation, and an **Engines** page
+showing what is installed.
+
+### Command line
+
+The same engine, for scripts and terminals:
+
+<p align="center"><img src="docs/screenshots/cli-convert.svg" width="820" alt="Terminal: chud converts vacances.mkv to WebM, lists exactly what is lost, verifies the result by decoding it, and refuses a truncated reunion.mp4 with a clear reason"></p>
 
 **Plan before converting.** `chud plan` shows the path, the expected fidelity and every option,
 without writing anything. Here, video and audio are copied untouched, but MP4 cannot store
@@ -118,17 +138,29 @@ loses the least, then the one with the fewest steps, then the fastest. Details i
 ## Installation
 
 > [!IMPORTANT]
-> No ready-to-download release yet: Windows and Linux installers will come with the desktop
-> app. Meanwhile, the command line builds with a single command.
+> No ready-to-download release yet: Windows and Linux installers are on the roadmap. Meanwhile,
+> both programs build from source.
 
 ```bash
 git clone https://github.com/BigFatDeuce/chud-converter.git
 cd chud-converter
+
+# Command line
 cargo build --release -p chud-cli
+
+# Desktop app: build the interface first, the program embeds it
+npm --prefix apps/desktop ci
+npm --prefix apps/desktop run build
+cargo build --release -p chud-desktop
 ```
 
-You need [Rust](https://rustup.rs) 1.88 or newer (and, on Windows, the Visual Studio Build
-Tools). The program is `target/release/chud` (`chud.exe` on Windows). See
+You need [Rust](https://rustup.rs) 1.88 or newer (on Windows, with the Visual Studio Build
+Tools) and, for the desktop app, [Node.js](https://nodejs.org) 20 or newer. On Linux the
+desktop app also needs WebKitGTK (`libwebkit2gtk-4.1-dev` and friends, listed in
+[BUILDING](docs/BUILDING.md)).
+
+The programs are `target/release/chud` and `target/release/chud-converter` (`.exe` on Windows).
+`chud-converter file1 file2…` opens the app with those files already in the list. See
 [BUILDING](docs/BUILDING.md) (French) for details.
 
 ### External engines (optional)
@@ -145,6 +177,12 @@ MKVToolNix, Pandoc, LibreOffice, Calibre, ImageMagick, libvips, qpdf, Ghostscrip
 ExifTool and MediaInfo are already detected; support for them is coming release by release.
 
 ## Usage
+
+**Desktop app:** drop files or folders on the window (or open it with files as arguments),
+pick an output format, check the plan and the options, then convert. Results appear next to
+the originals unless you choose another folder.
+
+**Command line:**
 
 | Command | Purpose |
 |---|---|
@@ -186,8 +224,8 @@ managed engines then stay in a `data` folder beside it — nothing in your user 
 - [x] Engines: native images and data, FFmpeg, 7-Zip
 - [x] `chud` command line
 - [x] Continuous integration on Windows and Linux with real engines
-- [ ] Desktop app, Tauri 2 + Svelte 5 — **next step**
-- [ ] Presets and right-click menu (Windows File Explorer, Dolphin, Nautilus, Nemo, Thunar)
+- [x] Desktop app, Tauri 2 + Svelte 5 — first version
+- [ ] Presets and right-click menu (Windows File Explorer, Dolphin, Nautilus, Nemo, Thunar) — **next step**
 - [ ] English localization
 - [ ] Verified installation and updates of engines
 - [ ] PDF, documents, e-books (qpdf, LibreOffice, Pandoc, Calibre), OCR
@@ -234,5 +272,5 @@ External engines (FFmpeg, 7-Zip…) are not shipped with it: you install them, a
 their own licenses, listed in [LICENSES](docs/LICENSES.md).
 
 <div align="center">
-<sub>Built with Rust, thanks to FFmpeg, 7-Zip, and the <code>image</code>, <code>clap</code>, <code>serde</code> crates and many more.</sub>
+<sub>Built with Rust, Tauri and Svelte, thanks to FFmpeg, 7-Zip, and the <code>image</code>, <code>clap</code>, <code>serde</code> crates and many more.</sub>
 </div>

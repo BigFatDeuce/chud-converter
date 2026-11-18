@@ -3,10 +3,10 @@
 
 use chud_core::{CancelToken, Registry};
 use chud_enginemgr::{AppPaths, EngineManager, EngineState};
-use chud_jobs::{Conflict, JobError, JobRunner, JobSpec};
+use chud_jobs::{Conflict, JobError, JobQueue, JobRunner, JobSpec, QueueEvent};
 use chud_process::ProcessSpec;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 /// PNG 1×1 valide (pixel rouge).
@@ -19,7 +19,7 @@ const PNG_1X1: &[u8] = &[
 
 struct Env {
     dir: PathBuf,
-    runner: JobRunner,
+    runner: Arc<JobRunner>,
     ffmpeg: Option<PathBuf>,
 }
 
@@ -38,7 +38,7 @@ fn env(name: &str) -> Env {
     let mut statuses = mgr.discover();
     let registry: Registry = mgr.build_registry(&mut statuses);
     let ffmpeg = statuses.iter().find(|s| s.id == "ffmpeg" && s.state == EngineState::Ready).and_then(|s| s.path.clone());
-    Env { runner: JobRunner::new(Arc::new(registry), paths.cache_dir.clone()), dir, ffmpeg }
+    Env { runner: Arc::new(JobRunner::new(Arc::new(registry), paths.cache_dir.clone())), dir, ffmpeg }
 }
 
 fn no_events(_: chud_jobs::JobEvent) {}
@@ -145,5 +145,71 @@ fn corrupted_input_is_never_reported_as_success() {
     let r = e.runner.run(&JobSpec::new(&bad, "mkv"), &CancelToken::new(), &no_events);
     assert!(r.is_err(), "un fichier tronqué ne doit pas produire un « succès » : {r:?}");
     assert!(!e.dir.join("tronqué.mkv").exists());
+    assert_eq!(jobs_left(&e), 0);
+}
+
+#[test]
+fn queue_accepts_cancels_and_reports_each_job() {
+    let e = env("queue");
+    let files: Vec<PathBuf> = (1..=3).map(|i| e.dir.join(format!("img-{i}.png"))).collect();
+    for f in &files {
+        std::fs::write(f, PNG_1X1).unwrap();
+    }
+    // Le premier démarrage bloque l'unique fil : les tâches 2 et 3 restent en attente, ce qui
+    // rend l'annulation d'une tâche en attente déterministe.
+    let events: Arc<Mutex<Vec<QueueEvent>>> = Arc::default();
+    let hold: Arc<(Mutex<(bool, bool)>, Condvar)> = Arc::default(); // (démarré, relâché)
+    let (ev, h) = (events.clone(), hold.clone());
+    let listener = Arc::new(move |event: QueueEvent| {
+        if matches!(event, QueueEvent::Started { id: 1 }) {
+            let (m, cv) = &*h;
+            let mut g = m.lock().unwrap();
+            g.0 = true;
+            cv.notify_all();
+            while !g.1 {
+                g = cv.wait(g).unwrap();
+            }
+        }
+        ev.lock().unwrap().push(event);
+    });
+    let queue = JobQueue::new(e.runner.clone(), 1, 4, listener);
+    let ids: Vec<u64> = files.iter().map(|f| queue.submit(JobSpec::new(f, "bmp"))).collect();
+    {
+        let (m, cv) = &*hold;
+        let g = cv.wait_timeout_while(m.lock().unwrap(), Duration::from_secs(20), |g| !g.0).unwrap().0;
+        assert!(g.0, "la première tâche n'a pas démarré");
+    }
+    assert_eq!(queue.counts(), (2, 1));
+    assert!(queue.cancel(ids[2]), "tâche en attente annulable");
+    {
+        let (m, cv) = &*hold;
+        m.lock().unwrap().1 = true;
+        cv.notify_all();
+    }
+    let finished = |evs: &[QueueEvent], id: u64| {
+        evs.iter().any(|x| matches!(x, QueueEvent::Done { id: i, .. } | QueueEvent::Failed { id: i, .. } if *i == id))
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while !ids.iter().all(|&id| finished(&events.lock().unwrap(), id)) {
+        assert!(std::time::Instant::now() < deadline, "file bloquée");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let evs = events.lock().unwrap().clone();
+    for (n, &id) in ids.iter().enumerate().take(2) {
+        let pos = |pred: &dyn Fn(&QueueEvent) -> bool| evs.iter().position(pred).unwrap();
+        let started = pos(&|x| matches!(x, QueueEvent::Started { id: i } if *i == id));
+        let done = pos(&|x| matches!(x, QueueEvent::Done { id: i, .. } if *i == id));
+        assert!(started < done);
+        let QueueEvent::Done { outcome, .. } = &evs[done] else { unreachable!() };
+        let out = outcome.output.clone().unwrap();
+        assert_eq!(out, e.dir.join(format!("img-{}.bmp", n + 1)));
+        assert_eq!(&std::fs::read(&out).unwrap()[..2], b"BM");
+    }
+    assert!(evs.iter().any(|x| matches!(x, QueueEvent::Failed { id, failure } if *id == ids[2] && failure.code == "cancelled")));
+    assert!(!evs.iter().any(|x| matches!(x, QueueEvent::Started { id } if *id == ids[2])));
+    assert!(!e.dir.join("img-3.bmp").exists());
+    assert!(!queue.cancel(ids[0]), "une tâche terminée n'est plus annulable");
+    assert!(queue.is_idle());
+    drop(queue);
     assert_eq!(jobs_left(&e), 0);
 }

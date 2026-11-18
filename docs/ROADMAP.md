@@ -18,7 +18,7 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [x] Moteurs : image natif, données natif (JSON/YAML/TOML/CSV/TSV/NDJSON), FFmpeg, 7-Zip
 - [x] Détection des moteurs installés (gérés, emplacements connus, PATH) et sonde de capacités
 - [x] CLI `chud` : `formats`, `engines`, `detect`, `targets`, `plan`, `convert`, `matrix`, sortie JSON, motifs `*.ext` sous Windows
-- [x] Tests unitaires et d'intégration sur fichiers réels générés (76 tests ; conflits, annulation, fichier tronqué, attaques d'archives)
+- [x] Tests unitaires et d'intégration sur fichiers réels générés (80 tests ; conflits, annulation, fichier tronqué, attaques d'archives, file d'attente, application)
 - [x] Qualité : `clippy` sans avertissement, `rustfmt`, documentation utilisateur (README, BUILDING)
 
 ### 2b. Gestionnaire de moteurs complet
@@ -29,14 +29,20 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [ ] Sources de téléchargement vérifiées dans les manifestes (+ Typst, DuckDB)
 - [ ] Adaptateurs pour les moteurs seulement détectés (MKVToolNix, Pandoc, LibreOffice, qpdf…)
 
-### 2c. Interface (après validation ADR-002)
-- [ ] Application Tauri 2 + Svelte 5 : écran principal (dépôt, liste virtualisée, formats détectés)
-- [ ] Sélecteur de format : recherche, catégories, favoris, récents, badges de fidélité
-- [ ] Panneau d'options généré depuis les `OptionSpec`, mode simple/avancé
-- [ ] File d'attente : progression individuelle/globale, vitesse, ETA fiable, annulation, relance, erreurs détaillées
-- [ ] Écran Moteurs (état, capacités débloquées, installation à la demande)
-- [ ] Préférences (destination, noms, conflits, dates, métadonnées, parallélisme, cache, thème, portable)
-- [ ] Internationalisation FR/EN, thèmes clair/sombre, accessibilité clavier
+### 2c. Interface (Tauri 2 + Svelte 5, ADR-002)
+- [x] Application de bureau : glisser-déposer, ajout de fichiers ou de dossiers, fichiers passés au lancement, format réel et extension trompeuse affichés
+- [x] Sélecteur de format : recherche, catégories, formats communs à plusieurs fichiers (fidélité la moins bonne retenue), pastilles de fidélité
+- [x] Plan et rapport de fidélité avant conversion, recalculés quand les options changent
+- [x] Panneau d'options généré depuis les `OptionSpec`, options avancées repliées
+- [x] File d'attente : ajout pendant les conversions, progression et vitesse par tâche, annulation (une ou toutes), rapport détaillé avec niveau de vérification réellement atteint, « Afficher dans le dossier »
+- [x] Destination (à côté de l'original ou dossier), conflits de noms, date d'origine
+- [x] Écran Moteurs (état, version, origine, licence, commande d'installation officielle) et écran À propos
+- [x] Testé sous Windows sur de vrais fichiers (pilotage par UI Automation) ; compilation Linux en CI
+- [ ] Liste virtualisée (milliers de fichiers), progression globale, ETA, relance d'une tâche échouée
+- [ ] Favoris et formats récents
+- [ ] Installation des moteurs à la demande depuis l'écran Moteurs
+- [ ] Préférences complètes (modèle de nom, métadonnées, parallélisme, cache, thème forcé, portable)
+- [ ] Internationalisation FR/EN, contrôle complet au clavier, tests d'interface automatisés
 
 ### 2c bis. Menu contextuel (demandé par le porteur — avancé depuis la phase 3)
 - [x] Conception (ADR-017, `docs/SHELL-INTEGRATION.md`)

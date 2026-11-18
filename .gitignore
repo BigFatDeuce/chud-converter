@@ -19,3 +19,9 @@ desktop.ini
 /portable
 /portable.txt
 /data/
+
+# Tauri : schémas générés à la compilation
+apps/desktop/src-tauri/gen/
+
+# Réglages locaux de Claude Code
+.claude/

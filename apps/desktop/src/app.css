@@ -1,0 +1,272 @@
+/* Thème de Chud Converter : couleurs du logo (marine, bleu, or, cyan), clair et sombre. */
+
+:root {
+  color-scheme: light dark;
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Noto Sans", "Ubuntu", sans-serif;
+  --mono: "Cascadia Mono", "Consolas", "DejaVu Sans Mono", ui-monospace, monospace;
+
+  --bg: #eef1f6;
+  --sidebar: #011128;
+  --sidebar-text: #c9d6ea;
+  --sidebar-active: #123f7d;
+  --surface: #ffffff;
+  --surface-2: #f5f7fb;
+  --surface-hover: #eaf0f8;
+  --border: #d9e0ea;
+  --border-strong: #b9c4d4;
+  --text: #0b1830;
+  --muted: #56637a;
+  --faint: #8592a8;
+  --accent: #f9c83a;
+  --accent-hover: #ffd65c;
+  --accent-text: #011128;
+  --primary: #123f7d;
+  --primary-soft: #e3ecf8;
+  --link: #1f5fa8;
+  --focus: #2c8fd6;
+
+  --ok: #1d8a57;
+  --ok-soft: #e1f4ea;
+  --partial: #126f9c;
+  --partial-soft: #def1fa;
+  --depends: #9a6200;
+  --depends-soft: #fbf0d6;
+  --lossy: #bf3f26;
+  --lossy-soft: #fbe5df;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgb(1 17 40 / 6%), 0 2px 8px rgb(1 17 40 / 5%);
+  --shadow-lg: 0 12px 40px rgb(1 17 40 / 22%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #061429;
+    --sidebar: #010b1b;
+    --sidebar-text: #aebfd8;
+    --sidebar-active: #123f7d;
+    --surface: #0b1d38;
+    --surface-2: #0f2444;
+    --surface-hover: #142d54;
+    --border: #1b355e;
+    --border-strong: #2a4a7a;
+    --text: #e7eef9;
+    --muted: #9db0cc;
+    --faint: #6f84a5;
+    --accent: #f9c83a;
+    --accent-hover: #ffd65c;
+    --accent-text: #011128;
+    --primary: #5d9be0;
+    --primary-soft: #14325c;
+    --link: #6cc6ff;
+    --focus: #38d6ff;
+
+    --ok: #4fd18f;
+    --ok-soft: #0f3a2b;
+    --partial: #38d6ff;
+    --partial-soft: #0d3550;
+    --depends: #f9c83a;
+    --depends-soft: #3d3110;
+    --lossy: #ff8a6b;
+    --lossy-soft: #43201a;
+
+    --shadow: 0 1px 2px rgb(0 0 0 / 30%);
+    --shadow-lg: 0 12px 40px rgb(0 0 0 / 55%);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+#app {
+  height: 100%;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+p {
+  margin: 0;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.selectable,
+code,
+.mono {
+  user-select: text;
+}
+
+code,
+.mono {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+/* Boutons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.btn.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.btn.ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.btn.small {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12.5px;
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--muted);
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* Champs */
+input[type="text"],
+input[type="number"],
+input[type="search"],
+select {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  min-width: 0;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--primary);
+  width: 15px;
+  height: 15px;
+  margin: 0;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.faint {
+  color: var(--faint);
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}

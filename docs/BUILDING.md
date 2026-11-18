@@ -7,6 +7,8 @@
 | Rust | ≥ 1.88 (édition 2024), testé avec 1.99 | `rustup` ; sous Windows la chaîne **MSVC** |
 | Windows : Visual Studio Build Tools | 2022 ou plus | charge « Développement Desktop en C++ » (éditeur de liens, `rc.exe` pour l'icône) |
 | Linux | gcc ou clang, `pkg-config` | aucune bibliothèque système requise pour la CLI |
+| Node.js | ≥ 20, testé avec 22 et 26 | pour l'application de bureau uniquement |
+| Linux, application de bureau | WebKitGTK 4.1 | Debian/Ubuntu : `sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev` |
 | FFmpeg, 7-Zip | facultatifs | nécessaires aux tests réels vidéo/audio et archives (ignorés sinon) |
 
 Si `cargo` n'est pas dans le `PATH` après l'installation de rustup (cas observé sur ce poste) :
@@ -27,6 +29,31 @@ continue sans icône et l'affiche en avertissement.
 
 Profil `release` : LTO léger, une unité de génération, symboles retirés.
 
+### Application de bureau
+
+L'interface (Svelte 5) doit être construite **avant** le programme Rust, qui l'intègre :
+
+```bash
+cd apps/desktop
+npm ci
+npm run check      # vérification des types, aucun avertissement toléré
+npm run build      # produit apps/desktop/dist
+cd ../..
+cargo build --release -p chud-desktop
+```
+
+Le programme est `target/release/chud-converter` (`.exe` sous Windows). Il accepte des fichiers
+en arguments : `chud-converter vacances.mkv photo.png` les ouvre directement dans la liste.
+
+Pour travailler l'interface : `npm run dev` dans `apps/desktop` sert l'interface sur
+`http://localhost:1420` ; ouverte dans un navigateur, elle utilise une **imitation** du cœur
+(bandeau « données fictives » visible) qui n'est jamais incluse dans la version compilée.
+`npx tauri dev` lance la vraie application en mode développement.
+
+Comme `chud-desktop` fait partie du workspace, `cargo build --workspace` et
+`cargo test --workspace` exigent sous Linux les bibliothèques WebKitGTK ci-dessus et un dossier
+`apps/desktop/dist` (construit par `npm run build`).
+
 ## 3. Tester
 
 ```bash
@@ -41,6 +68,9 @@ cargo test --workspace
 | `chud-engines/tests/ffmpeg_real.rs` | médias générés par FFmpeg : remultiplexage sans perte vérifié par décodage, WebM avec perte annoncée, FLAC/ALAC identiques à l'octet (MD5), sous-titres cp1252, découpe, nom `-é 文件 test.mkv`, source inchangée |
 | `chud-engines/tests/sevenzip_real.rs` | allers-retours zip → 7z → dossier, dossier → tgz → dossier ; refus de zip-slip, chemins absolus, doublons de casse, fausse archive |
 | `chud-jobs/tests/jobs_real.rs` | conflits (renommer, ignorer, remplacer), refus d'écraser la source, annulation réelle d'un encodage avec nettoyage, fichier tronqué jamais déclaré réussi |
+| `chud-jobs` (file d'attente) | ajout de tâches pendant l'exécution, annulation d'une tâche en attente, un événement de fin par tâche |
+| `chud-core` (planificateur) | jamais d'« audio » tiré d'une image ni de sous-titres d'un fichier qui n'en a pas |
+| `chud-desktop` | analyse, cibles, plan et vraie conversion PNG → BMP via la file ; sérialisation camelCase des échanges avec l'interface |
 | `chud-cli` | développement des motifs `*.ext` sans réinterpréter un chemin existant |
 
 Les tests qui exigent un moteur absent affichent `SKIP` et réussissent. Avec la variable
@@ -48,15 +78,16 @@ Les tests qui exigent un moteur absent affichent `SKIP` et réussissent. Avec la
 CI verte prouve donc que les tests réels ont bien tourné.
 
 La CI ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) tourne sous Windows et Linux à
-chaque envoi : installation de FFmpeg et 7-Zip, `cargo fmt --check`, `clippy -D warnings`,
-tests.
+chaque envoi : installation de FFmpeg et 7-Zip (et de WebKitGTK sous Linux), vérification et
+construction de l'interface, `cargo fmt --check`, `clippy -D warnings`, tests.
 
 ## 4. Organisation du code
 
 Voir [ARCHITECTURE](ARCHITECTURE.md). En bref : `chud-core` (types, catalogue, détection,
 planification, aucun processus), `chud-process` (seul endroit qui lance des programmes),
 `chud-engines` (adaptateurs), `chud-jobs` (exécution d'une conversion de bout en bout),
-`chud-enginemgr` (moteurs installés), `chud-cli`.
+`chud-enginemgr` (moteurs installés), `chud-cli`, et `apps/desktop` (interface Svelte et
+`src-tauri`, le pont entre l'interface et le cœur).
 
 ## 5. Ajouter un format ou un moteur
 

@@ -13,7 +13,7 @@
 
 use crate::engine::{ConversionCap, EngineId, Fidelity};
 use crate::feature::{Feature, FeatureSet};
-use crate::format::{Compression, FormatCatalog, FormatId};
+use crate::format::{Category, Compression, FormatCatalog, FormatId};
 use serde::Serialize;
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -249,6 +249,18 @@ pub fn evaluate(
     (FidelityReport { overall, lost_features: lost, intermediates, warnings }, cost, remaining)
 }
 
+/// Contenu sans lequel un format cible n'a pas de sens. Le planificateur ne propose pas
+/// « l'audio » d'une image ni « les sous-titres » d'un fichier qui n'en contient pas, même si une
+/// chaîne de moteurs (image → GIF → vidéo → audio) le permettrait sur le papier.
+fn has_essential_content(catalog: &FormatCatalog, target: &FormatId, present: &FeatureSet) -> bool {
+    let needed: &[&str] = match catalog.get(target.as_str()).map(|f| f.category) {
+        Some(Category::Audio) => &["audio", "notation"],
+        Some(Category::Subtitle) => &["subtitles", "timed_text", "image_subtitles"],
+        _ => return true,
+    };
+    needed.iter().any(|n| present.contains(&Feature::new(*n)))
+}
+
 /// Graphe de conversions construit à partir des capacités des moteurs actifs.
 pub struct Planner<'a> {
     catalog: &'a FormatCatalog,
@@ -339,7 +351,10 @@ impl<'a> Planner<'a> {
                 if e.to == *source {
                     if path.is_empty() && e.from == e.to {
                         let steps = vec![self.step(ei)];
-                        let (_, cost, _) = evaluate(self.catalog, source, &initial, confirmed, &steps);
+                        let (_, cost, rem) = evaluate(self.catalog, source, &initial, confirmed, &steps);
+                        if !has_essential_content(self.catalog, &e.to, &rem) {
+                            continue;
+                        }
                         candidates.entry(e.to.clone()).or_default().push((cost, vec![ei]));
                     }
                     continue;
@@ -351,7 +366,9 @@ impl<'a> Planner<'a> {
                 new_path.push(ei);
                 let steps: Vec<PlanStep> = new_path.iter().map(|&i| self.step(i)).collect();
                 let (_, cost, rem) = evaluate(self.catalog, source, &initial, confirmed, &steps);
-                candidates.entry(e.to.clone()).or_default().push((cost.clone(), new_path.clone()));
+                if has_essential_content(self.catalog, &e.to, &rem) {
+                    candidates.entry(e.to.clone()).or_default().push((cost.clone(), new_path.clone()));
+                }
                 // Les variantes (ALAC, PDF/A…) ne servent jamais d'intermédiaire.
                 if !self.catalog.get(e.to.as_str()).is_some_and(|f| f.is_variant()) {
                     nodes.push(Node { format: e.to.clone(), path: new_path, remaining: rem });
@@ -407,6 +424,32 @@ mod tests {
         let plans = p.plan(&"png".into(), None, &"bmp".into());
         assert_eq!(plans[0].steps[0].engine.as_str(), "a");
         assert_eq!(plans.len(), 2, "l'alternative est conservée");
+    }
+
+    #[test]
+    fn never_offers_audio_or_subtitles_that_cannot_exist() {
+        // Chaîne réelle des moteurs : image → GIF → MKV → MP3 / SRT.
+        let mut p = Planner::new(cat());
+        p.add_engine(&EngineId::new("img"), &[cap("png", "gif", Fidelity::Lossy, &["alpha"], 1)]);
+        p.add_engine(
+            &EngineId::new("av"),
+            &[
+                cap("gif", "mkv", Fidelity::Lossy, &["animation"], 1),
+                cap("mkv", "mp3", Fidelity::Lossy, &["audio", "tags"], 1),
+                cap("mkv", "srt", Fidelity::Depends, &["subtitles", "timed_text"], 1),
+            ],
+        );
+        let all = p.plan_all(&"png".into(), None);
+        assert!(all.contains_key(&FormatId::new("mkv")), "une image peut devenir une vidéo d'une image");
+        assert!(!all.contains_key(&FormatId::new("mp3")), "une image n'a pas de son");
+        assert!(!all.contains_key(&FormatId::new("srt")), "une image n'a pas de sous-titres");
+
+        // Une vraie vidéo garde ces cibles… sauf si la sonde montre qu'elle n'a pas de piste audio.
+        let all = p.plan_all(&"mkv".into(), None);
+        assert!(all.contains_key(&FormatId::new("mp3")) && all.contains_key(&FormatId::new("srt")));
+        let silent = features(&["video"]);
+        let all = p.plan_all(&"mkv".into(), Some(&silent));
+        assert!(!all.contains_key(&FormatId::new("mp3")), "vidéo muette : pas d'extraction audio");
     }
 
     #[test]

@@ -33,11 +33,31 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      # Bibliothèques système de Tauri (WebKitGTK) pour l'application de bureau.
+      - name: Dépendances de l'application (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
+
+      # L'interface doit être construite avant Rust : Tauri l'intègre au programme.
+      - name: Interface (vérification et construction)
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run check
+          npm run build
+
       # Moteurs externes : sans eux, les tests réels s'afficheraient « SKIP » sans rien prouver.
       - name: Moteurs (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg 7zip
 
       - name: Moteurs (Windows)

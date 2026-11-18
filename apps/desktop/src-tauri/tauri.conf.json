@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Chud Converter",
+  "mainBinaryName": "chud-converter",
+  "identifier": "io.github.bigfatdeuce.chudconverter",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Chud Converter",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 920,
+        "minHeight": 600,
+        "center": true,
+        "dragDropEnabled": true,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' data: asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost",
+      "freezePrototype": true
+    },
+    "withGlobalTauri": false
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "deb",
+      "appimage"
+    ],
+    "category": "Utility",
+    "shortDescription": "Convertisseur de fichiers universel, local et honnête",
+    "license": "GPL-3.0-or-later",
+    "licenseFile": "../../../LICENSE",
+    "publisher": "Chud Converter contributors",
+    "copyright": "Contributeurs de Chud Converter — GPL-3.0-or-later",
+    "homepage": "https://github.com/BigFatDeuce/chud-converter",
+    "icon": [
+      "../../../assets/branding/png/icon-32.png",
+      "../../../assets/branding/png/icon-128.png",
+      "../../../assets/branding/png/icon-256.png",
+      "../../../assets/branding/icon.icns",
+      "../../../assets/branding/icon.ico"
+    ]
+  }
+}

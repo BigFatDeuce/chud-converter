@@ -1,0 +1,100 @@
+// Accès au cœur Rust. Dans l'application, tout passe par les commandes Tauri ; dans un simple
+// navigateur (développement de l'interface uniquement), une imitation affiche des données
+// fictives, clairement signalées. Cette imitation n'existe pas dans la version compilée.
+
+import type {
+  AppInfo,
+  ConvertRequest,
+  EngineView,
+  FileInfo,
+  FileTargets,
+  PlanRequest,
+  PlanView,
+  Submitted,
+  UiEvent,
+} from "./types";
+
+export interface Api {
+  /** Vrai seulement pour l'imitation de développement. */
+  readonly fake: boolean;
+  appInfo(): Promise<AppInfo>;
+  engines(refresh: boolean): Promise<EngineView[]>;
+  inspect(paths: string[]): Promise<FileInfo[]>;
+  targets(path: string): Promise<FileTargets>;
+  plan(request: PlanRequest): Promise<PlanView>;
+  convert(request: ConvertRequest): Promise<Submitted[]>;
+  initialPaths(): Promise<string[]>;
+  cancel(id: number): Promise<boolean>;
+  cancelAll(): Promise<void>;
+  onQueue(cb: (e: UiEvent) => void): Promise<() => void>;
+  onDrop(drop: (paths: string[]) => void, hover: (over: boolean) => void): Promise<() => void>;
+  pickFiles(): Promise<string[]>;
+  pickFolder(title: string): Promise<string | null>;
+  reveal(path: string): Promise<void>;
+  openUrl(url: string): Promise<void>;
+}
+
+function tauriApi(): Api {
+  const core = import("@tauri-apps/api/core");
+  const call = async <T>(cmd: string, args?: Record<string, unknown>) => (await core).invoke<T>(cmd, args);
+  return {
+    fake: false,
+    appInfo: () => call("app_info"),
+    engines: (refresh) => call("engines", { refresh }),
+    inspect: (paths) => call("inspect", { paths }),
+    targets: (path) => call("targets", { path }),
+    plan: (request) => call("plan", { request }),
+    convert: (request) => call("convert", { request }),
+    initialPaths: () => call("initial_paths"),
+    cancel: (id) => call("cancel", { id }),
+    cancelAll: () => call("cancel_all"),
+    async onQueue(cb) {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<UiEvent>("queue", (e) => cb(e.payload));
+    },
+    async onDrop(drop, hover) {
+      const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+      return getCurrentWebview().onDragDropEvent((e) => {
+        const p = e.payload;
+        if (p.type === "enter" || p.type === "over") hover(true);
+        else if (p.type === "leave") hover(false);
+        else if (p.type === "drop") {
+          hover(false);
+          if (p.paths.length) drop(p.paths);
+        }
+      });
+    },
+    async pickFiles() {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const r = await open({ multiple: true, directory: false, title: "Fichiers à convertir" });
+      return r ?? [];
+    },
+    async pickFolder(title) {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      return await open({ multiple: false, directory: true, title });
+    },
+    async reveal(path) {
+      const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+      await revealItemInDir(path);
+    },
+    async openUrl(url) {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(url);
+    },
+  };
+}
+
+async function load(): Promise<Api> {
+  if ("__TAURI_INTERNALS__" in window) return tauriApi();
+  if (import.meta.env.DEV) return (await import("./mock")).mockApi();
+  throw new Error("Chud Converter doit être lancé comme application de bureau.");
+}
+
+export const api: Promise<Api> = load();
+
+/** Message lisible pour une erreur renvoyée par une commande. */
+export function errorText(e: unknown): string {
+  if (typeof e === "string") return e;
+  if (e instanceof Error) return e.message;
+  return String(e);
+}

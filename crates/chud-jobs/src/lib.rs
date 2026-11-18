@@ -17,14 +17,17 @@ use chud_core::{
     CancelToken, Engine, EngineError, EngineId, ExecContext, FormatCatalog, FormatId, OptionValues, Plan, PlanError, Progress, Registry,
     StepTask, Verification,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
+pub mod queue;
+pub use queue::{JobFailure, JobId, JobQueue, QueueEvent, QueueListener};
+
 /// Que faire si le fichier de sortie existe déjà.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Conflict {
     /// Ajoute « (1) », « (2) »… au nom.
