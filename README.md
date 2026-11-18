@@ -96,15 +96,15 @@ case-only duplicates and decompression bombs.
 ## How it works
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph before ["1 · Before touching the file"]
-        direction TB
+        direction LR
         A["Your file"] --> B["Real format detection<br/>signature, content"]
         B --> C["Probe<br/>tracks, codecs, bit depth"]
         C --> D["Plan + fidelity report<br/>what is kept or lost"]
     end
     subgraph during ["2 · Conversion"]
-        direction TB
+        direction LR
         E["Confined engine<br/>in a temporary folder"] --> F["Verification<br/>read back + re-detect"]
         F --> G["Atomic delivery<br/>next to the original"]
     end
