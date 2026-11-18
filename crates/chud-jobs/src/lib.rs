@@ -103,9 +103,9 @@ pub enum JobError {
     Unrecognized(String),
     #[error(transparent)]
     Plan(#[from] PlanError),
-    #[error("étape {step} ({engine}) : {error}")]
+    #[error("étape {} ({engine}) : {error}", .step + 1)]
     Engine { step: usize, engine: EngineId, error: EngineError },
-    #[error("vérification échouée à l'étape {step} : {detail}")]
+    #[error("vérification échouée à l'étape {} : {detail}", .step + 1)]
     Verification { step: usize, detail: String },
     #[error("opération annulée")]
     Cancelled,

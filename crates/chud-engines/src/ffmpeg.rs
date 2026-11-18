@@ -303,6 +303,95 @@ fn sub_encoder(codec: &str) -> &str {
     if codec == "subrip" { "srt" } else { codec }
 }
 
+/// Lignes d'erreur FFmpeg lisibles : préfixes « [mov,mp4 @ 0x…] » retirés, doublons supprimés.
+fn ffmpeg_lines(stderr: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for line in stderr.lines() {
+        let mut l = line.trim();
+        while l.starts_with('[') {
+            match l.find("] ") {
+                Some(i) if l[..i].contains(" @ ") => l = l[i + 2..].trim_start(),
+                _ => break,
+            }
+        }
+        if !l.is_empty() && !out.iter().any(|x| x == l) {
+            out.push(l.to_owned());
+        }
+    }
+    out
+}
+
+/// Messages d'erreur d'FFmpeg connus pour être sans conséquence **lorsque le décodeur ne signale
+/// aucune erreur**. Toute autre erreur fait échouer la vérification.
+const BENIGN_DECODE_MESSAGES: &[(&str, &str)] = &[(
+    // FFmpeg 8.0 + libopus 1.6 : l'analyseur de paquets Opus du démultiplexeur Matroska rejette un
+    // paquet que les décodeurs (natif et libopus) décodent pourtant entièrement.
+    "Error parsing Opus packet header",
+    "message connu de l'analyseur Opus de FFmpeg 8.0 avec libopus 1.6, sans effet sur le décodage",
+)];
+
+/// Bilan d'un décodage de vérification, lu ligne à ligne dans le journal d'FFmpeg.
+#[derive(Default, Debug)]
+struct DecodeLog {
+    errors: Vec<String>,
+    decode_errors: Option<u64>,
+}
+
+impl DecodeLog {
+    fn feed(&mut self, line: &str) {
+        let l = line.trim();
+        if ["[error]", "[fatal]", "[panic]"].iter().any(|t| l.contains(t)) {
+            let msg = ffmpeg_lines(&l.replacen("[error] ", "", 1).replacen("[fatal] ", "", 1).replacen("[panic] ", "", 1)).join(" ");
+            if !msg.is_empty() && !self.errors.contains(&msg) && self.errors.len() < 20 {
+                self.errors.push(msg);
+            }
+        }
+        // « Input stream #0:1 (audio): 153 packets read (…); 153 frames decoded; 0 decode errors (…) »
+        if let Some(i) = l.find(" decode errors") {
+            let n: String = l[..i].chars().rev().take_while(|c| c.is_ascii_digit()).collect::<Vec<_>>().into_iter().rev().collect();
+            if let Ok(n) = n.parse::<u64>() {
+                *self.decode_errors.get_or_insert(0) += n;
+            }
+        }
+    }
+
+    /// `Ok(None)` : aucune erreur ; `Ok(Some(note))` : seulement des messages connus sans effet,
+    /// avec zéro erreur de décodage confirmée ; `Err` : échec.
+    fn verdict(&self, success: bool) -> Result<Option<String>, String> {
+        let tail = |v: &[String]| v[v.len().saturating_sub(3)..].join(" | ");
+        if !success {
+            return Err(if self.errors.is_empty() { "FFmpeg s'est arrêté en erreur".into() } else { tail(&self.errors) });
+        }
+        if self.errors.is_empty() {
+            return Ok(None);
+        }
+        let notes: Vec<&str> =
+            self.errors.iter().filter_map(|e| BENIGN_DECODE_MESSAGES.iter().find(|(m, _)| e.contains(m)).map(|(_, n)| *n)).collect();
+        if notes.len() == self.errors.len() && self.decode_errors == Some(0) {
+            let mut notes = notes;
+            notes.dedup();
+            return Ok(Some(notes.join(" ; ")));
+        }
+        Err(tail(&self.errors))
+    }
+}
+
+/// Échec d'FFmpeg : un fichier source illisible est signalé comme tel, avec sa cause probable.
+fn failure(code: Option<i32>, stderr: &str) -> EngineError {
+    const CAUSES: &[(&str, &str)] = &[
+        ("moov atom not found", "index MP4/MOV absent : fichier tronqué ou enregistrement interrompu"),
+        ("EBML header parsing failed", "en-tête Matroska illisible"),
+        ("Invalid data found when processing input", "données illisibles pour ce format"),
+    ];
+    let lines = ffmpeg_lines(stderr);
+    for (marker, cause) in CAUSES {
+        if let Some(l) = lines.iter().find(|l| l.contains(marker)) {
+            return EngineError::InvalidInput(format!("{cause} (FFmpeg : {l})"));
+        }
+    }
+    EngineError::Process { code, detail: lines[lines.len().saturating_sub(3)..].join(" | ") }
+}
+
 fn is_lossy_target_audio(to: &Fmt) -> bool {
     to.audio.iter().filter_map(|f| afam(f)).all(|f| !f.lossless)
 }
@@ -2033,7 +2122,7 @@ impl Engine for Ffmpeg {
         };
         let out = run_tool(spec, ctx, &mut on_stdout, &mut |_| {})?;
         if !out.success() {
-            return Err(EngineError::Process { code: out.code, detail: tail_lines(&out.stderr_tail, 4) });
+            return Err(failure(out.code, &out.stderr_tail));
         }
         if std::fs::metadata(&task.output).map(|m| m.len()).unwrap_or(0) == 0 {
             return Err(EngineError::Process { code: out.code, detail: "FFmpeg n'a produit aucun contenu".into() });
@@ -2049,7 +2138,7 @@ impl Engine for Ffmpeg {
         let Ok(recipe) = self.recipe(from, to, task.source.as_ref(), &task.options) else {
             return Verification::Failed("impossible de recalculer la recette de conversion".into());
         };
-        let mut level = Vec::new();
+        let mut level: Vec<String> = Vec::new();
         if self.ffprobe.is_some() {
             let Some(v) = self.ffprobe_json(output, Some(demux), Duration::from_secs(120)) else {
                 return Verification::Failed("ffprobe ne parvient pas à lire le fichier produit".into());
@@ -2080,7 +2169,7 @@ impl Engine for Ffmpeg {
                     return Verification::Failed(format!("durée {got:.1} s au lieu de {want:.1} s"));
                 }
             }
-            level.push("flux et durée contrôlés par ffprobe");
+            level.push("flux et durée contrôlés par ffprobe".into());
         }
         // Décodage intégral quand c'est raisonnable (audio, sous-titres, images, vidéos courtes).
         let video_out = recipe.expect.video.unwrap_or(1) > 0 && to.kind == Kind::Video;
@@ -2091,13 +2180,19 @@ impl Engine for Ffmpeg {
             // Sous-titres texte : décodés puis ré-encodés en ASS (le sortie « null » exige un encodeur) ;
             // sous-titres image : relus en copie.
             let text_subs = to.kind == Kind::Subtitle && to.id != "sup";
+            // Journal « verbose » avec niveaux : messages d'erreur et bilan « N decode errors » par flux.
             let spec = ProcessSpec::new(&self.ffmpeg)
-                .args(["-hide_banner", "-nostdin", "-v", "error", "-xerror", "-protocol_whitelist", "file,pipe", "-f", demux, "-i"])
+                .args(["-hide_banner", "-nostdin", "-loglevel", "repeat+level+verbose", "-xerror", "-protocol_whitelist", "file,pipe"])
+                .args(["-f", demux, "-i"])
                 .arg(target)
                 .args(["-map", "0:v?", "-map", "0:a?", "-map", "0:s?", "-c:s", if text_subs { "ass" } else { "copy" }, "-f", "null", "-"]);
-            match run_tool(spec, ctx, &mut |_| {}, &mut |_| {}) {
-                Ok(out) if out.success() && out.stderr_tail.trim().is_empty() => level.push("décodage intégral sans erreur"),
-                Ok(out) => return Verification::Failed(format!("erreurs au décodage : {}", tail_lines(&out.stderr_tail, 3))),
+            let mut log = DecodeLog::default();
+            match run_tool(spec, ctx, &mut |_| {}, &mut |l| log.feed(l)) {
+                Ok(out) => match log.verdict(out.success()) {
+                    Ok(None) => level.push("décodage intégral sans erreur".into()),
+                    Ok(Some(note)) => level.push(format!("décodage intégral sans erreur ({note})")),
+                    Err(e) => return Verification::Failed(format!("erreurs au décodage : {e}")),
+                },
                 Err(EngineError::Cancelled) => return Verification::Failed("vérification annulée".into()),
                 Err(e) => return Verification::Failed(format!("vérification impossible : {e}")),
             }
@@ -2229,6 +2324,54 @@ mod tests {
         assert!(r.output.windows(2).any(|w| w[0] == "-c:v:0" && w[1] == "copy"));
         assert!(r.output.windows(2).any(|w| w[0] == "-c:s:0" && w[1] == "copy"));
         assert_eq!(r.expect, Expect { video: Some(1), audio: Some(1), subtitle: Some(1) });
+    }
+
+    #[test]
+    fn decode_log_tolerates_only_known_harmless_messages() {
+        let summary = "[in#0/matroska,webm @ 0x1] [verbose]   Input stream #0:0 (audio): 153 packets read (68757 bytes); 153 frames decoded; 0 decode errors (146008 samples); ";
+        // Rien à signaler.
+        let mut log = DecodeLog::default();
+        log.feed(summary);
+        assert_eq!(log.verdict(true), Ok(None));
+        // Message connu + zéro erreur de décodage confirmée : accepté, avec une remarque.
+        let mut log = DecodeLog::default();
+        log.feed("[opus @ 0x57ab8b5fc700] [error] Error parsing Opus packet header.");
+        log.feed(summary);
+        assert!(matches!(log.verdict(true), Ok(Some(_))), "{log:?}");
+        // Même message mais erreurs de décodage : refusé.
+        let mut log = DecodeLog::default();
+        log.feed("[opus @ 0x57ab8b5fc700] [error] Error parsing Opus packet header.");
+        log.feed(&summary.replace("0 decode errors", "3 decode errors"));
+        assert!(log.verdict(true).is_err());
+        // Même message sans bilan (FFmpeg ancien) : refusé, faute de preuve.
+        let mut log = DecodeLog::default();
+        log.feed("[opus @ 0x1] [error] Error parsing Opus packet header.");
+        assert!(log.verdict(true).is_err());
+        // Toute autre erreur : refusée, même avec un bilan à zéro.
+        let mut log = DecodeLog::default();
+        log.feed("[h264 @ 0x2] [error] Invalid NAL unit size (1234 > 567).");
+        log.feed(summary);
+        assert_eq!(log.verdict(true), Err("Invalid NAL unit size (1234 > 567).".into()));
+        // Processus en échec : toujours refusé.
+        assert!(DecodeLog::default().verdict(false).is_err());
+    }
+
+    #[test]
+    fn ffmpeg_failures_are_readable() {
+        let stderr = "[in#0 @ 000001a3eaaf54c0] moov atom not found
+[in#0 @ 000001a3eaa63980] Error opening input: Invalid data found when processing input
+Error opening input files: Invalid data found when processing input
+";
+        let e = failure(Some(-1094995529), stderr);
+        assert!(matches!(&e, EngineError::InvalidInput(m) if m.starts_with("index MP4/MOV absent") && !m.contains("@ 0")), "{e}");
+        let e = failure(
+            Some(1),
+            "[libx264 @ 0x1] something odd
+[libx264 @ 0x1] something odd
+Conversion failed!
+",
+        );
+        assert_eq!(e.to_string(), "le moteur a échoué (code de sortie 1) : something odd | Conversion failed!");
     }
 
     #[test]

@@ -246,12 +246,16 @@ pub enum EngineError {
     InvalidInput(String),
     #[error("refusé pour raison de sécurité : {0}")]
     Refused(String),
-    #[error("le moteur a échoué (code {code:?}) : {detail}")]
+    #[error("le moteur a échoué{} : {detail}", exit_code_suffix(.code))]
     Process { code: Option<i32>, detail: String },
     #[error("erreur d'entrée/sortie : {0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
     Other(String),
+}
+
+fn exit_code_suffix(code: &Option<i32>) -> String {
+    code.map(|c| format!(" (code de sortie {c})")).unwrap_or_default()
 }
 
 impl EngineError {
