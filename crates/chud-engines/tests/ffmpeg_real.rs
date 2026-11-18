@@ -62,6 +62,19 @@ fn convert(e: &Ffmpeg, input: &Path, from: &str, to: &str, out: &Path, opts: Opt
     Run { fidelity: a.fidelity, notes: a.notes, verification }
 }
 
+/// Conversion possible avec ce FFmpeg ? Certains encodeurs sont optionnels (l'AMR n'est pas dans
+/// le FFmpeg d'Ubuntu) : le logiciel le dit, et le test le signale au lieu d'échouer.
+fn offered(e: &Ffmpeg, from: &str, to: &str) -> bool {
+    let (f, t) = (FormatId::from(from), FormatId::from(to));
+    let options = OptionValues::new().resolve(&e.options(&f, &t)).unwrap();
+    let a = e.assess(&StepQuery { from: &f, to: &t, source: None, options: &options });
+    if let Some(why) = a.unavailable {
+        eprintln!("SKIP {from} → {to} : {why}");
+        return false;
+    }
+    true
+}
+
 fn pcm_md5(ffmpeg: &Path, file: &Path) -> String {
     let spec = ProcessSpec::new(ffmpeg).args(["-hide_banner", "-nostdin", "-loglevel", "error", "-i"]).arg(file).args([
         "-map",
@@ -226,6 +239,9 @@ fn real_ffmpeg_raw_streams_and_ogg_vorbis() {
     assert_eq!(audio_codec(&ffprobe, &ogg), "vorbis");
 
     for (to, file) in [("aac", "a.aac"), ("amr", "a.amr"), ("eac3", "a.eac3"), ("ac3", "a.ac3"), ("mp3", "a.mp3")] {
+        if to == "amr" && !offered(&e, "flac", to) {
+            continue;
+        }
         let r = convert(&e, &flac, "flac", to, &dir.join(file), OptionValues::new());
         match &r.verification {
             Verification::Decoded(d) => assert!(d.contains("90.0") || d.contains("89.9") || d.contains("90.1"), "{to} : {d}"),
@@ -278,8 +294,10 @@ fn real_ffmpeg_audio_regressions() {
     let r = convert(&e, &low, "wav", "opus", &dir.join("8k.opus"), OptionValues::new());
     assert!(r.verification.is_ok(), "{:?}", r.verification);
     // AMR : 8 kHz mono imposé, la vérification attend ce format-là.
-    let r = convert(&e, &dir.join("8k.wav"), "wav", "amr", &dir.join("8k.amr"), OptionValues::new());
-    assert!(r.verification.is_ok(), "{:?}", r.verification);
+    if offered(&e, "wav", "amr") {
+        let r = convert(&e, &dir.join("8k.wav"), "wav", "amr", &dir.join("8k.amr"), OptionValues::new());
+        assert!(r.verification.is_ok(), "{:?}", r.verification);
+    }
 
     // CAF : PCM exact, y compris depuis du 8 bits non signé (refusé tel quel par le multiplexeur).
     let u8 = dir.join("u8.wav");
