@@ -189,6 +189,8 @@ export interface PresetsView {
   file: string;
   presets: PresetView[];
   error: string | null;
+  /** Après un enregistrement : mise à jour du menu clic droit installé. */
+  menuNote?: string | null;
 }
 
 export interface Ignored {
@@ -207,4 +209,18 @@ export interface QuickBatch {
   files: string[];
   run: RunPreset | null;
   error: string | null;
+  /** Ce qui est déjà arrivé aux tâches avant l'ouverture de la fenêtre. */
+  events: UiEvent[];
+}
+
+/** Menu clic droit de l'explorateur de fichiers. */
+export interface ShellView {
+  supported: boolean;
+  installed: boolean;
+  exe: string | null;
+  exeMissing: boolean;
+  /** Le menu lance bien ce programme-ci. */
+  current: boolean;
+  entries: number;
+  location: string;
 }

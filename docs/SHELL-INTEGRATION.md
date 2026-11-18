@@ -4,6 +4,32 @@ Objectif : convertir sans ouvrir l'application, comme le logiciel *File Converte
 clic droit sur un ou plusieurs fichiers → **Chud Converter** → **En MP4** → une petite fenêtre de
 progression, le résultat apparaît à côté de la source.
 
+## 0. État actuel (version 0.1)
+
+Fonctionne sous Windows, testé dans le vrai menu de l'Explorateur :
+
+- **Activer** : écran *Préréglages* → *Ajouter au menu*, ou `chud shell install`.
+  **Retirer** : *Retirer du menu*, ou `chud shell uninstall`. **État** : `chud shell status`.
+- Inscription par **clés de registre** de l'utilisateur, sans droits d'administrateur
+  (ADR-019) : pour chaque extension, `HKCU\Software\Classes\SystemFileAssociations\.<ext>\shell\ChudConverter`
+  renvoie vers un sous-menu `ChudConverter.Menu.<clé>` ; les dossiers passent par
+  `Directory\shell\ChudConverter`. Aucune association de fichiers n'est modifiée.
+- La liste exacte des clés créées est rangée dans `HKCU\Software\ChudConverter\Shell`. Le retrait
+  ne supprime que ces clés (et les clés parentes créées par nous si elles sont restées vides) ;
+  une liste qui ne ressemble pas à nos clés est refusée et rien n'est supprimé.
+- Le sous-menu ne propose que les préréglages actifs **réalisables avec les moteurs présents**,
+  sans les préréglages qui ne feraient rien (« PNG » sur un `.png`). Il est réécrit quand les
+  préréglages changent ; *Mettre à jour* après l'installation d'un moteur.
+- Chaque entrée lance `"chud-converter.exe" --preset <id> -- "%1"`. Avec plusieurs fichiers,
+  l'Explorateur lance un processus par fichier : tous rejoignent la première instance, qui
+  affiche une seule fenêtre de suivi.
+- Windows 11 : dans « Afficher plus d'options » (Maj+F10), faute de paquet signé.
+- Linux : menus de service Dolphin, actions Nemo, scripts Nautilus, écrits dans
+  `~/.local/share` avec la liste de ce qui a été créé (`chud-converter/shell-files.txt`).
+  Pas encore essayé sur un vrai bureau Linux. Thunar n'est pas modifié automatiquement.
+
+Les sections suivantes décrivent la cible complète, dont la DLL `IExplorerCommand`.
+
 ## 1. Expérience visée
 
 ```

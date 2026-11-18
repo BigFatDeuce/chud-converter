@@ -80,7 +80,19 @@ fn main() {
     let app = tauri::Builder::default()
         // En premier : une seconde instance transmet ses arguments puis se termine.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            handle_launch(app, Launch::parse(argv.into_iter().skip(1).map(Into::into)));
+            // Ce rappel peut arriver pendant la création d'une fenêtre (vingt fichiers choisis dans
+            // l'Explorateur = vingt lancements simultanés) : créer une fenêtre ici bloquerait tout.
+            // On se contente de mettre le travail dans la file de la boucle d'événements, depuis un
+            // autre fil : appelé depuis le fil principal, `run_on_main_thread` exécuterait tout de
+            // suite, donc toujours à l'intérieur de ce rappel.
+            let launch = Launch::parse(argv.into_iter().skip(1).map(Into::into));
+            let handle = app.clone();
+            std::thread::spawn(move || {
+                let h = handle.clone();
+                if let Err(e) = handle.run_on_main_thread(move || handle_launch(&h, launch)) {
+                    eprintln!("chud-converter : lancement transmis perdu : {e}");
+                }
+            });
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -116,6 +128,9 @@ fn main() {
             commands::run_preset,
             commands::take_quick,
             commands::show_main,
+            commands::shell_status,
+            commands::shell_install,
+            commands::shell_uninstall,
         ])
         .build(tauri::generate_context!())
         .expect("impossible de démarrer Chud Converter");

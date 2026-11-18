@@ -578,6 +578,7 @@ dependencies = [
  "chud-enginemgr",
  "chud-engines",
  "chud-jobs",
+ "chud-shell",
  "clap",
  "crossbeam-channel",
  "indicatif",
@@ -605,6 +606,7 @@ dependencies = [
  "chud-core",
  "chud-enginemgr",
  "chud-jobs",
+ "chud-shell",
  "serde",
  "serde_json",
  "tauri",
@@ -670,6 +672,16 @@ dependencies = [
  "libc",
  "thiserror 2.0.21",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "chud-shell"
+version = "0.1.0"
+dependencies = [
+ "chud-core",
+ "chud-jobs",
+ "thiserror 2.0.21",
+ "winreg",
 ]
 
 [[package]]

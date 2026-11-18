@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import Icon from "./Icon.svelte";
   import { store } from "../store.svelte";
   import { api, errorText } from "../api";
@@ -107,6 +108,11 @@
   }
 
   const enabled = $derived(store.presets.filter((p) => p.enabled).length);
+  const windows = typeof navigator !== "undefined" && navigator.userAgent.includes("Windows");
+
+  onMount(() => {
+    void store.loadShell();
+  });
 </script>
 
 <div class="page">
@@ -130,6 +136,53 @@
       {/if}
     </div>
   </header>
+
+  {#if store.shell?.supported}
+    {@const sh = store.shell}
+    <section class="card menu" class:on={sh.installed && sh.current && !sh.exeMissing}>
+      <div class="menu-icon"><Icon name="bolt" size={18} /></div>
+      <div class="menu-text">
+        <h2>Menu clic droit</h2>
+        {#if !sh.installed}
+          <p class="muted">
+            Ajoute « Chud Converter » au menu clic droit {windows ? "de l'Explorateur" : "du gestionnaire de fichiers"}, avec vos préréglages
+            actifs. Pour votre compte seulement, sans droits d'administrateur, et retirable à tout moment.
+          </p>
+        {:else if sh.current && !sh.exeMissing}
+          <p>
+            <b>Installé</b> pour {sh.entries} types de fichiers. Il suit vos préréglages : modifiez-les ici, le menu se met à jour.
+          </p>
+        {:else}
+          <p class="warn">
+            {sh.exeMissing ? "Le menu lance un programme introuvable" : "Le menu lance une autre copie de Chud Converter"} :
+            <span class="mono selectable">{sh.exe}</span>
+          </p>
+        {/if}
+        {#if windows}
+          <p class="faint small">Sous Windows 11, il se trouve dans « Afficher plus d'options » (ou Maj+F10).</p>
+        {:else}
+          <p class="faint small">Dolphin, Nemo et Nautilus. Thunar n'est pas modifié automatiquement.</p>
+        {/if}
+      </div>
+      <div class="menu-actions">
+        {#if !sh.installed}
+          <button class="btn primary" onclick={() => store.setShell(true)} disabled={store.shellBusy}>
+            {store.shellBusy ? "Installation…" : "Ajouter au menu"}
+          </button>
+        {:else}
+          {#if !sh.current || sh.exeMissing}
+            <button class="btn primary" onclick={() => store.setShell(true)} disabled={store.shellBusy}>Utiliser ce programme</button>
+          {:else}
+            <!-- Après l'installation d'un moteur, de nouvelles conversions deviennent possibles. -->
+            <button class="btn" onclick={() => store.setShell(true)} disabled={store.shellBusy} title="Après l'installation d'un moteur, par exemple">
+              <Icon name="refresh" size={14} /> Mettre à jour
+            </button>
+          {/if}
+          <button class="btn" onclick={() => store.setShell(false)} disabled={store.shellBusy}>Retirer du menu</button>
+        {/if}
+      </div>
+    </section>
+  {/if}
 
   {#if store.presetsError}
     <div class="card broken">
@@ -305,6 +358,50 @@
 
   .small {
     font-size: 12.5px;
+  }
+
+  .menu {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+  }
+
+  .menu.on {
+    border-color: var(--ok);
+  }
+
+  .menu-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+
+  .menu-text {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+  }
+
+  .menu-text h2 {
+    font-size: 15px;
+  }
+
+  .menu .warn {
+    color: var(--depends);
+  }
+
+  .menu-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   .broken {

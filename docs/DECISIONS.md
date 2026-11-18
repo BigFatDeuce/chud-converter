@@ -192,6 +192,28 @@ commande apparaît donc dans le menu classique (« Afficher plus d'options », M
 File Converter. Le paquet MSIX « sparse » signé, qui donnerait accès au menu court, sera
 reconsidéré lors d'une diffusion à grande échelle. Détails : `docs/SHELL-INTEGRATION.md`.
 
+## ADR-019 — Menu contextuel : verbes statiques d'abord, DLL ensuite
+**Statut : Acceptée** (2026-11-18 ; complète ADR-017)
+
+Première version du menu Windows : des **clés de registre** de l'utilisateur
+(`SystemFileAssociations\.<ext>\shell\ChudConverter` avec `ExtendedSubCommandsKey`), et non
+la DLL `IExplorerCommand` d'ADR-017. Les raisons qui avaient écarté les verbes statiques ont été
+levées une à une et mesurées :
+
+- *une fenêtre console par fichier* : `chud-converter` est une application graphique, il n'y a
+  pas de console ;
+- *limite de 15 fichiers* : `MultiSelectModel=Player` la supprime ;
+- *un processus par fichier* : chacun transmet ses arguments à la première instance et se termine
+  (60 lancements simultanés : relais terminés en moins d'une seconde, 60/60 convertis) ;
+- *sous-menus figés* : ils sont réécrits à chaque modification des préréglages.
+
+Avantage décisif : rien n'est chargé dans le processus de l'Explorateur (une DLL défaillante peut
+le faire planter), et l'inscription comme le retrait sont de simples clés, listées et vérifiées.
+Limite assumée : le sous-menu dépend de l'**extension** du fichier, pas de son contenu réel ;
+le contenu est vérifié au moment de convertir, et un fichier qui ne convient pas est signalé
+dans la fenêtre de conversion. La DLL reste prévue pour un sous-menu selon le contenu et la
+transmission de la sélection en un seul appel.
+
 ## ADR-018 — Nom du produit : Chud Converter
 **Statut : Acceptée** (décision du porteur le 2026-11-18)
 

@@ -88,12 +88,35 @@ enum Cmd {
         #[arg(long)]
         write_defaults: bool,
     },
+    /// Menu clic droit de l'explorateur de fichiers (Windows : registre de l'utilisateur ;
+    /// Linux : Dolphin, Nemo, Nautilus). Aucun droit d'administrateur n'est nécessaire.
+    Shell {
+        #[command(subcommand)]
+        action: ShellAction,
+    },
     /// Matrice des conversions disponibles par moteur.
     Matrix {
         /// Limite à un format source.
         #[arg(long)]
         from: Option<String>,
     },
+}
+
+#[derive(Subcommand)]
+enum ShellAction {
+    /// Ajoute (ou met à jour) le menu « Chud Converter » d'après les préréglages actifs.
+    Install {
+        /// Programme à lancer (par défaut : chud-converter à côté de chud).
+        #[arg(long)]
+        exe: Option<PathBuf>,
+        /// Affiche ce qui serait installé, sans rien modifier.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Retire le menu : uniquement les éléments créés par Chud Converter.
+    Uninstall,
+    /// Indique si le menu est installé et quel programme il lance.
+    Status,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -560,6 +583,7 @@ fn run(cli: Cli) -> Result<i32> {
             }
             Ok(0)
         }
+        Cmd::Shell { action } => shell(action, cli.json),
         Cmd::Matrix { from } => {
             let env = load_engines()?;
             let mut rows = Vec::new();
@@ -592,6 +616,90 @@ fn run(cli: Cli) -> Result<i32> {
             Ok(0)
         }
     }
+}
+
+fn shell(action: ShellAction, json: bool) -> Result<i32> {
+    match action {
+        ShellAction::Install { exe, dry_run } => {
+            let exe = match exe {
+                Some(e) => std::path::absolute(e)?,
+                None => chud_shell::default_gui_exe()?,
+            };
+            let store = PresetStore::load(&AppPaths::detect().presets_file(), catalog())?;
+            // Seules les conversions réalisables avec les moteurs présents entrent dans le menu.
+            let env = load_engines()?;
+            let mut cache: std::collections::HashMap<FormatId, Vec<FormatId>> = Default::default();
+            let menus = chud_shell::plan_menus_with(&store, catalog(), |src, dst| {
+                cache
+                    .entry(src.clone())
+                    .or_insert_with(|| env.registry.targets(src, None, &OptionValues::new()).into_iter().map(|t| t.format).collect())
+                    .contains(dst)
+            });
+            if dry_run {
+                if json {
+                    let v: Vec<_> = menus
+                        .iter()
+                        .map(|m| serde_json::json!({ "key": m.key, "folder": m.folder, "extensions": m.extensions,
+                            "items": m.items.iter().map(|i| serde_json::json!({ "preset": i.preset, "name": i.name })).collect::<Vec<_>>() }))
+                        .collect();
+                    return print_json(&serde_json::json!({ "exe": exe, "menus": v })).map(|_| 0);
+                }
+                println!("Programme lancé : {}", exe.display());
+                for m in &menus {
+                    let names: Vec<&str> = m.items.iter().map(|i| i.name.as_str()).collect();
+                    let target = if m.folder {
+                        "dossiers".to_owned()
+                    } else {
+                        m.extensions.iter().map(|e| format!(".{e}")).collect::<Vec<_>>().join(" ")
+                    };
+                    println!("  {target}\n    → {}", names.join(", "));
+                }
+                println!("(simulation : rien n'a été modifié)");
+                return Ok(0);
+            }
+            let st = chud_shell::install(&exe, &menus)?;
+            if json {
+                return print_status(&st, true);
+            }
+            println!("Menu clic droit installé : {} types de fichiers, programme {}", st.entries, exe.display());
+            println!("Emplacement : {}", st.location);
+            if cfg!(windows) {
+                println!("Sous Windows 11, il apparaît dans « Afficher plus d'options » (ou Maj+F10).");
+            }
+            println!("Pour le retirer : chud shell uninstall");
+            Ok(0)
+        }
+        ShellAction::Uninstall => {
+            let n = chud_shell::uninstall()?;
+            if json {
+                return print_json(&serde_json::json!({ "removed": n })).map(|_| 0);
+            }
+            println!(
+                "{}",
+                if n == 0 { "Le menu n'était pas installé.".to_owned() } else { format!("Menu retiré ({n} éléments supprimés).") }
+            );
+            Ok(0)
+        }
+        ShellAction::Status => print_status(&chud_shell::status()?, json),
+    }
+}
+
+fn print_status(st: &chud_shell::Status, json: bool) -> Result<i32> {
+    if json {
+        print_json(&serde_json::json!({ "installed": st.installed, "exe": st.exe, "exeMissing": st.exe_missing,
+            "entries": st.entries, "location": st.location }))?;
+        return Ok(0);
+    }
+    if !st.installed {
+        println!("Menu clic droit : non installé (chud shell install).");
+        return Ok(0);
+    }
+    println!("Menu clic droit : installé, {} types de fichiers.", st.entries);
+    if let Some(e) = &st.exe {
+        println!("Programme : {}{}", e.display(), if st.exe_missing { "  (INTROUVABLE : réinstallez le menu)" } else { "" });
+    }
+    println!("Emplacement : {}", st.location);
+    Ok(if st.exe_missing { 1 } else { 0 })
 }
 
 #[cfg(test)]

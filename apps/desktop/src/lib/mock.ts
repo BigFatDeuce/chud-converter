@@ -124,6 +124,16 @@ export function mockApi(): Api {
 
   let presets = PRESETS.map((p) => ({ ...p }));
   let quickTaken = false;
+  let menu = false;
+  const shell = () => ({
+    supported: true,
+    installed: menu,
+    exe: menu ? "C:\\Exemple\\chud-converter.exe" : null,
+    exeMissing: false,
+    current: menu,
+    entries: menu ? 240 : 0,
+    location: "registre de l'utilisateur (fictif)",
+  });
   const api: Api = {
     fake: true,
     appInfo: () => delay({ version: "0.0.0-fictif", dataDir: "C:\\Exemple", portable: false, formats: 0, conversions: 0, enginesReady: 1 }),
@@ -244,14 +254,14 @@ export function mockApi(): Api {
     async openUrl(url) {
       window.open(url, "_blank", "noopener");
     },
-    presets: () => delay({ file: "C:\Exemple\presets.toml", presets, error: null }),
+    presets: () => delay({ file: "C:\\Exemple\\presets.toml", presets, error: null }),
     async savePresets(list) {
       presets = list.map((p) => ({ ...p, targetName: p.targetName || p.target.toUpperCase() }));
-      return delay({ file: "C:\Exemple\presets.toml", presets, error: null });
+      return delay({ file: "C:\\Exemple\\presets.toml", presets, error: null });
     },
     async resetPresets() {
       presets = PRESETS.map((p) => ({ ...p }));
-      return delay({ view: { file: "C:\Exemple\presets.toml", presets, error: null }, backup: "C:\Exemple\presets.toml.bak-1" });
+      return delay({ view: { file: "C:\\Exemple\\presets.toml", presets, error: null }, backup: "C:\\Exemple\\presets.toml.bak-1" });
     },
     presetsFor: (paths) =>
       delay(presets.filter((p) => p.enabled && paths.every((x) => p.appliesTo.includes(FAKE[x]?.info.category ?? "?")))),
@@ -266,7 +276,7 @@ export function mockApi(): Api {
       if (quickTaken) return [];
       quickTaken = true;
       const files = Object.keys(FAKE).slice(0, 1);
-      const batch: QuickBatch = { files, run: await api.runPreset("mp4", files), error: null };
+      const batch: QuickBatch = { files, run: await api.runPreset("mp4", files), error: null, events: [] };
       return [batch];
     },
     async onQuick() {
@@ -282,6 +292,9 @@ export function mockApi(): Api {
     async closeWindow() {
       window.close();
     },
+    shellStatus: () => delay(shell()),
+    shellInstall: () => ((menu = true), delay(shell(), 600)),
+    shellUninstall: () => ((menu = false), delay(shell(), 300)),
   };
   return api;
 }

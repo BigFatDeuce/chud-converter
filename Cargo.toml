@@ -6,6 +6,7 @@ members = [
     "crates/chud-engines",
     "crates/chud-jobs",
     "crates/chud-enginemgr",
+    "crates/chud-shell",
     "crates/chud-cli",
     "apps/desktop/src-tauri",
 ]
@@ -25,6 +26,7 @@ chud-process = { path = "crates/chud-process" }
 chud-engines = { path = "crates/chud-engines" }
 chud-jobs = { path = "crates/chud-jobs" }
 chud-enginemgr = { path = "crates/chud-enginemgr" }
+chud-shell = { path = "crates/chud-shell" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }

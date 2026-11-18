@@ -3,6 +3,10 @@
 Ce dossier est **portable** : grâce au fichier `portable`, les réglages et le cache restent dans
 `data/` ici même. Rien n'est écrit dans votre profil. Pour tout effacer, supprimez le dossier.
 
+**Seule exception : le menu clic droit**, si vous l'activez (tests 21 à 25). Il ajoute des clés
+au registre de votre compte Windows. Retirez-le **avant** de supprimer ce dossier : écran
+**Préréglages** → **Retirer du menu** (ou `chud.exe shell uninstall`).
+
 Les fichiers du dossier `Exemples` sont générés pour l'occasion : vous pouvez les convertir,
 les abîmer, les supprimer sans crainte. Testez aussi avec vos propres fichiers : l'original
 n'est jamais modifié.
@@ -38,6 +42,21 @@ nécessaires pour la vidéo, l'audio et les archives (`winget install Gyan.FFmpe
 | 14 | Destination **Dans un dossier…** | Les résultats y sont écrits ; le réglage est mémorisé |
 | 15 | Écran **Moteurs** | FFmpeg et 7-Zip « Prêt » avec version et emplacement ; commande d'installation pour les autres |
 | 16 | Fermer la fenêtre pendant une conversion longue | Fermeture propre, aucun fichier partiel laissé |
+
+## Préréglages et menu clic droit
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 17 | Ajouter `Exemples\vacances.mkv` | Sous « Convertir en », une rangée **Préréglages** (MP4, MP4 léger, WebM, GIF, MP3…) ; jamais « MKV » pour un MKV |
+| 18 | Cliquer **MP4 léger (720p)** | Le format et les options se remplissent, le plan passe « Avec perte » ; **rien n'est converti** avant « Convertir » |
+| 19 | Choisir un format et des options, puis **Enregistrer comme préréglage…** | Le nouveau préréglage apparaît dans la rangée et dans l'écran **Préréglages** (étiquette « personnel ») |
+| 20 | Écran **Préréglages** : décocher, renommer (**Modifier**), monter/descendre, supprimer | Chaque changement est enregistré ; la suppression demande une confirmation ; **Rétablir les préréglages fournis** garde une copie de l'ancien fichier |
+| 21 | Écran **Préréglages** → **Ajouter au menu** | « Installé pour … types de fichiers » ; aucune demande de droits d'administrateur |
+| 22 | Dans l'Explorateur, clic droit sur `Exemples\photo.png` (Windows 11 : **Afficher plus d'options**) → **Chud Converter** → **WebP** | Petite fenêtre « conversion » ; `photo.webp` à côté de l'original ; la fenêtre se ferme seule après quelques secondes si tout a réussi (survoler la fenêtre la garde ouverte) |
+| 23 | Sélectionner `musique.wav` et `vacances.mkv` ensemble → **Chud Converter** → **MP3** | Une seule fenêtre avec les deux conversions |
+| 24 | Clic droit sur le dossier `Dossier à compresser` → **Chud Converter** → **Compresser en ZIP** | Archive créée à côté du dossier |
+| 25 | **Retirer du menu** | Le menu disparaît de l'Explorateur ; `chud.exe shell status` répond « non installé » |
+| 26 | Terminal : `chud.exe convert Exemples\musique.wav --preset flac` puis `chud.exe presets Exemples\photo.png` | Conversion par préréglage ; la liste des préréglages proposés pour une image (sans « PNG ») |
 
 ## Signaler un problème
 

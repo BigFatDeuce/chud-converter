@@ -286,6 +286,24 @@ pub struct PresetsView {
     pub presets: Vec<PresetView>,
     /// Fichier illisible : rien n'est proposé ni enregistré tant qu'il n'est pas corrigé.
     pub error: Option<String>,
+    /// Après un enregistrement : le menu clic droit installé a été mis à jour, ou pourquoi pas.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub menu_note: Option<String>,
+}
+
+/// État du menu clic droit de l'explorateur de fichiers.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShellView {
+    /// Pris en charge sur ce système (Windows, Linux).
+    pub supported: bool,
+    pub installed: bool,
+    pub exe: Option<String>,
+    pub exe_missing: bool,
+    /// Le menu lance bien ce programme-ci (pas une autre copie, ailleurs).
+    pub current: bool,
+    pub entries: usize,
+    pub location: String,
 }
 
 /// Lot lancé depuis le menu contextuel (`--preset`), affiché par la fenêtre de conversion rapide.
@@ -295,6 +313,9 @@ pub struct QuickBatch {
     pub files: Vec<String>,
     pub run: Option<RunPreset>,
     pub error: Option<String>,
+    /// Événements déjà survenus pour ces tâches : une conversion rapide peut se terminer avant
+    /// que la fenêtre ne soit prête à écouter.
+    pub events: Vec<UiEvent>,
 }
 
 /// Ce que demande la ligne de commande de `chud-converter`.
@@ -390,6 +411,18 @@ pub enum UiEvent {
 }
 
 impl UiEvent {
+    pub fn id(&self) -> JobId {
+        match self {
+            Self::Started { id }
+            | Self::Planned { id, .. }
+            | Self::Step { id, .. }
+            | Self::Progress { id, .. }
+            | Self::Skipped { id, .. }
+            | Self::Done { id, .. }
+            | Self::Failed { id, .. } => *id,
+        }
+    }
+
     pub fn from_queue(ev: QueueEvent) -> Option<Self> {
         Some(match ev {
             QueueEvent::Started { id } => UiEvent::Started { id },
@@ -638,7 +671,13 @@ pub struct App {
     presets_lock: Mutex<()>,
     /// Lots `--preset` pas encore affichés par la fenêtre rapide.
     quick: Mutex<Vec<QuickBatch>>,
+    /// Derniers événements de chaque tâche (sans la progression), pour une fenêtre qui arrive
+    /// après coup.
+    history: Arc<Mutex<BTreeMap<JobId, Vec<UiEvent>>>>,
 }
+
+/// Nombre de tâches dont l'historique est gardé.
+const HISTORY_JOBS: usize = 500;
 
 impl App {
     pub fn new(paths: AppPaths, listener: UiListener) -> Self {
@@ -650,6 +689,7 @@ impl App {
             initial: Mutex::default(),
             presets_lock: Mutex::default(),
             quick: Mutex::default(),
+            history: Arc::default(),
         }
     }
 
@@ -694,8 +734,16 @@ impl App {
         if q.is_none() || stale {
             let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
             let listener = self.listener.clone();
+            let history = self.history.clone();
             let ql: QueueListener = Arc::new(move |ev| {
                 if let Some(ui) = UiEvent::from_queue(ev) {
+                    if !matches!(ui, UiEvent::Progress { .. }) {
+                        let mut h = lock(&history);
+                        h.entry(ui.id()).or_default().push(ui.clone());
+                        while h.len() > HISTORY_JOBS {
+                            h.pop_first();
+                        }
+                    }
                     listener(ui);
                 }
             });
@@ -714,8 +762,8 @@ impl App {
     pub fn presets(&self) -> PresetsView {
         let file = self.paths.presets_file().display().to_string();
         match self.load_presets() {
-            Ok(s) => PresetsView { file, presets: s.presets.iter().map(PresetView::of).collect(), error: None },
-            Err(e) => PresetsView { file, presets: Vec::new(), error: Some(e) },
+            Ok(s) => PresetsView { file, presets: s.presets.iter().map(PresetView::of).collect(), error: None, menu_note: None },
+            Err(e) => PresetsView { file, presets: Vec::new(), error: Some(e), menu_note: None },
         }
     }
 
@@ -726,7 +774,7 @@ impl App {
         self.load_presets().map_err(|e| format!("{e} — corrigez le fichier ou rétablissez les préréglages par défaut"))?;
         let store = PresetStore { version: 1, presets: presets.into_iter().map(PresetView::into_preset).collect() };
         store.save(&self.paths.presets_file(), catalog()).map_err(|e| e.to_string())?;
-        Ok(self.presets())
+        Ok(PresetsView { menu_note: self.refresh_menu(), ..self.presets() })
     }
 
     /// Rétablit les préréglages fournis. L'ancien fichier, s'il existe, est gardé à côté
@@ -742,7 +790,7 @@ impl App {
             backup = Some(b.display().to_string());
         }
         PresetStore::builtin().save(&file, catalog()).map_err(|e| e.to_string())?;
-        Ok((self.presets(), backup))
+        Ok((PresetsView { menu_note: self.refresh_menu(), ..self.presets() }, backup))
     }
 
     /// Préréglages proposés pour ces chemins, d'après leurs noms (comme le menu contextuel).
@@ -786,14 +834,91 @@ impl App {
     /// l'afficher au lieu de l'avaler).
     pub fn quick(&self, id: &str, files: Vec<String>) {
         let batch = match self.run_preset(id, &files) {
-            Ok(run) => QuickBatch { files, run: Some(run), error: None },
-            Err(e) => QuickBatch { files, run: None, error: Some(e) },
+            Ok(run) => QuickBatch { files, run: Some(run), error: None, events: Vec::new() },
+            Err(e) => QuickBatch { files, run: None, error: Some(e), events: Vec::new() },
         };
         lock(&self.quick).push(batch);
     }
 
+    /// Lots en attente, avec ce qui est déjà arrivé à leurs tâches.
     pub fn take_quick(&self) -> Vec<QuickBatch> {
-        std::mem::take(&mut *lock(&self.quick))
+        let mut batches = std::mem::take(&mut *lock(&self.quick));
+        let history = lock(&self.history);
+        for b in &mut batches {
+            if let Some(run) = &b.run {
+                b.events = run.submitted.iter().flat_map(|s| history.get(&s.id).cloned().unwrap_or_default()).collect();
+            }
+        }
+        batches
+    }
+
+    // ------------------------------------------------------------------ menu clic droit
+
+    /// Menus d'après les préréglages, limités aux conversions possibles avec les moteurs présents.
+    fn menus(&self) -> Result<Vec<chud_shell::Menu>, String> {
+        let store = self.load_presets()?;
+        let engines = self.engines()?;
+        let registry = engines.runner.registry();
+        let mut cache: std::collections::HashMap<FormatId, Vec<FormatId>> = Default::default();
+        Ok(chud_shell::plan_menus_with(&store, catalog(), |src, dst| {
+            cache
+                .entry(src.clone())
+                .or_insert_with(|| registry.targets(src, None, &OptionValues::new()).into_iter().map(|t| t.format).collect())
+                .contains(dst)
+        }))
+    }
+
+    pub fn shell_status(&self) -> ShellView {
+        let supported = cfg!(any(windows, target_os = "linux"));
+        let me = chud_shell::default_gui_exe().ok();
+        match chud_shell::status() {
+            Ok(st) => ShellView {
+                supported,
+                installed: st.installed,
+                current: st.installed && st.exe.is_some() && st.exe == me,
+                exe: st.exe.map(|e| e.display().to_string()),
+                exe_missing: st.exe_missing,
+                entries: st.entries,
+                location: st.location,
+            },
+            Err(_) => ShellView {
+                supported: false,
+                installed: false,
+                current: false,
+                exe: None,
+                exe_missing: false,
+                entries: 0,
+                location: String::new(),
+            },
+        }
+    }
+
+    /// Installe (ou met à jour) le menu pour lancer ce programme-ci.
+    pub fn shell_install(&self) -> Result<ShellView, String> {
+        let exe = chud_shell::default_gui_exe().map_err(|e| e.to_string())?;
+        let menus = self.menus()?;
+        chud_shell::install(&exe, &menus).map_err(|e| e.to_string())?;
+        Ok(self.shell_status())
+    }
+
+    pub fn shell_uninstall(&self) -> Result<ShellView, String> {
+        chud_shell::uninstall().map_err(|e| e.to_string())?;
+        Ok(self.shell_status())
+    }
+
+    /// Après un changement de préréglages : met à jour le menu s'il est installé pour ce
+    /// programme. Ne l'installe jamais de lui-même.
+    fn refresh_menu(&self) -> Option<String> {
+        let exe = chud_shell::default_gui_exe().ok()?;
+        let st = chud_shell::status().ok()?;
+        if !st.installed || st.exe.as_deref() != Some(exe.as_path()) {
+            return None;
+        }
+        let r = self.menus().and_then(|m| chud_shell::refresh_if_installed(&exe, &m).map_err(|e| e.to_string()));
+        Some(match r {
+            Ok(_) => "Menu clic droit mis à jour.".into(),
+            Err(e) => format!("Le menu clic droit n'a pas pu être mis à jour : {e}"),
+        })
     }
 
     pub fn cancel(&self, id: JobId) -> bool {
@@ -971,6 +1096,19 @@ mod tests {
         assert_eq!(b.len(), 1);
         assert!(b[0].error.as_deref().unwrap().contains("inconnu"), "{:?}", b[0].error);
         assert!(app.take_quick().is_empty());
+
+        // Une conversion terminée avant que la fenêtre n'écoute : son historique est joint.
+        let png = dir.join("q.png");
+        std::fs::write(&png, PNG_1X1).unwrap();
+        app.quick("webp", vec![png.display().to_string()]);
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while !dir.join("q.webp").is_file() || lock(&app.history).values().all(|h| !h.iter().any(|e| matches!(e, UiEvent::Done { .. }))) {
+            assert!(std::time::Instant::now() < deadline, "conversion bloquée");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let b = app.take_quick();
+        assert!(b[0].events.iter().any(|e| matches!(e, UiEvent::Started { .. })));
+        assert!(b[0].events.iter().any(|e| matches!(e, UiEvent::Done { .. })), "{:?}", b[0].events);
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);
     }

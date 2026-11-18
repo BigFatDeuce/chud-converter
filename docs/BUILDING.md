@@ -74,7 +74,9 @@ cargo test --workspace
 | `chud-jobs/tests/jobs_real.rs` | conflits (renommer, ignorer, remplacer), refus d'écraser la source, annulation réelle d'un encodage avec nettoyage, fichier tronqué jamais déclaré réussi |
 | `chud-jobs` (file d'attente) | ajout de tâches pendant l'exécution, annulation d'une tâche en attente, un événement de fin par tâche |
 | `chud-core` (planificateur) | jamais d'« audio » tiré d'une image ni de sous-titres d'un fichier qui n'en a pas |
-| `chud-desktop` | analyse, cibles, plan et vraie conversion PNG → BMP via la file ; sérialisation camelCase des échanges avec l'interface |
+| `chud-desktop` | analyse, cibles, plan et vraie conversion PNG → BMP via la file ; préréglages (enregistrement, fichier abîmé jamais écrasé, copie avant rétablissement, lancement) ; arguments `--preset` ; historique rejoué pour la fenêtre rapide ; sérialisation camelCase |
+| `chud-jobs` (préréglages) | les 21 préréglages fournis, chacun exécuté sur un vrai fichier ; options reconnues par les moteurs |
+| `chud-shell` | contenu des menus d'après les préréglages et les moteurs ; inscription réelle dans une branche de test du registre (Windows), réinstallation sans doublon, retrait exact, clé d'un autre programme intacte, liste trafiquée refusée ; fichiers Dolphin, Nemo, Nautilus |
 | `chud-cli` | développement des motifs `*.ext` sans réinterpréter un chemin existant |
 
 Les tests qui exigent un moteur absent affichent `SKIP` et réussissent. Avec la variable
@@ -90,7 +92,7 @@ construction de l'interface, `cargo fmt --check`, `clippy -D warnings`, tests.
 Voir [ARCHITECTURE](ARCHITECTURE.md). En bref : `chud-core` (types, catalogue, détection,
 planification, aucun processus), `chud-process` (seul endroit qui lance des programmes),
 `chud-engines` (adaptateurs), `chud-jobs` (exécution d'une conversion de bout en bout),
-`chud-enginemgr` (moteurs installés), `chud-cli`, et `apps/desktop` (interface Svelte et
+`chud-enginemgr` (moteurs installés), `chud-shell` (menu clic droit), `chud-cli`, et `apps/desktop` (interface Svelte et
 `src-tauri`, le pont entre l'interface et le cœur).
 
 ## 5. Ajouter un format ou un moteur

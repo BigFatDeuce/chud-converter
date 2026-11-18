@@ -14,6 +14,7 @@ import type {
   OptionValue,
   PresetView,
   QuickBatch,
+  ShellView,
   Submitted,
   UiEvent,
   Verification,
@@ -141,6 +142,8 @@ class Store {
   presetsError = $state<string | null>(null);
   /** Lots du menu contextuel (fenêtre rapide) : erreurs et fichiers ignorés y restent visibles. */
   quick = $state<QuickBatch[]>([]);
+  shell = $state<ShellView | null>(null);
+  shellBusy = $state(false);
 
   engines = $state<EngineView[] | null>(null);
   enginesLoading = $state(false);
@@ -205,7 +208,10 @@ class Store {
     const take = async () => {
       for (const b of await a.takeQuick()) {
         this.quick = [...this.quick, b];
-        if (b.run) this.#addJobs(b.run.submitted, b.run.preset.target, b.run.preset.targetName);
+        if (b.run) {
+          this.#addJobs(b.run.submitted, b.run.preset.target, b.run.preset.targetName);
+          for (const e of b.events) this.#apply(e);
+        }
       }
     };
     await a.onQuick(() => void take());
@@ -423,7 +429,8 @@ class Store {
 
   #apply(e: UiEvent) {
     const j = this.jobs.find((x) => x.id === e.id);
-    if (!j) return;
+    // Une tâche terminée ne revient jamais en arrière (événements rejoués en double).
+    if (!j || ["done", "skipped", "failed", "cancelled"].includes(j.status)) return;
     switch (e.kind) {
       case "started":
         j.status = "running";
@@ -483,6 +490,7 @@ class Store {
       const v = await a.savePresets(list);
       this.presets = v.presets;
       this.presetsError = v.error;
+      if (v.menuNote) this.say(v.menuNote);
       return true;
     } catch (e) {
       this.say(errorText(e));
@@ -497,7 +505,8 @@ class Store {
       const r = await a.resetPresets();
       this.presets = r.view.presets;
       this.presetsError = r.view.error;
-      this.say(r.backup ? `Préréglages rétablis. L'ancien fichier est gardé : ${r.backup}` : "Préréglages rétablis.");
+      const menu = r.view.menuNote ? ` ${r.view.menuNote}` : "";
+      this.say((r.backup ? `Préréglages rétablis. L'ancien fichier est gardé : ${r.backup}` : "Préréglages rétablis.") + menu);
     } catch (e) {
       this.say(errorText(e));
     }
@@ -536,6 +545,31 @@ class Store {
     const ok = await this.savePresets([p, ...this.presets]);
     if (ok) this.say(`Préréglage « ${clean} » enregistré.`);
     return ok;
+  }
+
+  // ---------------------------------------------------------------- menu clic droit
+
+  async loadShell() {
+    const a = await api;
+    try {
+      this.shell = await a.shellStatus();
+    } catch (e) {
+      this.say(errorText(e));
+    }
+  }
+
+  async setShell(install: boolean) {
+    const a = await api;
+    this.shellBusy = true;
+    try {
+      this.shell = install ? await a.shellInstall() : await a.shellUninstall();
+      this.say(install ? `Menu clic droit installé (${this.shell.entries} types de fichiers).` : "Menu clic droit retiré.");
+    } catch (e) {
+      this.say(errorText(e));
+      await this.loadShell();
+    } finally {
+      this.shellBusy = false;
+    }
   }
 
   // ---------------------------------------------------------------- moteurs

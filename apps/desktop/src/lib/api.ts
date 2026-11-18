@@ -14,6 +14,7 @@ import type {
   PresetsView,
   QuickBatch,
   RunPreset,
+  ShellView,
   Submitted,
   UiEvent,
 } from "./types";
@@ -55,6 +56,10 @@ export interface Api {
   onOpenFiles(cb: (paths: string[]) => void): Promise<() => void>;
   showMain(): Promise<void>;
   closeWindow(): Promise<void>;
+
+  shellStatus(): Promise<ShellView>;
+  shellInstall(): Promise<ShellView>;
+  shellUninstall(): Promise<ShellView>;
 }
 
 function tauriApi(): Api {
@@ -123,6 +128,9 @@ function tauriApi(): Api {
       return listen<string[]>("open-files", (e) => cb(e.payload));
     },
     showMain: () => call("show_main"),
+    shellStatus: () => call("shell_status"),
+    shellInstall: () => call("shell_install"),
+    shellUninstall: () => call("shell_uninstall"),
     async closeWindow() {
       const { getCurrentWindow } = await import("@tauri-apps/api/window");
       await getCurrentWindow().close();

@@ -18,7 +18,7 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [x] Moteurs : image natif, données natif (JSON/YAML/TOML/CSV/TSV/NDJSON), FFmpeg, 7-Zip
 - [x] Détection des moteurs installés (gérés, emplacements connus, PATH) et sonde de capacités
 - [x] CLI `chud` : `formats`, `engines`, `detect`, `targets`, `plan`, `convert`, `matrix`, sortie JSON, motifs `*.ext` sous Windows
-- [x] Tests unitaires et d'intégration sur fichiers réels générés (80 tests ; conflits, annulation, fichier tronqué, attaques d'archives, file d'attente, application)
+- [x] Tests unitaires et d'intégration sur fichiers réels générés (97 tests ; conflits, annulation, fichier tronqué, attaques d'archives, file d'attente, application, préréglages, menu clic droit)
 - [x] Qualité : `clippy` sans avertissement, `rustfmt`, documentation utilisateur (README, BUILDING)
 
 ### 2b. Gestionnaire de moteurs complet
@@ -46,11 +46,14 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 
 ### 2c bis. Menu contextuel (demandé par le porteur — avancé depuis la phase 3)
 - [x] Conception (ADR-017, `docs/SHELL-INTEGRATION.md`)
-- [ ] Préréglages partagés CLI / interface / menu, `chud-gui --shell-convert`
-- [ ] Fenêtre de progression compacte, instance unique
-- [ ] DLL `IExplorerCommand` (Rust) + inscription par utilisateur + `chud shell install|uninstall|status`
+- [x] Préréglages partagés CLI / application / menu (`presets.toml`, 21 fournis, chacun testé sur un vrai fichier) : `chud convert --preset`, `chud presets`, écran « Préréglages », application d'un préréglage dans l'écran Convertir, « Enregistrer comme préréglage »
+- [x] `chud-converter --preset <id> -- fichiers…` : fenêtre de progression compacte, erreurs affichées, fermeture automatique seulement si tout a réussi
+- [x] Instance unique : les lancements suivants rejoignent la première fenêtre (testé : 60 lancements simultanés, à froid et à chaud, 60/60 convertis)
+- [x] Windows : menu en cascade par clés HKCU (sans droits d'administrateur, ADR-019), limité aux conversions possibles avec les moteurs présents, mis à jour quand les préréglages changent ; `chud shell install|uninstall|status` et boutons dans l'application ; testé dans le vrai menu de l'Explorateur (IContextMenu) puis retiré sans reste
+- [ ] DLL `IExplorerCommand` (sous-menu selon le contenu réel, sélection transmise en un seul appel)
 - [ ] Menu court de Windows 11 (paquet sparse signé, selon certificat)
-- [ ] Linux : Dolphin, Nautilus, Nemo, Thunar
+- [x] Linux : menus de service Dolphin, actions Nemo, scripts Nautilus (code et tests unitaires ; **pas encore essayé sur un vrai bureau Linux**)
+- [ ] Linux : Thunar (fichier `uca.xml` partagé, à modifier avec précaution)
 
 ### 2d. Couverture des catégories prioritaires
 - [ ] Images : libvips, ImageMagick, encodeurs de référence (AVIF, JXL, HEIF), RAW, ICC/CMJN, conservation EXIF

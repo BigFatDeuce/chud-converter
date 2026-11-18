@@ -3,7 +3,7 @@
 
 use crate::backend::{
     App, AppInfo, ConvertRequest, EngineView, FileInfo, FileTargets, PlanRequest, PlanView, PresetView, PresetsView, QuickBatch, RunPreset,
-    Submitted,
+    ShellView, Submitted,
 };
 use chud_jobs::JobId;
 use std::sync::Arc;
@@ -117,4 +117,24 @@ pub fn take_quick(app: Shared<'_>) -> Vec<QuickBatch> {
 #[tauri::command]
 pub async fn show_main(handle: tauri::AppHandle) -> Result<(), String> {
     crate::show_main(&handle, Vec::new()).map_err(|e| e.to_string())
+}
+
+// ------------------------------------------------------------------------------ menu clic droit
+
+#[tauri::command]
+pub async fn shell_status(app: Shared<'_>) -> Result<ShellView, String> {
+    let app = app.inner().clone();
+    blocking(move || Ok(app.shell_status())).await
+}
+
+#[tauri::command]
+pub async fn shell_install(app: Shared<'_>) -> Result<ShellView, String> {
+    let app = app.inner().clone();
+    blocking(move || app.shell_install()).await
+}
+
+#[tauri::command]
+pub async fn shell_uninstall(app: Shared<'_>) -> Result<ShellView, String> {
+    let app = app.inner().clone();
+    blocking(move || app.shell_uninstall()).await
 }

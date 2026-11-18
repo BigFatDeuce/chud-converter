@@ -1,0 +1,16 @@
+[package]
+name = "chud-shell"
+description = "Right-click menu integration for Chud Converter (Windows Explorer, Linux file managers)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chud-core.workspace = true
+chud-jobs.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56"

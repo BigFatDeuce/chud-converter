@@ -35,7 +35,7 @@ Your originals are never touched.
 > [!NOTE]
 > **Version 0.1 — alpha.** The conversion engine, the desktop app (Tauri 2 + Svelte 5) and the
 > `chud` command line work and are tested on real files. The app is tested on Windows and built
-> on Linux by the CI. The File Explorer right-click menu comes next. The program currently
+> on Linux by the CI. Presets and the File Explorer right-click menu work on Windows. The program currently
 > speaks **French**; English is planned.
 
 ## Principles
@@ -182,6 +182,15 @@ ExifTool and MediaInfo are already detected; support for them is coming release 
 pick an output format, check the plan and the options, then convert. Results appear next to
 the originals unless you choose another folder.
 
+**Presets and right-click menu:** a preset is a format, options and a destination saved under a
+name (21 are provided: MP4, light 720p MP4, WebM, MP3, FLAC, JPEG, WebP, ZIP, extract here…).
+Apply one in the Convert screen, manage them in the *Presets* screen, and turn on the
+**right-click menu** there (or with `chud shell install`): right-click files in File Explorer →
+*Chud Converter* → a preset. A small window follows the conversions and closes by itself when
+everything succeeded. The menu is installed for your account only, without administrator
+rights, and `chud shell uninstall` removes exactly what was added. On Windows 11 it is under
+*Show more options* (Shift+F10).
+
 **Command line:**
 
 | Command | Purpose |
@@ -191,6 +200,8 @@ the originals unless you choose another folder.
 | `chud targets <file>` | possible output formats for this file, with expected fidelity |
 | `chud plan <file> --to <format>` | plan, fidelity report and options, without writing anything |
 | `chud convert <files> --to <format>` | conversion, verification and report |
+| `chud convert <files> --preset <id>` | conversion with a preset (`chud presets` lists them) |
+| `chud shell install` · `uninstall` · `status` | right-click menu of the file manager |
 | `chud formats [search]` | known formats, by category |
 | `chud matrix` | conversions offered by each engine |
 
@@ -225,7 +236,8 @@ managed engines then stay in a `data` folder beside it — nothing in your user 
 - [x] `chud` command line
 - [x] Continuous integration on Windows and Linux with real engines
 - [x] Desktop app, Tauri 2 + Svelte 5 — first version
-- [ ] Presets and right-click menu (Windows File Explorer, Dolphin, Nautilus, Nemo, Thunar) — **next step**
+- [x] Presets, quick-convert window, right-click menu in Windows File Explorer
+- [ ] Right-click menu on Linux: Dolphin, Nemo, Nautilus written but not yet tried on a real desktop; Thunar to do
 - [ ] English localization
 - [ ] Verified installation and updates of engines
 - [ ] PDF, documents, e-books (qpdf, LibreOffice, Pandoc, Calibre), OCR
