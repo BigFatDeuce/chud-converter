@@ -165,7 +165,7 @@ impl AppPaths {
                 portable: false,
             },
             None => {
-                let base = std::env::temp_dir().join("chud-convert");
+                let base = std::env::temp_dir().join("chudconverter");
                 Self { config_dir: base.join("config"), data_dir: base.clone(), cache_dir: base.join("cache"), portable: false }
             }
         }

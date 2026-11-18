@@ -45,6 +45,10 @@ cargo build --release -p chud-desktop
 Le programme est `target/release/chud-converter` (`.exe` sous Windows). Il accepte des fichiers
 en arguments : `chud-converter vacances.mkv photo.png` les ouvre directement dans la liste.
 
+**Paquet de test portable** : `python scripts/package_test.py` compile tout et prépare
+`portable/Chud Converter/` (programmes, fichier `portable`, fichiers d'exemple générés avec
+FFmpeg, guide [TESTER](TESTER.md)). Le dossier `portable/` n'est jamais versionné.
+
 Pour travailler l'interface : `npm run dev` dans `apps/desktop` sert l'interface sur
 `http://localhost:1420` ; ouverte dans un navigateur, elle utilise une **imitation** du cœur
 (bandeau « données fictives » visible) qui n'est jamais incluse dans la version compilée.
