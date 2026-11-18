@@ -180,6 +180,11 @@ impl AppPaths {
         self.data_dir.join("engines")
     }
 
+    /// Préréglages de conversion (partagés par la CLI, l'application et le menu contextuel).
+    pub fn presets_file(&self) -> PathBuf {
+        self.config_dir.join("presets.toml")
+    }
+
     pub fn settings_file(&self) -> PathBuf {
         self.config_dir.join("engines.toml")
     }

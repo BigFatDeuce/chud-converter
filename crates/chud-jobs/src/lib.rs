@@ -23,7 +23,9 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
+pub mod presets;
 pub mod queue;
+pub use presets::{Preset, PresetError, PresetStore, kind_of_path};
 pub use queue::{JobFailure, JobId, JobQueue, QueueEvent, QueueListener};
 
 /// Que faire si le fichier de sortie existe déjà.
@@ -461,6 +463,15 @@ impl JobRunner {
             let _ = f.set_modified(t);
         }
         drop(staging);
+        // Un résultat plus gros que l'original surprend (réencodage d'un fichier déjà très
+        // compressé, GIF…) : on le dit plutôt que de laisser croire à un gain.
+        if let (Ok(a), Ok(b)) = (std::fs::metadata(&input), std::fs::metadata(&final_path))
+            && a.is_file()
+            && b.is_file()
+            && b.len() > a.len() + a.len() / 20
+        {
+            notes.push(format!("le résultat ({}) est plus gros que l'original ({})", human_size(b.len()), human_size(a.len())));
+        }
         on_event(JobEvent::Finished { output: final_path.clone() });
         Ok(JobOutcome {
             input,
@@ -658,8 +669,29 @@ pub fn run_batch(
     results.into_inner().unwrap_or_else(|e| e.into_inner()).into_iter().map(|r| r.unwrap_or(Err(JobError::Cancelled))).collect()
 }
 
+/// Taille lisible en français (« 13,3 Mo »).
+fn human_size(n: u64) -> String {
+    const UNITS: [&str; 4] = ["Ko", "Mo", "Go", "To"];
+    if n < 1024 {
+        return format!("{n} o");
+    }
+    let mut v = n as f64 / 1024.0;
+    let mut i = 0;
+    while v >= 1024.0 && i < UNITS.len() - 1 {
+        v /= 1024.0;
+        i += 1;
+    }
+    format!("{:.1} {}", v, UNITS[i]).replace('.', ",")
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn human_sizes_in_french() {
+        assert_eq!(super::human_size(512), "512 o");
+        assert_eq!(super::human_size(13_311_089), "12,7 Mo");
+    }
+
     use super::*;
 
     #[test]

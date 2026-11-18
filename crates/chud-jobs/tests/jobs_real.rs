@@ -213,3 +213,105 @@ fn queue_accepts_cancels_and_reports_each_job() {
     drop(queue);
     assert_eq!(jobs_left(&e), 0);
 }
+
+/// Chaque préréglage livré fonctionne sur un vrai fichier de chaque sorte qu'il vise, et toutes
+/// ses options existent réellement : une clé mal orthographiée serait sinon ignorée en silence.
+#[test]
+fn builtin_presets_work_on_real_files() {
+    use chud_core::{EngineId, FormatCatalog};
+    use chud_jobs::{PresetStore, kind_of_path};
+
+    let e = env("presets");
+    let Some(ffmpeg) = e.ffmpeg.clone() else {
+        return skip("FFmpeg introuvable");
+    };
+    if e.runner.registry().engine(&EngineId::new("7zip")).is_none() {
+        return skip("7-Zip introuvable");
+    }
+    let src = e.dir.join("sources");
+    std::fs::create_dir_all(&src).unwrap();
+    let video = src.join("film.mov");
+    make_media(
+        &ffmpeg,
+        &[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x240:rate=15:duration=1",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=duration=1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+        ],
+        &video,
+    );
+    let audio = src.join("son.wav");
+    make_media(&ffmpeg, &["-f", "lavfi", "-i", "sine=duration=1"], &audio);
+    let image = src.join("image.png");
+    make_media(&ffmpeg, &["-f", "lavfi", "-i", "testsrc2=size=64x48", "-frames:v", "1"], &image);
+    let data = src.join("liste.json");
+    std::fs::write(&data, r#"[{"nom":"a","n":1},{"nom":"b","n":2}]"#).unwrap();
+    let subs = src.join("dialogues.srt");
+    std::fs::write(&subs, "1\n00:00:00,000 --> 00:00:01,000\nBonjour\n").unwrap();
+    // Un second fichier par sorte, dans un autre format : « WAV » n'est pas proposé pour un WAV.
+    let audio2 = src.join("son.mp3");
+    make_media(&ffmpeg, &["-f", "lavfi", "-i", "sine=duration=1"], &audio2);
+    let image2 = src.join("image.jpg");
+    make_media(&ffmpeg, &["-f", "lavfi", "-i", "testsrc2=size=64x48", "-frames:v", "1"], &image2);
+    let data2 = src.join("liste.csv");
+    std::fs::write(&data2, "nom,n\na,1\nb,2\n").unwrap();
+    let webvtt = src.join("dialogues.vtt");
+    std::fs::write(&webvtt, "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nBonjour\n").unwrap();
+    let folder = src.join("dossier");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("a.txt"), "a").unwrap();
+
+    let store = PresetStore::builtin();
+    let zip_spec = store.get("zip").unwrap().job_spec(&folder);
+    let archive = e.runner.run(&zip_spec, &CancelToken::new(), &no_events).unwrap().output.unwrap();
+    let seven_spec = store.get("7z").unwrap().job_spec(&folder);
+    let archive2 = e.runner.run(&seven_spec, &CancelToken::new(), &no_events).unwrap().output.unwrap();
+    let samples = [&video, &audio, &audio2, &image, &image2, &data, &data2, &subs, &webvtt, &folder, &archive, &archive2];
+
+    let catalog = FormatCatalog::builtin();
+    let out = e.dir.join("sorties");
+    std::fs::create_dir_all(&out).unwrap();
+    for p in store.presets.iter() {
+        let mut tried = 0;
+        for kind in &p.applies_to {
+            // Un échantillon de cette sorte pour lequel le préréglage serait proposé (« SRT » ne
+            // l'est pas pour un fichier déjà en SRT, voir PresetStore::for_paths).
+            let Some(sample) = samples.iter().find(|s| {
+                let name = s.file_name().unwrap().to_string_lossy().into_owned();
+                kind_of_path(s, catalog).as_deref() == Some(kind.as_str())
+                    && !catalog.guess_from_name(&name).is_some_and(|f| p.is_pointless_for(&f.id))
+            }) else {
+                panic!("pas d'échantillon pour la sorte « {kind} » du préréglage {}", p.id);
+            };
+            let mut spec = p.job_spec(sample.as_path());
+            spec.output_dir = Some(out.clone());
+            let prepared = e.runner.prepare(&spec).unwrap_or_else(|err| panic!("{} sur {kind} : {err}", p.id));
+            let known: Vec<String> = prepared
+                .plan
+                .steps
+                .iter()
+                .flat_map(|s| e.runner.registry().engine(&s.engine).map(|en| en.options(&s.from, &s.to)).unwrap_or_default())
+                .map(|o| o.key)
+                .collect();
+            for key in p.options.keys() {
+                assert!(known.contains(key), "{} : option « {key} » inconnue pour {kind} (connues : {known:?})", p.id);
+            }
+            let r = e.runner.run(&spec, &CancelToken::new(), &no_events).unwrap_or_else(|err| panic!("{} sur {kind} : {err}", p.id));
+            assert!(r.output.is_some(), "{} sur {kind} : aucune sortie", p.id);
+            tried += 1;
+        }
+        assert!(tried > 0, "{} jamais essayé", p.id);
+    }
+    assert_eq!(jobs_left(&e), 0, "répertoires de travail nettoyés");
+}

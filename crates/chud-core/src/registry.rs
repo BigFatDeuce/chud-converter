@@ -133,14 +133,23 @@ impl Registry {
         }
         let mut reasons = Vec::new();
         let mut refined = Vec::new();
+        // Une option invalide pour un chemin (ex. « h264 » sur un détour par WebM) n'écarte que
+        // ce chemin ; l'erreur n'est rendue que si aucun chemin n'accepte les options.
+        let mut invalid = None;
         for c in &candidates {
             match self.refine(c, info, options) {
                 Ok(p) => refined.push(p),
                 Err(PlanError::Unavailable { reasons: r, .. }) => reasons.extend(r),
+                Err(e @ PlanError::InvalidOption { .. }) => {
+                    invalid.get_or_insert(e);
+                }
                 Err(e) => return Err(e),
             }
         }
         if refined.is_empty() {
+            if let Some(e) = invalid {
+                return Err(e);
+            }
             reasons.dedup();
             return Err(PlanError::Unavailable { from: source.to_string(), to: target.to_string(), reasons });
         }

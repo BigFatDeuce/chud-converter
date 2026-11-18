@@ -1081,7 +1081,12 @@ impl Ffmpeg {
                 || to.video.iter().filter_map(|n| vfam(n)).any(|f| f.codec == s.codec)
                 || (to.any && !matches!(s.codec.as_str(), "gif" | "apng" | "webp"));
             let codec_matches_choice = wanted == "auto" || wanted == "copy" || vfam(wanted).is_some_and(|f| f.codec == s.codec);
-            if codec_ok && codec_matches_choice && !needs_scale && !needs_fps {
+            // « Toujours réencoder » : pour vraiment alléger un fichier déjà dans le bon codec.
+            let reencode = o.bool_or("reencode", false);
+            if reencode && wanted == "copy" {
+                return Err("« Copie obligatoire » et « Toujours réencoder » sont incompatibles".into());
+            }
+            if codec_ok && codec_matches_choice && !needs_scale && !needs_fps && !reencode {
                 r.out([format!("-c:v:{ov}"), "copy".into()]);
                 if s.codec == "hevc" && matches!(to.id, "mp4" | "mov") {
                     r.out([format!("-tag:v:{ov}"), "hvc1".into()]);
@@ -1933,6 +1938,11 @@ impl Engine for Ffmpeg {
                         )
                         .advanced(),
                     );
+                    o.push(
+                        OptionSpec::bool("reencode", "Toujours réencoder la vidéo", false)
+                            .help("Même si elle pourrait être copiée telle quelle : nécessaire pour réduire la taille d'une vidéo déjà au bon format")
+                            .advanced(),
+                    );
                     o.push(OptionSpec::int("max_height", "Hauteur maximale (0 = inchangée)", 0, 8640, 0).help("720, 1080, 2160…"));
                     o.push(OptionSpec::float("fps", "Images par seconde (0 = inchangé)", 0.0, 240.0, 0.0).advanced());
                     o.push(OptionSpec::choice("subtitles", "Sous-titres", &[("keep", "Conserver"), ("drop", "Supprimer")], "keep"));
@@ -2055,6 +2065,7 @@ impl Engine for Ffmpeg {
                     .iter()
                     .any(|k| q.options.int_or(k, 0) > 0 || q.options.float_or(k, 0.0) > 0.0)
                     || q.options.bool_or("normalize", false)
+                    || q.options.bool_or("reencode", false)
                     || !matches!(q.options.str_or("video_codec", "auto"), "auto" | "copy");
                 if forced && matches!(to.kind, Kind::Video | Kind::Audio) {
                     fid = Fidelity::Lossy;
@@ -2411,6 +2422,21 @@ Conversion failed!
         assert_eq!(r.expect.video, Some(0));
         let r = e.recipe(fmt_by_id("mp4").unwrap(), fmt_by_id("mp3").unwrap(), Some(&src), &OptionValues::new()).unwrap();
         assert_eq!(r.fidelity, Some(Fidelity::Lossy));
+    }
+
+    #[test]
+    fn reencode_option_forces_encoding_even_when_copy_is_possible() {
+        let e = engine();
+        let src = video_src();
+        let (mkv, mp4) = (fmt_by_id("mkv").unwrap(), fmt_by_id("mp4").unwrap());
+        let copy = e.recipe(mkv, mp4, Some(&src), &OptionValues::new()).unwrap();
+        assert!(copy.notes.iter().any(|n| n.contains("copiée")), "{:?}", copy.notes);
+        let opts = OptionValues::new().with("reencode", chud_core::OptionValue::Bool(true));
+        let r = e.recipe(mkv, mp4, Some(&src), &opts).unwrap();
+        assert_eq!(r.fidelity, Some(Fidelity::Lossy), "un réencodage n'est jamais annoncé sans perte");
+        assert!(!r.notes.iter().any(|n| n.contains("vidéo") && n.contains("copiée")), "{:?}", r.notes);
+        let both = opts.clone().with("video_codec", chud_core::OptionValue::Text("copy".into()));
+        assert!(e.recipe(mkv, mp4, Some(&src), &both).is_err(), "options contradictoires refusées");
     }
 
     #[test]

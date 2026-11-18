@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use chud_core::detect::detect_path;
 use chud_core::{CancelToken, Category, EngineId, FormatCatalog, FormatId, OptionValues, Plan, Registry, Verification};
 use chud_enginemgr::{AppPaths, EngineManager, EngineState, EngineStatus};
-use chud_jobs::{Conflict, JobEvent, JobRunner, JobSpec, run_batch};
+use chud_jobs::{Conflict, JobEvent, JobRunner, JobSpec, PresetStore, run_batch};
 use clap::{Parser, Subcommand, ValueEnum};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::path::PathBuf;
@@ -48,21 +48,25 @@ enum Cmd {
         #[arg(long)]
         engine: Option<String>,
     },
-    /// Convertit un ou plusieurs fichiers.
+    /// Convertit un ou plusieurs fichiers (vers un format, ou selon un préréglage).
     Convert {
         files: Vec<PathBuf>,
-        #[arg(long = "to", short = 't')]
-        to: String,
+        #[arg(long = "to", short = 't', required_unless_present = "preset", conflicts_with = "preset")]
+        to: Option<String>,
+        /// Préréglage (voir `chud presets`) : format, options et choix de sortie enregistrés.
+        #[arg(long, short = 'p')]
+        preset: Option<String>,
         /// Dossier de sortie (par défaut : celui de chaque source).
         #[arg(long, short = 'o')]
         output: Option<PathBuf>,
         #[arg(long = "set", short = 's')]
         set: Vec<String>,
-        /// Modèle du nom de sortie : {stem}, {target}.
-        #[arg(long, default_value = "{stem}")]
-        name: String,
-        #[arg(long = "on-conflict", value_enum, default_value_t = ConflictArg::Rename)]
-        on_conflict: ConflictArg,
+        /// Modèle du nom de sortie : {stem}, {target} (par défaut {stem}).
+        #[arg(long)]
+        name: Option<String>,
+        /// Fichier de sortie déjà présent : rename (par défaut), skip ou overwrite.
+        #[arg(long = "on-conflict", value_enum)]
+        on_conflict: Option<ConflictArg>,
         /// Nombre de conversions simultanées.
         #[arg(long, short = 'j')]
         jobs: Option<usize>,
@@ -75,6 +79,14 @@ enum Cmd {
         /// Délai maximal par étape, en secondes.
         #[arg(long)]
         timeout: Option<u64>,
+    },
+    /// Préréglages : tous, ou ceux proposés pour des fichiers donnés (comme le menu clic droit).
+    Presets {
+        files: Vec<PathBuf>,
+        /// Écrit les préréglages par défaut dans le fichier de préréglages s'il n'existe pas encore
+        /// (pour les modifier à la main). Un fichier existant n'est jamais remplacé.
+        #[arg(long)]
+        write_defaults: bool,
     },
     /// Matrice des conversions disponibles par moteur.
     Matrix {
@@ -366,7 +378,7 @@ fn run(cli: Cli) -> Result<i32> {
             println!("Sortie prévue : {}", p.output.display());
             Ok(0)
         }
-        Cmd::Convert { files, to, output, set, name, on_conflict, jobs, keep_date, engine, timeout } => {
+        Cmd::Convert { files, to, preset, output, set, name, on_conflict, jobs, keep_date, engine, timeout } => {
             let files = expand_patterns(files)?;
             if files.is_empty() {
                 bail!("aucun fichier à convertir");
@@ -374,21 +386,46 @@ fn run(cli: Cli) -> Result<i32> {
             let env = load_engines()?;
             let runner = JobRunner::new(env.registry.clone(), env.manager.paths().cache_dir.clone());
             runner.cleanup_stale(Duration::from_secs(24 * 3600));
-            let target = resolve_target(&to)?;
-            let options = parse_options(&set)?;
+            let preset = match &preset {
+                Some(id) => {
+                    let store = PresetStore::load(&env.manager.paths().presets_file(), catalog())?;
+                    Some(store.get(id)?.clone())
+                }
+                None => None,
+            };
+            let target = match (&to, &preset) {
+                (Some(to), _) => resolve_target(to)?,
+                (None, Some(p)) => p.target.clone(),
+                (None, None) => bail!("indiquez --to ou --preset"),
+            };
+            let extra = parse_options(&set)?;
             let specs: Vec<JobSpec> = files
                 .iter()
                 .map(|f| {
-                    let mut s = JobSpec::new(f.clone(), target.clone());
-                    s.output_dir = output.clone();
-                    s.options = options.clone();
-                    s.name_template = name.clone();
-                    s.conflict = match on_conflict {
-                        ConflictArg::Rename => Conflict::Rename,
-                        ConflictArg::Overwrite => Conflict::Overwrite,
-                        ConflictArg::Skip => Conflict::Skip,
+                    // Le préréglage fournit la base ; les options de la ligne de commande priment.
+                    let mut s = match &preset {
+                        Some(p) => p.job_spec(f.clone()),
+                        None => JobSpec::new(f.clone(), target.clone()),
                     };
-                    s.preserve_mtime = keep_date;
+                    for k in extra.keys() {
+                        if let Some(v) = extra.get(k) {
+                            s.options.set(k, v.clone());
+                        }
+                    }
+                    if output.is_some() {
+                        s.output_dir = output.clone();
+                    }
+                    if let Some(n) = &name {
+                        s.name_template = n.clone();
+                    }
+                    if let Some(c) = on_conflict {
+                        s.conflict = match c {
+                            ConflictArg::Rename => Conflict::Rename,
+                            ConflictArg::Overwrite => Conflict::Overwrite,
+                            ConflictArg::Skip => Conflict::Skip,
+                        };
+                    }
+                    s.preserve_mtime |= keep_date;
                     s.prefer_engine = engine.clone().map(EngineId::new);
                     s.timeout = timeout.map(Duration::from_secs);
                     s
@@ -488,6 +525,40 @@ fn run(cli: Cli) -> Result<i32> {
                 println!("\n{} réussie(s), {failed} échec(s).", specs.len() - failed);
             }
             Ok(if failed > 0 { 1 } else { 0 })
+        }
+        Cmd::Presets { files, write_defaults } => {
+            let paths = AppPaths::detect();
+            let file = paths.presets_file();
+            if write_defaults {
+                if file.exists() {
+                    bail!("{} existe déjà : il n'est jamais remplacé", file.display());
+                }
+                PresetStore::builtin().save(&file, catalog())?;
+                eprintln!("Préréglages par défaut écrits dans {}", file.display());
+            }
+            let store = PresetStore::load(&file, catalog())?;
+            let files = expand_patterns(files)?;
+            let shown: Vec<&chud_jobs::Preset> =
+                if files.is_empty() { store.presets.iter().collect() } else { store.for_paths(&files, catalog()) };
+            if cli.json {
+                print_json(&serde_json::json!({ "file": file, "exists": file.exists(), "presets": shown }))?;
+                return Ok(0);
+            }
+            let origin = if file.exists() { "fichier" } else { "valeurs par défaut, fichier non créé" };
+            println!("Préréglages ({origin}) : {}", file.display());
+            if !files.is_empty() && shown.is_empty() {
+                println!("Aucun préréglage pour cette sélection (type inconnu ou sans préréglage commun).");
+            }
+            for p in shown {
+                let name = catalog().get(p.target.as_str()).map(|f| f.name.as_str()).unwrap_or(p.target.as_str());
+                let state = if p.enabled { "" } else { "  (désactivé)" };
+                println!("  {:<14} {:<26} → {:<26} [{}]{state}", p.id, p.name, name, p.applies_to.join(", "));
+                if !p.options.is_empty() {
+                    let opts: Vec<String> = p.options.iter().map(|(k, v)| format!("{k}={v}")).collect();
+                    println!("  {:<14} options : {}", "", opts.join(", "));
+                }
+            }
+            Ok(0)
         }
         Cmd::Matrix { from } => {
             let env = load_engines()?;
