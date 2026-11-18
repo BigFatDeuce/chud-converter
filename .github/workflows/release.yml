@@ -25,6 +25,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
   TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
@@ -105,7 +106,8 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@v2
+      # Pas de cache Rust : les publications sont rares, et un cache par publication
+      # (500 Mo par système) pousserait les caches de la CI hors de la limite de 10 Go.
 
       - uses: actions/setup-node@v4
         with:

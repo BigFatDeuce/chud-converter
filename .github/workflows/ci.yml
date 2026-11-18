@@ -1,9 +1,12 @@
 name: CI
 
+# La documentation seule ne relance pas la compilation et les tests.
 on:
   push:
     branches: [main]
+    paths-ignore: ["docs/**", "**/*.md", "LICENSE"]
   pull_request:
+    paths-ignore: ["docs/**", "**/*.md", "LICENSE"]
   workflow_dispatch:
 
 permissions:
@@ -15,6 +18,8 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # Pas de compilation incrémentale en CI : cache deux fois plus petit, rien à y gagner ici.
+  CARGO_INCREMENTAL: 0
 
 jobs:
   test:
@@ -31,7 +36,10 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      # Un seul cache par système, enregistré depuis main uniquement (limite de 10 Go par dépôt).
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - uses: actions/setup-node@v4
         with:
