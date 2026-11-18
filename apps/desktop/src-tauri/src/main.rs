@@ -3,6 +3,7 @@
 
 mod backend;
 mod commands;
+mod updates;
 
 use backend::{App, Launch, UiListener};
 use chud_enginemgr::AppPaths;
@@ -76,7 +77,36 @@ fn handle_launch(app: &AppHandle, launch: Launch) {
     }
 }
 
+/// `chud-converter --uninstall-menu` : appelé par le désinstalleur. Retire le menu clic droit
+/// seulement s'il lance ce programme-ci (le menu d'une copie portable reste en place).
+/// Code de sortie : 0 retiré ou rien à faire, 1 erreur.
+fn uninstall_menu_if_ours() -> i32 {
+    let same = |a: &std::path::Path, b: &std::path::Path| match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    };
+    let Ok(me) = std::env::current_exe() else { return 1 };
+    match chud_shell::status() {
+        Ok(s) if s.installed && s.exe.as_deref().is_some_and(|e| same(e, &me)) => match chud_shell::uninstall() {
+            Ok(_) => 0,
+            Err(e) => {
+                eprintln!("chud-converter: {e}");
+                1
+            }
+        },
+        Ok(_) => 0,
+        Err(chud_shell::ShellError::Unsupported) => 0,
+        Err(e) => {
+            eprintln!("chud-converter: {e}");
+            1
+        }
+    }
+}
+
 fn main() {
+    if std::env::args_os().nth(1).is_some_and(|a| a == "--uninstall-menu") {
+        std::process::exit(uninstall_menu_if_ours());
+    }
     let app = tauri::Builder::default()
         // En premier : une seconde instance transmet ses arguments puis se termine.
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
@@ -96,6 +126,8 @@ fn main() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::Updates::default())
         .setup(|app| {
             let handle = app.handle().clone();
             let listener: UiListener = Arc::new(move |ev| {
@@ -105,6 +137,8 @@ fn main() {
             app.manage(state.clone());
             // Les chemins sont transmis tels quels comme données : jamais interprétés par un shell.
             handle_launch(app.handle(), Launch::parse(std::env::args_os().skip(1)));
+            // Recherche de mise à jour (si activée et pas faite depuis un jour).
+            updates::check_at_startup(app.handle().clone());
             // Détection des moteurs dès l'ouverture, sans attendre le premier fichier.
             std::thread::spawn(move || {
                 let _ = state.engines();
@@ -133,6 +167,10 @@ fn main() {
             commands::shell_uninstall,
             commands::settings,
             commands::set_language,
+            commands::update_status,
+            commands::update_check,
+            commands::update_set_auto,
+            commands::update_install,
         ])
         .build(tauri::generate_context!())
         .expect("impossible de démarrer Chud Converter");

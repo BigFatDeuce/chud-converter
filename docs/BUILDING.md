@@ -120,3 +120,22 @@ planification, aucun processus), `chud-process` (seul endroit qui lance des prog
 6. `cargo fmt`, `cargo clippy --workspace`, `cargo test --workspace` avant toute contribution.
 7. Toute nouvelle dépendance ou tout nouveau moteur : licence vérifiée et ajoutée à
    [LICENSES](LICENSES.md).
+
+## Publier une version
+
+1. Mettre la version dans `Cargo.toml` (`[workspace.package] version`) et
+   `apps/desktop/package.json`, ajouter sa section à `CHANGELOG.md`.
+2. `git tag vX.Y.Z && git push origin vX.Y.Z` : le flux `release.yml` vérifie que le tag et le
+   code ont la même version, construit et signe les paquets, ajoute `latest.json` et
+   `SHA256SUMS.txt`, puis publie. Une étape en échec laisse un brouillon, jamais une publication.
+3. Le secret `TAURI_SIGNING_PRIVATE_KEY` du dépôt contient la clé privée de signature des mises
+   à jour (sa clé publique est dans `tauri.conf.json`). Sans elle, plus aucune mise à jour
+   automatique n'est possible pour les versions déjà installées.
+
+Construire l'installeur Windows en local :
+
+```bash
+cd apps/desktop
+TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/chud-converter.key)" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
+  npx tauri build --bundles nsis --config src-tauri/tauri.bundle-windows.conf.json
+```

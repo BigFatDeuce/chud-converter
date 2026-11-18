@@ -235,8 +235,39 @@ pub struct Settings {
     /// Langue de l'interface : `system` (par défaut), `fr` ou `en`.
     #[serde(default)]
     pub language: chud_core::LangChoice,
+    /// Mises à jour de l'application (pas des moteurs).
+    #[serde(default)]
+    pub updates: UpdateSettings,
     #[serde(default)]
     pub engines: BTreeMap<String, EngineSettings>,
+}
+
+/// Recherche de mises à jour de l'application sur GitHub.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateSettings {
+    /// Recherche automatique au démarrage, au plus une fois par jour (désactivable).
+    #[serde(default = "yes")]
+    pub auto_check: bool,
+    /// Dernière recherche, en secondes depuis 1970.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_check: Option<u64>,
+}
+
+impl Default for UpdateSettings {
+    fn default() -> Self {
+        Self { auto_check: true, last_check: None }
+    }
+}
+
+impl UpdateSettings {
+    /// Intervalle minimal entre deux recherches automatiques.
+    pub const INTERVAL_SECS: u64 = 24 * 3600;
+
+    /// Une recherche automatique est-elle due à l'instant `now` ?
+    pub fn auto_due(&self, now: u64) -> bool {
+        self.auto_check && self.last_check.is_none_or(|t| now < t || now - t >= Self::INTERVAL_SECS)
+    }
 }
 
 impl Settings {
@@ -595,6 +626,21 @@ fn build_adapter(st: &EngineStatus) -> Result<Arc<dyn Engine>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn update_settings_default_on_once_a_day_and_round_trip() {
+        let s: Settings = toml::from_str("language = \"fr\"").unwrap();
+        assert!(s.updates.auto_check && s.updates.last_check.is_none());
+        assert!(s.updates.auto_due(1_000_000));
+        let u = UpdateSettings { auto_check: true, last_check: Some(1_000_000) };
+        assert!(!u.auto_due(1_000_000 + 3600));
+        assert!(u.auto_due(1_000_000 + UpdateSettings::INTERVAL_SECS));
+        assert!(u.auto_due(999_000), "horloge reculée : on ne bloque pas les recherches");
+        assert!(!UpdateSettings { auto_check: false, last_check: None }.auto_due(1));
+        let s = Settings { updates: UpdateSettings { auto_check: false, last_check: Some(42) }, ..Settings::default() };
+        let back: Settings = toml::from_str(&toml::to_string_pretty(&s).unwrap()).unwrap();
+        assert_eq!(back.updates, s.updates);
+    }
 
     #[test]
     fn manifests_are_valid() {

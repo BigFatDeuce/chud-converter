@@ -155,3 +155,36 @@ pub async fn shell_uninstall(app: Shared<'_>) -> Result<ShellView, String> {
     let app = app.inner().clone();
     blocking(move || app.shell_uninstall()).await
 }
+
+// ---------------------------------------------------------------------- mises à jour
+
+type Upd<'a> = State<'a, crate::updates::Updates>;
+
+/// État des mises à jour, sans connexion.
+#[tauri::command]
+pub fn update_status(app: Shared<'_>, updates: Upd<'_>) -> crate::updates::UpdateView {
+    updates.view(app.inner())
+}
+
+/// Recherche (`manual` : demandée par l'utilisateur ; sinon seulement si elle est due).
+#[tauri::command]
+pub async fn update_check(
+    handle: AppHandle,
+    app: Shared<'_>,
+    updates: Upd<'_>,
+    manual: bool,
+) -> Result<crate::updates::UpdateView, String> {
+    updates.check(&handle, app.inner(), manual).await
+}
+
+#[tauri::command]
+pub fn update_set_auto(app: Shared<'_>, updates: Upd<'_>, enabled: bool) -> Result<crate::updates::UpdateView, String> {
+    app.save_update_settings(|s| s.auto_check = enabled)?;
+    Ok(updates.view(app.inner()))
+}
+
+/// Télécharge, vérifie et installe ; l'application redémarre sur la nouvelle version.
+#[tauri::command]
+pub async fn update_install(handle: AppHandle, app: Shared<'_>, updates: Upd<'_>) -> Result<(), String> {
+    updates.install(&handle, app.inner()).await
+}

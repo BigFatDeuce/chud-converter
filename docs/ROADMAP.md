@@ -18,7 +18,7 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [x] Moteurs : image natif, données natif (JSON/YAML/TOML/CSV/TSV/NDJSON), FFmpeg, 7-Zip
 - [x] Détection des moteurs installés (gérés, emplacements connus, PATH) et sonde de capacités
 - [x] CLI `chud` : `formats`, `engines`, `detect`, `targets`, `plan`, `convert`, `matrix`, sortie JSON, motifs `*.ext` sous Windows
-- [x] Tests unitaires et d'intégration sur fichiers réels générés (102 tests ; conflits, annulation, fichier tronqué, attaques d'archives, file d'attente, application, préréglages, menu clic droit, langues)
+- [x] Tests unitaires et d'intégration sur fichiers réels générés (103 tests ; conflits, annulation, fichier tronqué, attaques d'archives, file d'attente, application, préréglages, menu clic droit, langues)
 - [x] Qualité : `clippy` sans avertissement, `rustfmt`, documentation utilisateur (README, BUILDING)
 
 ### 2b. Gestionnaire de moteurs complet
@@ -67,9 +67,11 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [ ] Données : XML, XLSX/ODS (calamine), Parquet, SQLite, détection et conversion d'encodages
 
 ### 2e. Distribution
-- [ ] Windows : installeur NSIS (par utilisateur), MSI, version portable ZIP
-- [ ] Linux : AppImage, .deb, .rpm
-- [ ] Mise à jour de l'application (updater Tauri signé), canal stable/bêta
+- [x] Windows : installeur NSIS par utilisateur (sans droits d'administrateur, anglais et français, retire le menu clic droit à la désinstallation), version portable ZIP ; MSI écarté (ADR-021)
+- [x] Linux : AppImage, .deb, .rpm (construits par la CI ; **pas encore essayés sur un vrai bureau Linux**)
+- [x] Publication par tag : brouillon, paquets signés, `latest.json`, `SHA256SUMS.txt`, publication seulement si tout a réussi
+- [x] Mise à jour intégrée (updater Tauri, signature Ed25519 et version signée exigées) : recherche au démarrage au plus une fois par jour, désactivable ; installation sur clic ; refusée pendant une conversion ; testée sous Windows (0.0.9 → 0.1.0, paquet falsifié refusé)
+- [ ] Canal bêta ; signature de code Windows (certificat)
 - [x] CI GitHub Actions Windows + Linux avec FFmpeg et 7-Zip réels (`fmt`, `clippy -D warnings`, tests)
 - [ ] `cargo-deny`, `cargo-about` en CI
 

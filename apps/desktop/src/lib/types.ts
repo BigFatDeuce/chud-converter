@@ -108,6 +108,31 @@ export interface EngineView {
   hint: string | null;
 }
 
+/** Nouvelle version publiée. */
+export interface AvailableUpdate {
+  version: string;
+  date: string | null;
+  notes: string | null;
+  page: string;
+}
+
+/** Mises à jour de l'application (écran Réglages). */
+export interface UpdateView {
+  current: string;
+  autoCheck: boolean;
+  lastCheck: number | null;
+  available: AvailableUpdate | null;
+  canInstall: boolean;
+  manualReason: string | null;
+  releases: string;
+  settingsError: string | null;
+}
+
+export type UpdateProgress =
+  | { phase: "downloading"; received: number; total: number | null }
+  | { phase: "verified" }
+  | { phase: "installing" };
+
 /** Réglages de l'application (écran Réglages). */
 export interface SettingsView {
   language: "system" | "fr" | "en";

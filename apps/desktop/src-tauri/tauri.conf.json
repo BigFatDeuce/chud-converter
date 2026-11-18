@@ -5,7 +5,7 @@
   "identifier": "io.github.bigfatdeuce.chudconverter",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && cargo build --release -p chud-cli",
     "devUrl": "http://localhost:1420",
     "frontendDist": "../dist"
   },
@@ -22,14 +22,15 @@
     "targets": [
       "nsis",
       "deb",
+      "rpm",
       "appimage"
     ],
     "category": "Utility",
-    "shortDescription": "Convertisseur de fichiers universel, local et honnête",
+    "shortDescription": "Universal, local and honest file converter",
     "license": "GPL-3.0-or-later",
     "licenseFile": "../../../LICENSE",
     "publisher": "Chud Converter contributors",
-    "copyright": "Contributeurs de Chud Converter — GPL-3.0-or-later",
+    "copyright": "Chud Converter contributors — GPL-3.0-or-later",
     "homepage": "https://github.com/BigFatDeuce/chud-converter",
     "icon": [
       "../../../assets/branding/png/icon-32.png",
@@ -37,6 +38,35 @@
       "../../../assets/branding/png/icon-256.png",
       "../../../assets/branding/icon.icns",
       "../../../assets/branding/icon.ico"
-    ]
+    ],
+    "longDescription": "Chud Converter finds out what your files really are, picks the best conversion path, tells you beforehand what will be lost, then verifies every result. Everything stays on your computer; originals are never modified. Video, audio and archives need FFmpeg and 7-Zip.",
+    "linux": {
+      "deb": {
+        "section": "utils",
+        "recommends": [
+          "ffmpeg",
+          "7zip | p7zip-full"
+        ]
+      },
+      "rpm": {
+        "recommends": [
+          "ffmpeg",
+          "7zip"
+        ]
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM3RDhBMUExQzhCOTZENEQKUldSTmJibklvYUhZeDdBUTlKczJTN0NUckRlbmFXSUlhbUhxQ2pTeCtWNSs1NlBpbUZCRkdlKzYK",
+      "endpoints": [
+        "https://github.com/BigFatDeuce/chud-converter/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

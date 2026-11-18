@@ -23,7 +23,8 @@ vulnérable ; aucune donnée ne quitte la machine sans demande explicite.
 | Documents bureautiques avec liens externes (fuite NTLM/SSRF) | LibreOffice en profil isolé, mise à jour des liens désactivée, macros désactivées. |
 | Pandoc : inclusion de fichiers locaux | `--sandbox`. |
 | Moteur compromis / vulnérable | Processus confiné (Job Object/limite mémoire, délai), sortie vérifiée, version épinglable, mise à jour rapide. |
-| Binaires de mise à jour falsifiés | Index signé Ed25519 + SHA-256 ; refus des sources non vérifiées. |
+| Binaires de mise à jour falsifiés | Application : paquets signés Ed25519 (clé publique intégrée au programme), version signée comparée à la version annoncée, refus sinon (testé avec un paquet substitué). Moteurs : index signé Ed25519 + SHA-256 (à venir). |
+| Vol de la clé de signature | Clé privée hors du dépôt, seulement dans un secret GitHub utilisé par le flux de publication ; perte = plus de mise à jour automatique (réinstallation manuelle). |
 | Épuisement de ressources | Pool borné, poids des tâches, délais, limite mémoire par processus, contrôle d'espace disque avant écriture. |
 | Plugins malveillants | Pas de code natif tiers ; WebAssembly sans accès réseau/FS hors flux fournis ; signatures. |
 

@@ -31,6 +31,9 @@
           {#if it.view === "convert" && store.active > 0}
             <em title={L("Conversions en attente ou en cours", "Conversions waiting or running")}>{store.active}</em>
           {/if}
+          {#if it.view === "settings" && store.update?.available}
+            <em class="new" title={L("Nouvelle version disponible", "New version available")}>{store.update.available.version}</em>
+          {/if}
         </button>
       </li>
     {/each}
@@ -123,6 +126,9 @@
     place-items: center;
     background: #f9c83a;
     color: #011128;
+  }
+  em.new {
+    background: #5ee08a;
   }
 
   .foot {

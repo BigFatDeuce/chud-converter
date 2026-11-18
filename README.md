@@ -33,7 +33,7 @@ Your originals are never touched.
 </p>
 
 > [!NOTE]
-> **Version 0.1 — alpha.** The conversion engine, the desktop app (Tauri 2 + Svelte 5) and the
+> **Version 0.1 — alpha.** [Download](https://github.com/BigFatDeuce/chud-converter/releases/latest). The conversion engine, the desktop app (Tauri 2 + Svelte 5) and the
 > `chud` command line work and are tested on real files. The app is tested on Windows and built
 > on Linux by the CI. Presets and the File Explorer right-click menu work on Windows. The whole program
 > speaks **English and French**.
@@ -138,9 +138,28 @@ loses the least, then the one with the fewest steps, then the fastest. Details i
 
 ## Installation
 
-> [!IMPORTANT]
-> No ready-to-download release yet: Windows and Linux installers are on the roadmap. Meanwhile,
-> both programs build from source.
+Download the latest version from the [**Releases page**](https://github.com/BigFatDeuce/chud-converter/releases/latest):
+
+| System | File | Notes |
+|---|---|---|
+| Windows 10/11 | `Chud.Converter_…_x64-setup.exe` | installs for your account only, no administrator rights; updates itself |
+| Windows, portable | `Chud.Converter_…_x64_portable.zip` | unzip anywhere; settings stay in a `data` folder next to it |
+| Linux | `.AppImage` | runs anywhere; updates itself |
+| Debian, Ubuntu / Fedora, openSUSE | `.deb` / `.rpm` | the app tells you when a new version is out |
+| Command line only | `chud_…_windows_x64.zip`, `chud_…_linux_x86_64.tar.gz` | the `chud` program alone |
+
+The installers are not code-signed yet, so Windows SmartScreen may warn the first time
+(*More info* → *Run anyway*). Every file is listed with its SHA-256 in `SHA256SUMS.txt`.
+Uninstalling (Windows *Settings* → *Apps*) also removes the right-click menu.
+
+**Updates.** The app checks for a new version at startup, at most once a day (it can be turned
+off in *Settings*), and installs it only when you click *Install and restart*. Only the
+description of the latest release is read from GitHub; none of your files or file names are
+sent. Every update is signed with the project's key and checked before it is installed: a file
+whose signature does not match is refused. To go back, install an earlier version from the
+Releases page.
+
+### Build from source
 
 ```bash
 git clone https://github.com/BigFatDeuce/chud-converter.git
@@ -250,7 +269,7 @@ managed engines then stay in a `data` folder beside it — nothing in your user 
 - [ ] PDF, documents, e-books (qpdf, LibreOffice, Pandoc, Calibre), OCR
 - [ ] Universal inspector, duplicate finder, automatic optimization
 - [ ] Visual workflows, watch folders, history, plugins
-- [ ] Windows and Linux installers, signed updates
+- [x] Windows and Linux installers, signed in-app updates
 
 The detailed checklist is in [ROADMAP](docs/ROADMAP.md) (French): an item is only checked
 once it is built **and** tested on real files.

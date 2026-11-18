@@ -19,6 +19,8 @@ import type {
   ShellView,
   Submitted,
   UiEvent,
+  UpdateProgress,
+  UpdateView,
   Verification,
 } from "./types";
 
@@ -152,6 +154,10 @@ class Store {
   enginesError = $state<string | null>(null);
   info = $state<AppInfo | null>(null);
   settings = $state<SettingsView | null>(null);
+  update = $state<UpdateView | null>(null);
+  updateBusy = $state<"check" | "install" | null>(null);
+  updateProgress = $state<UpdateProgress | null>(null);
+  updateError = $state<string | null>(null);
   settingsBusy = $state(false);
 
   checked = $derived(this.files.filter((f) => f.checked && f.info.format && !f.info.error));
@@ -195,6 +201,7 @@ class Store {
     const a = await api;
     this.fake = a.fake;
     await this.#initLanguage(true);
+    void this.#initUpdates();
     await a.onQueue((e) => this.#onEvent(e));
     await a.onDrop(
       (paths) => {
@@ -647,6 +654,57 @@ class Store {
         }
       }),
     );
+  }
+
+  // ---------------------------------------------------------------- mises à jour
+
+  async #initUpdates() {
+    const a = await api;
+    try {
+      this.update = await a.updateStatus();
+    } catch {
+      // Affichage seulement.
+    }
+    await a.onUpdateAvailable((v) => (this.update = v));
+    await a.onUpdateProgress((p) => (this.updateProgress = p));
+  }
+
+  async checkUpdate() {
+    const a = await api;
+    this.updateBusy = "check";
+    this.updateError = null;
+    try {
+      this.update = await a.updateCheck(true);
+    } catch (e) {
+      this.updateError = errorText(e);
+    } finally {
+      this.updateBusy = null;
+    }
+  }
+
+  async setAutoUpdate(enabled: boolean) {
+    const a = await api;
+    try {
+      this.update = await a.updateSetAuto(enabled);
+    } catch (e) {
+      this.updateError = errorText(e);
+    }
+  }
+
+  /** Téléchargement, vérification de la signature, installation ; l'application redémarre. */
+  async installUpdate() {
+    const a = await api;
+    this.updateBusy = "install";
+    this.updateError = null;
+    this.updateProgress = null;
+    try {
+      await a.updateInstall();
+    } catch (e) {
+      this.updateError = errorText(e);
+      this.updateProgress = null;
+    } finally {
+      this.updateBusy = null;
+    }
   }
 
   // ---------------------------------------------------------------- moteurs

@@ -1,0 +1,164 @@
+name: Release
+
+# Publication d'une version : `git tag v0.1.0 && git push origin v0.1.0`.
+# 1. brouillon de publication (notes tirées de CHANGELOG.md) ;
+# 2. installeurs construits et signés sous Windows et Linux, `latest.json` pour la mise à jour
+#    intégrée, programmes en ligne de commande, version portable ;
+# 3. empreintes SHA-256 de tout, puis publication. Rien n'est publié si une étape échoue.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  draft:
+    name: Brouillon
+    runs-on: ubuntu-latest
+    outputs:
+      id: ${{ steps.create.outputs.id }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version du tag = version du code
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          code=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "$tag" != "$code" ]; then
+            echo "::error::tag $GITHUB_REF_NAME mais Cargo.toml dit $code"
+            exit 1
+          fi
+          echo "version=$code" >> "$GITHUB_OUTPUT"
+
+      - name: Notes de version
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          awk -v v="$v" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::CHANGELOG.md n'a pas de section [$v]"
+            exit 1
+          fi
+          cat notes.md
+
+      - name: Création du brouillon
+        id: create
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+            --title "Chud Converter $GITHUB_REF_NAME" --notes-file notes.md
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\") | .id" | head -1)
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Paquets (${{ matrix.os }})
+    needs: draft
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            args: --config src-tauri/tauri.bundle-windows.conf.json
+          # La plus ancienne Ubuntu prise en charge : l'AppImage fonctionne sur les systèmes plus récents.
+          - os: ubuntu-22.04
+            args: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Dépendances (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev patchelf file
+
+      - name: Interface
+        working-directory: apps/desktop
+        run: npm ci
+
+      # Installeurs + signatures Ed25519 + latest.json (fusionné entre Windows et Linux).
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          projectPath: apps/desktop
+          releaseId: ${{ needs.draft.outputs.id }}
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          releaseBody: "See the release page for the full notes."
+          args: ${{ matrix.args }}
+
+      - name: Ligne de commande et version portable (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ needs.draft.outputs.version }}
+        run: |
+          $r = "target/release"
+          New-Item -ItemType Directory -Force dist/cli, "dist/portable/Chud Converter" | Out-Null
+          Copy-Item "$r/chud.exe", LICENSE dist/cli
+          Compress-Archive -Path dist/cli/* -DestinationPath "dist/chud_${env:V}_windows_x64.zip"
+          $p = "dist/portable/Chud Converter"
+          Copy-Item "$r/chud-converter.exe", "$r/chud.exe", LICENSE $p
+          Set-Content -Encoding utf8 "$p/portable" "Portable mode: settings and cache stay in the data folder next to the programs. / Mode portable : réglages et cache dans le dossier data/ ci-contre."
+          Compress-Archive -Path "dist/portable/Chud Converter" -DestinationPath "dist/Chud.Converter_${env:V}_x64_portable.zip"
+          gh release upload $env:GITHUB_REF_NAME "dist/chud_${env:V}_windows_x64.zip" "dist/Chud.Converter_${env:V}_x64_portable.zip" --clobber
+
+      - name: Ligne de commande (Linux)
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ needs.draft.outputs.version }}
+        run: |
+          mkdir -p dist/chud
+          cp target/release/chud LICENSE dist/chud/
+          tar -C dist -czf "dist/chud_${V}_linux_x86_64.tar.gz" chud
+          gh release upload "$GITHUB_REF_NAME" "dist/chud_${V}_linux_x86_64.tar.gz" --clobber
+
+  publish:
+    name: Empreintes et publication
+    needs: [draft, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir assets && cd assets
+          gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY"
+          sha256sum -- * > ../SHA256SUMS.txt
+          cat ../SHA256SUMS.txt
+          gh release upload "$GITHUB_REF_NAME" ../SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber
+
+      - name: Publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft=false --latest

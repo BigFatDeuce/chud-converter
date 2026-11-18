@@ -4,7 +4,7 @@
 
 import type { Api } from "./api";
 import type { Lang, LangChoice } from "./i18n.svelte";
-import type { EngineView, FileInfo, FileTargets, PlanView, PresetView, QuickBatch, SettingsView, TargetView, UiEvent } from "./types";
+import type { EngineView, FileInfo, FileTargets, PlanView, PresetView, QuickBatch, SettingsView, TargetView, UiEvent, UpdateView } from "./types";
 
 const video = (format: string, name: string, fidelity: TargetView["fidelity"], headline: string, lost: string[] = []): TargetView => ({
   format,
@@ -124,6 +124,19 @@ const settings = (): SettingsView => ({
   effective: langChoice === "system" ? systemLang() : langChoice,
   system: systemLang(),
   file: "C:\\Exemple\\config\\engines.toml",
+});
+
+let autoUpdate = true;
+let checked: number | null = null;
+const updateView = (): UpdateView => ({
+  current: "0.0.0-fictif",
+  autoCheck: autoUpdate,
+  lastCheck: checked,
+  available: checked ? { version: "9.9.9", date: "2026-11-18T10:00:00Z", notes: "Version fictive (données de démonstration).", page: "https://github.com/BigFatDeuce/chud-converter/releases" } : null,
+  canInstall: false,
+  manualReason: "version de développement",
+  releases: "https://github.com/BigFatDeuce/chud-converter/releases",
+  settingsError: null,
 });
 
 export function mockApi(): Api {
@@ -315,6 +328,24 @@ export function mockApi(): Api {
     },
     async onLanguage(cb) {
       langListeners.push(cb);
+      return () => {};
+    },
+    updateStatus: () => delay(updateView()),
+    async updateCheck() {
+      checked = Math.floor(Date.now() / 1000);
+      return delay(updateView(), 700);
+    },
+    async updateSetAuto(enabled) {
+      autoUpdate = enabled;
+      return delay(updateView());
+    },
+    async updateInstall() {
+      throw "version de développement";
+    },
+    async onUpdateAvailable() {
+      return () => {};
+    },
+    async onUpdateProgress() {
       return () => {};
     },
   };

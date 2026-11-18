@@ -18,6 +18,8 @@ import type {
   ShellView,
   Submitted,
   SettingsView,
+  UpdateProgress,
+  UpdateView,
   UiEvent,
 } from "./types";
 
@@ -67,6 +69,15 @@ export interface Api {
   setLanguage(language: LangChoice): Promise<SettingsView>;
   /** La langue a changé (depuis n'importe quelle fenêtre). */
   onLanguage(cb: (lang: Lang) => void): Promise<() => void>;
+
+  updateStatus(): Promise<UpdateView>;
+  /** `manual` : demandée par l'utilisateur ; sinon seulement si elle est due. */
+  updateCheck(manual: boolean): Promise<UpdateView>;
+  updateSetAuto(enabled: boolean): Promise<UpdateView>;
+  updateInstall(): Promise<void>;
+  /** Nouvelle version trouvée par la recherche automatique. */
+  onUpdateAvailable(cb: (v: UpdateView) => void): Promise<() => void>;
+  onUpdateProgress(cb: (p: UpdateProgress) => void): Promise<() => void>;
 }
 
 function tauriApi(): Api {
@@ -140,6 +151,18 @@ function tauriApi(): Api {
     shellUninstall: () => call("shell_uninstall"),
     settings: () => call("settings"),
     setLanguage: (language) => call("set_language", { language }),
+    updateStatus: () => call("update_status"),
+    updateCheck: (manual) => call("update_check", { manual }),
+    updateSetAuto: (enabled) => call("update_set_auto", { enabled }),
+    updateInstall: () => call("update_install"),
+    async onUpdateAvailable(cb) {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<UpdateView>("update-available", (e) => cb(e.payload));
+    },
+    async onUpdateProgress(cb) {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<UpdateProgress>("update-progress", (e) => cb(e.payload));
+    },
     async onLanguage(cb) {
       const { listen } = await import("@tauri-apps/api/event");
       return listen<Lang>("language", (e) => cb(e.payload));

@@ -8,7 +8,7 @@ use chud_core::{
     Category, Fidelity, FidelityReport, FormatCatalog, FormatId, OptionSpec, OptionValue, OptionValues, Verification, detect_path,
 };
 use chud_core::{Lang, LangChoice};
-use chud_enginemgr::{AppPaths, EngineManager, EngineState, EngineStatus, Settings};
+use chud_enginemgr::{AppPaths, EngineManager, EngineState, EngineStatus, Settings, UpdateSettings};
 use chud_jobs::{Conflict, JobEvent, JobId, JobQueue, JobRunner, JobSpec, Preset, PresetStore, QueueEvent, QueueListener};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
@@ -1006,6 +1006,32 @@ impl App {
         let mut view = self.settings();
         view.menu_note = self.refresh_menu();
         Ok(view)
+    }
+
+    // ------------------------------------------------------------------ mises à jour
+
+    pub fn is_portable(&self) -> bool {
+        self.paths.portable
+    }
+
+    /// Aucune conversion en cours ni en attente.
+    pub fn is_idle(&self) -> bool {
+        lock(&self.queue).as_ref().is_none_or(|q| q.is_idle())
+    }
+
+    pub fn update_settings(&self) -> Result<UpdateSettings, String> {
+        Settings::load(&self.paths.settings_file()).map(|s| s.updates).map_err(|e| e.to_string())
+    }
+
+    /// Modifie les réglages de mise à jour ; les autres réglages sont conservés et un fichier
+    /// illisible n'est jamais écrasé.
+    pub fn save_update_settings(&self, f: impl FnOnce(&mut UpdateSettings)) -> Result<UpdateSettings, String> {
+        let file = self.paths.settings_file();
+        let _g = lock(&self.settings_lock);
+        let mut s = Settings::load(&file).map_err(|e| e.to_string())?;
+        f(&mut s.updates);
+        s.save(&file).map_err(|e| e.to_string())?;
+        Ok(s.updates)
     }
 
     pub fn cancel(&self, id: JobId) -> bool {

@@ -244,3 +244,28 @@ textes produits par le cœur (formats, cibles, rapports, préréglages, moteurs)
 Les rapports déjà écrits restent dans leur langue. Les préréglages fournis suivent la langue ;
 un nom choisi par l'utilisateur est conservé tel quel. Un fichier de réglages illisible n'est
 jamais écrasé : le changement est refusé et l'erreur affichée.
+
+## ADR-021 — Publication et mise à jour de l'application
+**Statut : Acceptée** (précise ADR-015)
+
+**Décision.**
+- Publication par tag `vX.Y.Z` (`.github/workflows/release.yml`) : brouillon, paquets construits
+  par la CI, `latest.json`, `SHA256SUMS.txt`, puis publication seulement si tout a réussi.
+- Windows : installeur NSIS **par utilisateur** (comme le menu clic droit, qui est dans HKCU) et
+  ZIP portable. Pas de MSI : il s'installe pour la machine, alors que le menu est par compte, et
+  sa désinstallation ne pourrait pas retirer proprement le menu de chaque utilisateur.
+- Linux : AppImage, .deb, .rpm.
+- Mise à jour : extension officielle de Tauri. Paquets signés Ed25519, version signée exigée
+  (`requireSignedVersion`) : un `latest.json` falsifié ne peut ni changer de fichier ni faire
+  passer une ancienne version pour une nouvelle.
+- Recherche automatique au démarrage, au plus une fois par jour, désactivable dans Réglages
+  (choix de l'utilisateur, 2026-11-18). Seul `latest.json` est lu ; aucun fichier ni nom de fichier
+  n'est envoyé. Installation seulement sur clic, jamais pendant une conversion.
+- Version portable, .deb/.rpm et version de développement : la nouvelle version est signalée
+  avec un lien, pas installée par le programme (il ne remplace pas ce qu'un autre outil gère).
+- Désinstallation Windows : `chud-converter --uninstall-menu` retire le menu s'il lance ce
+  programme-ci ; pas lors d'une mise à jour (`/UPDATE`), où le chemin ne change pas.
+
+**Conséquences.** La clé privée de signature est un secret GitHub (`TAURI_SIGNING_PRIVATE_KEY`)
+et une copie chez le mainteneur ; sa perte oblige les utilisateurs à réinstaller à la main.
+Sans certificat de signature de code, SmartScreen avertit au premier lancement.
