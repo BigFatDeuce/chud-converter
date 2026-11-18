@@ -41,7 +41,7 @@
       {#each store.files as f (f.info.path)}
         {@const i = f.info}
         {@const broken = !i.format || !!i.error}
-        <div class="row" class:off={!f.checked || broken}>
+        <div class="row" class:off={!f.checked || broken} data-state={f.analysis.state} aria-busy={f.analysis.state === "loading"}>
           <input
             type="checkbox"
             checked={f.checked && !broken}
@@ -62,12 +62,13 @@
                 {#if i.extensionMismatch}
                   <span class="warn" title={i.note ?? ""}><Icon name="alert" size={13} /> {L("extension trompeuse", "misleading extension")}</span>
                 {/if}
-                {#if f.loading}
+                {#if f.analysis.state === "loading"}
                   <span class="faint">{L("· recherche des conversions…", "· looking for conversions…")}</span>
-                {:else if f.targetsError}
-                  <span class="bad" title={f.targetsError}><Icon name="alert" size={13} /> {f.targetsError}</span>
-                {:else if f.targets && !f.targets.targets.length}
+                {:else if f.analysis.state === "failed"}
+                  <span class="bad" title={f.analysis.error}><Icon name="alert" size={13} /> {f.analysis.error}</span>
+                {:else if f.analysis.state === "ready" && !f.analysis.targets.targets.length}
                   <span class="warn">{L("aucune conversion possible avec les moteurs installés", "no conversion possible with the installed engines")}</span>
+                  <button class="link-inline" onclick={() => (store.view = "engines")}>{L("voir les moteurs", "see the engines")}</button>
                 {/if}
               {/if}
             </div>
@@ -205,6 +206,18 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
+  }
+
+  .link-inline {
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--link);
+    font-size: inherit;
+  }
+
+  .link-inline:hover {
+    text-decoration: underline;
   }
 
   .warn {

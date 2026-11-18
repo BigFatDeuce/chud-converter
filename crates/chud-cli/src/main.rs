@@ -47,8 +47,11 @@ enum Cmd {
         /// Recherche dans les noms et extensions.
         query: Option<String>,
     },
-    /// Détecte les moteurs installés (FFmpeg, 7-Zip, LibreOffice…).
-    Engines,
+    /// Détecte les moteurs installés (FFmpeg, 7-Zip, LibreOffice…), ou installe ceux qui manquent.
+    Engines {
+        #[command(subcommand)]
+        action: Option<EngineAction>,
+    },
     /// Détecte le format réel de fichiers.
     Detect { files: Vec<PathBuf> },
     /// Formats cibles possibles pour un fichier, avec la fidélité attendue.
@@ -121,6 +124,23 @@ enum Cmd {
         #[arg(long)]
         from: Option<String>,
     },
+}
+
+#[derive(Subcommand)]
+enum EngineAction {
+    /// Télécharge et installe un moteur (FFmpeg, 7-Zip) dans le dossier de Chud Converter :
+    /// source officielle, taille et empreinte SHA-256 vérifiées, essai avant activation.
+    /// Une installation du système n'est jamais modifiée.
+    Install { id: String },
+    /// Retire un moteur installé par Chud Converter (jamais une installation du système).
+    Uninstall {
+        id: String,
+        /// Confirme la suppression.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Revient à la version précédente d'un moteur installé par Chud Converter.
+    Rollback { id: String },
 }
 
 #[derive(Subcommand)]
@@ -198,7 +218,16 @@ fn localized_command() -> clap::Command {
                 .mut_arg("category", help("Filter by category (image, audio, video, document, archive…)."))
                 .mut_arg("query", help("Search in names and extensions."))
         })
-        .mut_subcommand("engines", |c| c.about("Detects the installed engines (FFmpeg, 7-Zip, LibreOffice…)."))
+        .mut_subcommand("engines", |c| {
+            c.about("Detects the installed engines (FFmpeg, 7-Zip, LibreOffice…), or installs the missing ones.")
+                .mut_subcommand("install", |c| {
+                    c.about("Downloads and installs an engine (FFmpeg, 7-Zip) into Chud Converter's folder: official source, size and SHA-256 checked, tried before being activated. A system install is never changed.")
+                })
+                .mut_subcommand("uninstall", |c| {
+                    c.about("Removes an engine installed by Chud Converter (never a system install).").mut_arg("yes", help("Confirms the removal."))
+                })
+                .mut_subcommand("rollback", |c| c.about("Goes back to the previous version of an engine installed by Chud Converter."))
+        })
         .mut_subcommand("detect", |c| c.about("Detects the real format of files."))
         .mut_subcommand("targets", |c| c.about("Possible target formats for a file, with the expected fidelity."))
         .mut_subcommand("plan", |c| {
@@ -235,6 +264,120 @@ fn localized_command() -> clap::Command {
         })
         .mut_subcommand("language", |c| c.about("Shows or changes the language, shared with the app (system, fr, en)."))
         .mut_subcommand("matrix", |c| c.about("Matrix of the conversions available per engine.").mut_arg("from", help("Limit to one source format.")))
+}
+
+/// `chud engines install|uninstall|rollback`.
+fn engine_action(action: EngineAction, json: bool) -> Result<i32> {
+    use std::sync::atomic::AtomicBool;
+    let manager =
+        EngineManager::new(AppPaths::detect()).context(tr!("chargement des réglages des moteurs", "loading the engine settings"))?;
+    let id = match &action {
+        EngineAction::Install { id } | EngineAction::Uninstall { id, .. } | EngineAction::Rollback { id } => id.clone(),
+    };
+    let Some(m) = manager.manifests().iter().find(|m| m.id == id).cloned() else {
+        let known: Vec<&str> = manager.manifests().iter().map(|m| m.id.as_str()).collect();
+        bail!("{}", trf!("moteur inconnu « {} » (connus : {})", "unknown engine “{}” (known: {})", id, known.join(", ")));
+    };
+    let status = manager.discover_one(&m);
+    match action {
+        EngineAction::Install { .. } => {
+            if status.state == EngineState::Ready && status.origin != Some(chud_core::EngineOrigin::Managed) {
+                out!(
+                    "{}",
+                    trf!(
+                        "{} est déjà prêt ({}) : rien à installer. Chud Converter ne remplace pas une installation existante.",
+                        "{} is already ready ({}): nothing to install. Chud Converter does not replace an existing install.",
+                        m.name,
+                        status.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default()
+                    )
+                );
+                return Ok(0);
+            }
+            let Some(src) = m.install_source() else {
+                bail!(
+                    "{}",
+                    trf!(
+                        "{} ne peut pas être installé automatiquement sur cette plateforme.{}",
+                        "{} cannot be installed automatically on this platform.{}",
+                        m.name,
+                        status.hint.as_ref().map(|h| trf!(" Commande suggérée : {h}", " Suggested command: {h}")).unwrap_or_default()
+                    )
+                );
+            };
+            if status.origin == Some(chud_core::EngineOrigin::Managed) && status.version.as_deref() == Some(src.version.as_str()) {
+                out!("{}", trf!("{} {} est déjà installé.", "{} {} is already installed.", m.name, src.version));
+                return Ok(0);
+            }
+            if !json {
+                out!(
+                    "{}",
+                    trf!(
+                        "Installation de {} {} — {} ({:.0} Mo depuis {})",
+                        "Installing {} {} — {} ({:.0} MB from {})",
+                        m.name,
+                        src.version,
+                        src.publisher_l(),
+                        src.total_size() as f64 / 1e6,
+                        src.page
+                    )
+                );
+            }
+            let cancel = AtomicBool::new(false);
+            let mut last = String::new();
+            let mut on_progress = |p: chud_enginemgr::InstallProgress| {
+                if json {
+                    return;
+                }
+                let line = match p {
+                    chud_enginemgr::InstallProgress::Downloading { received, total } => {
+                        trf!("téléchargement… {} %", "downloading… {} %", received * 100 / total.max(1))
+                    }
+                    chud_enginemgr::InstallProgress::Verifying => {
+                        tr!("vérification de l'empreinte SHA-256…", "checking the SHA-256…").into()
+                    }
+                    chud_enginemgr::InstallProgress::Extracting => tr!("extraction…", "extracting…").into(),
+                    chud_enginemgr::InstallProgress::Checking => tr!("essai du moteur…", "trying the engine…").into(),
+                };
+                if line != last {
+                    eprintln!("  {line}");
+                    last = line;
+                }
+            };
+            let done =
+                chud_enginemgr::install::install(manager.paths(), &m, &cancel, &mut on_progress).map_err(|e| anyhow::anyhow!("{e}"))?;
+            if json {
+                print_json(&done)?;
+            } else {
+                out!("{}", trf!("{} {} installé : {}", "{} {} installed: {}", m.name, done.version, done.path.display()));
+            }
+            Ok(0)
+        }
+        EngineAction::Uninstall { yes, .. } => {
+            let dir = manager.paths().engines_dir().join(&m.id);
+            if !yes {
+                out!(
+                    "{}",
+                    trf!(
+                        "Ceci supprimera {} (installé par Chud Converter) : {}
+Relancez avec --yes pour confirmer. Les installations du système ne sont jamais touchées.",
+                        "This will delete {} (installed by Chud Converter): {}
+Run again with --yes to confirm. System installs are never touched.",
+                        m.name,
+                        dir.display()
+                    )
+                );
+                return Ok(2);
+            }
+            chud_enginemgr::install::uninstall(manager.paths(), &m).map_err(|e| anyhow::anyhow!("{e}"))?;
+            out!("{}", trf!("{} retiré.", "{} removed.", m.name));
+            Ok(0)
+        }
+        EngineAction::Rollback { .. } => {
+            let v = chud_enginemgr::install::rollback(manager.paths(), &m).map_err(|e| anyhow::anyhow!("{e}"))?;
+            out!("{}", trf!("{} revenu à la version {}.", "{} is back to version {}.", m.name, v));
+            Ok(0)
+        }
+    }
 }
 
 fn catalog() -> &'static FormatCatalog {
@@ -382,7 +525,8 @@ fn run(cli: Cli) -> Result<i32> {
             }
             Ok(0)
         }
-        Cmd::Engines => {
+        Cmd::Engines { action: Some(action) } => engine_action(action, cli.json),
+        Cmd::Engines { action: None } => {
             let env = load_engines()?;
             if cli.json {
                 return print_json(&env.statuses).map(|_| 0);
@@ -415,10 +559,23 @@ fn run(cli: Cli) -> Result<i32> {
                 if let Some(p) = &s.path {
                     out!("{:<26} {}{origin}", "", p.display());
                 }
-                if s.state == EngineState::Missing
-                    && let Some(h) = &s.hint
-                {
-                    out!("{}", trf!("{:<26} installation : {h}", "{:<26} install: {h}", ""));
+                if matches!(s.state, EngineState::Missing | EngineState::Broken(_)) {
+                    if let Some(offer) = &s.installable {
+                        out!(
+                            "{}",
+                            trf!(
+                                "{:<26} installation : chud engines install {} ({} {}, {:.0} Mo)",
+                                "{:<26} install: chud engines install {} ({} {}, {:.0} MB)",
+                                "",
+                                s.id,
+                                s.name,
+                                offer.version,
+                                offer.size as f64 / 1e6
+                            )
+                        );
+                    } else if let Some(h) = &s.hint {
+                        out!("{}", trf!("{:<26} installation : {h}", "{:<26} install: {h}", ""));
+                    }
                 }
             }
             let n: usize = env.registry.engines().iter().map(|e| e.conversions().len()).sum();

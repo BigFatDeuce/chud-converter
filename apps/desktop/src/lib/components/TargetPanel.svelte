@@ -28,7 +28,7 @@
   const showPicker = $derived(picking || !store.targetInfo);
 
   // Aperçu du plan pour le premier fichier coché, recalculé quand la cible ou les options changent.
-  const previewPath = $derived(store.checked.find((f) => f.targets)?.info.path ?? null);
+  const previewPath = $derived(store.checked.find((f) => f.analysis.state === "ready")?.info.path ?? null);
   const optionsKey = $derived(JSON.stringify(store.optionValues));
   let plan = $state<PlanView | null>(null);
   let planError = $state<string | null>(null);

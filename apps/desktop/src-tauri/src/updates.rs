@@ -12,7 +12,6 @@
 
 use crate::backend::App;
 use serde::Serialize;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
@@ -95,6 +94,8 @@ pub struct UpdateView {
     pub releases: String,
     /// Fichier de réglages illisible : rien n'est enregistré.
     pub settings_error: Option<String>,
+    /// Opération en cours (une fenêtre ouverte en cours de route l'affiche aussi).
+    pub phase: Phase,
 }
 
 /// Progression envoyée à l'interface pendant l'installation.
@@ -110,34 +111,49 @@ pub enum UpdateProgress {
     Installing,
 }
 
+/// Machine à états des mises à jour : `Idle → Checking → Idle`, `Idle → Installing → (redémarrage)`.
+/// Une seule opération à la fois ; un échec ramène à `Idle` (l'erreur est renvoyée à l'appelant).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Phase {
+    #[default]
+    Idle,
+    Checking,
+    Installing,
+}
+
 #[derive(Default)]
 pub struct Updates {
+    /// Version trouvée par la dernière recherche réussie.
     pending: Mutex<Option<Update>>,
-    busy: AtomicBool,
+    phase: Mutex<Phase>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Libère l'indicateur « occupé » quoi qu'il arrive.
-struct Busy<'a>(&'a AtomicBool);
-impl Drop for Busy<'_> {
+/// Ramène la machine au repos quoi qu'il arrive (erreur, panique, tâche abandonnée).
+struct Running<'a>(&'a Mutex<Phase>);
+impl Drop for Running<'_> {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
+        *lock(self.0) = Phase::Idle;
     }
 }
 
 impl Updates {
-    fn begin(&self) -> Result<Busy<'_>, String> {
-        if self.busy.swap(true, Ordering::SeqCst) {
+    /// Seule transition depuis le repos ; refusée si une opération est déjà en cours.
+    fn begin(&self, to: Phase) -> Result<Running<'_>, String> {
+        let mut p = lock(&self.phase);
+        if *p != Phase::Idle {
             return Err(chud_core::tr!(
                 "une recherche ou une installation est déjà en cours",
                 "a check or an installation is already running"
             )
             .into());
         }
-        Ok(Busy(&self.busy))
+        *p = to;
+        Ok(Running(&self.phase))
     }
 
     pub fn view(&self, app: &App) -> UpdateView {
@@ -164,6 +180,7 @@ impl Updates {
             },
             releases: format!("{REPO_URL}/releases"),
             settings_error,
+            phase: *lock(&self.phase),
         }
     }
 
@@ -176,7 +193,7 @@ impl Updates {
                 return Ok(self.view(app));
             }
         }
-        let _busy = self.begin()?;
+        let _running = self.begin(Phase::Checking)?;
         let updater = handle
             .updater_builder()
             .timeout(Duration::from_secs(30))
@@ -196,7 +213,7 @@ impl Updates {
     /// Télécharge, vérifie la signature et installe la version trouvée par [`Self::check`].
     /// Windows : l'installeur de la nouvelle version remplace le programme puis le relance.
     pub async fn install(&self, handle: &AppHandle, app: &Arc<App>) -> Result<(), String> {
-        let _busy = self.begin()?;
+        let _running = self.begin(Phase::Installing)?;
         let kind = install_kind(app);
         if let Install::Manual(reason) = kind {
             return Err(reason);
@@ -241,11 +258,10 @@ pub fn check_at_startup(handle: AppHandle) {
         tokio_sleep(Duration::from_secs(5)).await;
         let (Some(app), Some(updates)) = (handle.try_state::<Arc<App>>(), handle.try_state::<Updates>()) else { return };
         let app = app.inner().clone();
-        if let Ok(view) = updates.check(&handle, &app, false).await
-            && view.available.is_some()
-        {
-            let _ = handle.emit("update-available", view);
-        }
+        // Toujours prévenue de la fin (même sans nouvelle version, même en cas d'échec) : une
+        // fenêtre qui affichait « recherche… » revient au repos.
+        let _ = updates.check(&handle, &app, false).await;
+        let _ = handle.emit("update-available", updates.view(&app));
     });
 }
 

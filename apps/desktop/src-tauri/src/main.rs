@@ -148,6 +148,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::engines,
+            commands::engine_install,
+            commands::engine_install_cancel,
+            commands::engine_uninstall,
+            commands::engine_rollback,
             commands::inspect,
             commands::targets,
             commands::plan,

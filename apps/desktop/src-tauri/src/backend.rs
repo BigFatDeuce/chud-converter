@@ -8,11 +8,14 @@ use chud_core::{
     Category, Fidelity, FidelityReport, FormatCatalog, FormatId, OptionSpec, OptionValue, OptionValues, Verification, detect_path,
 };
 use chud_core::{Lang, LangChoice};
-use chud_enginemgr::{AppPaths, EngineManager, EngineState, EngineStatus, Settings, UpdateSettings};
+use chud_enginemgr::{
+    AppPaths, EngineManager, EngineState, EngineStatus, InstallError, InstallOffer, InstallProgress, Settings, UpdateSettings,
+};
 use chud_jobs::{Conflict, JobEvent, JobId, JobQueue, JobRunner, JobSpec, Preset, PresetStore, QueueEvent, QueueListener};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -135,6 +138,12 @@ pub struct EngineView {
     pub homepage: String,
     pub description: String,
     pub hint: Option<String>,
+    /// Paquet que Chud Converter sait installer lui-même ici (version, taille, éditeur, licence).
+    pub installable: Option<InstallOffer>,
+    /// Version précédente d'une installation gérée (retour en arrière possible).
+    pub previous: Option<String>,
+    /// Une installation de ce moteur est en cours (une fenêtre rouverte la retrouve).
+    pub installing: bool,
 }
 
 impl From<&EngineStatus> for EngineView {
@@ -158,6 +167,9 @@ impl From<&EngineStatus> for EngineView {
             homepage: s.homepage.clone(),
             description: s.description.clone(),
             hint: s.hint.clone(),
+            installable: s.installable.clone(),
+            previous: s.previous.clone(),
+            installing: false,
         }
     }
 }
@@ -701,6 +713,17 @@ pub struct App {
     /// Derniers événements de chaque tâche (sans la progression), pour une fenêtre qui arrive
     /// après coup.
     history: Arc<Mutex<BTreeMap<JobId, Vec<UiEvent>>>>,
+    /// Installations de moteurs en cours, avec leur demande d'annulation.
+    installs: Mutex<BTreeMap<String, Arc<AtomicBool>>>,
+}
+
+/// Retire une installation de la liste des installations en cours, quoi qu'il arrive.
+struct InstallSlot<'a>(&'a Mutex<BTreeMap<String, Arc<AtomicBool>>>, String);
+
+impl Drop for InstallSlot<'_> {
+    fn drop(&mut self) {
+        lock(self.0).remove(&self.1);
+    }
 }
 
 /// Nombre de tâches dont l'historique est gardé.
@@ -726,6 +749,7 @@ impl App {
             settings_lock: Mutex::default(),
             quick: Mutex::default(),
             history: Arc::default(),
+            installs: Mutex::default(),
         }
     }
 
@@ -754,6 +778,107 @@ impl App {
         let e = Arc::new(Engines::load(self.paths.clone())?);
         *lock(&self.engines) = Some(e.clone());
         Ok(e)
+    }
+
+    /// Vues des moteurs, avec les installations en cours.
+    pub fn engine_views(&self, refresh: bool) -> Result<Vec<EngineView>, String> {
+        let engines = if refresh { self.reload_engines()? } else { self.engines()? };
+        let busy = lock(&self.installs);
+        Ok(engines
+            .views()
+            .into_iter()
+            .map(|mut v| {
+                v.installing = busy.contains_key(&v.id);
+                v
+            })
+            .collect())
+    }
+
+    fn manifest(&self, id: &str) -> Result<(Arc<Engines>, chud_enginemgr::Manifest), String> {
+        let engines = self.engines()?;
+        let m = engines
+            .manager
+            .manifests()
+            .iter()
+            .find(|m| m.id == id)
+            .cloned()
+            .ok_or_else(|| chud_core::trf!("moteur inconnu : {id}", "unknown engine: {id}"))?;
+        Ok((engines, m))
+    }
+
+    /// Installe un moteur depuis la source figée de son manifeste (téléchargement vérifié,
+    /// extraction contrôlée, essai, activation). Une installation du système n'est jamais
+    /// remplacée : un moteur déjà prêt hors de Chud Converter est refusé.
+    pub fn install_engine(&self, id: &str, progress: &mut dyn FnMut(InstallProgress)) -> Result<Vec<EngineView>, String> {
+        let (engines, m) = self.manifest(id)?;
+        if let Some(st) = engines.statuses.iter().find(|s| s.id == id)
+            && st.state == EngineState::Ready
+            && st.origin != Some(chud_core::EngineOrigin::Managed)
+        {
+            return Err(chud_core::trf!(
+                "{} est déjà prêt ({}) : Chud Converter ne remplace pas une installation existante",
+                "{} is already ready ({}): Chud Converter does not replace an existing install",
+                m.name,
+                st.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default()
+            ));
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        {
+            let mut g = lock(&self.installs);
+            if g.contains_key(id) {
+                return Err(chud_core::tr!("ce moteur est déjà en cours d'installation", "this engine is already being installed").into());
+            }
+            g.insert(id.to_owned(), cancel.clone());
+        }
+        let slot = InstallSlot(&self.installs, id.to_owned());
+        let result = chud_enginemgr::install::install(&self.paths, &m, &cancel, progress);
+        drop(slot);
+        match result {
+            Ok(_) => self.engine_views(true),
+            Err(InstallError::Cancelled) => {
+                Err(chud_core::tr!("installation annulée : rien n'a été installé", "installation cancelled: nothing was installed").into())
+            }
+            Err(InstallError::Failed(e)) => Err(e),
+        }
+    }
+
+    /// Demande l'arrêt d'une installation en cours ; `false` s'il n'y en a pas.
+    pub fn cancel_engine_install(&self, id: &str) -> bool {
+        lock(&self.installs).get(id).map(|c| c.store(true, Ordering::Relaxed)).is_some()
+    }
+
+    fn require_idle(&self) -> Result<(), String> {
+        if self.is_idle() {
+            Ok(())
+        } else {
+            Err(chud_core::tr!(
+                "des conversions sont en cours : attendez qu'elles soient terminées (ou annulez-les) avant de changer de moteur",
+                "conversions are running: wait for them to finish (or cancel them) before changing engines"
+            )
+            .into())
+        }
+    }
+
+    /// Retire un moteur installé par Chud Converter (jamais une installation du système).
+    pub fn uninstall_engine(&self, id: &str) -> Result<Vec<EngineView>, String> {
+        self.require_idle()?;
+        let (_, m) = self.manifest(id)?;
+        if lock(&self.installs).contains_key(id) {
+            return Err(chud_core::tr!("ce moteur est en cours d'installation", "this engine is being installed").into());
+        }
+        // Les moteurs chargés gardent leurs chemins : on les oublie avant de supprimer.
+        *lock(&self.engines) = None;
+        let r = chud_enginemgr::install::uninstall(&self.paths, &m).map_err(|e| e.to_string());
+        let views = self.engine_views(true)?;
+        r.map(|_| views)
+    }
+
+    /// Revient à la version précédente d'un moteur installé par Chud Converter.
+    pub fn rollback_engine(&self, id: &str) -> Result<Vec<EngineView>, String> {
+        self.require_idle()?;
+        let (_, m) = self.manifest(id)?;
+        chud_enginemgr::install::rollback(&self.paths, &m).map_err(|e| e.to_string())?;
+        self.engine_views(true)
     }
 
     pub fn submit(&self, req: &ConvertRequest) -> Result<Vec<Submitted>, String> {

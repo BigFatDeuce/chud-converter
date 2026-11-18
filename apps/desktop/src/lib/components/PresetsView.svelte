@@ -165,19 +165,19 @@
       </div>
       <div class="menu-actions">
         {#if !sh.installed}
-          <button class="btn primary" onclick={() => store.setShell(true)} disabled={store.shellBusy}>
-            {store.shellBusy ? L("Installation…", "Installing…") : L("Ajouter au menu", "Add to menu")}
+          <button class="btn primary" onclick={() => store.setShell(true)} disabled={!!store.shellOp}>
+            {store.shellOp === "installing" ? L("Installation…", "Installing…") : L("Ajouter au menu", "Add to menu")}
           </button>
         {:else}
           {#if !sh.current || sh.exeMissing}
-            <button class="btn primary" onclick={() => store.setShell(true)} disabled={store.shellBusy}>{L("Utiliser ce programme", "Use this program")}</button>
+            <button class="btn primary" onclick={() => store.setShell(true)} disabled={!!store.shellOp}>{L("Utiliser ce programme", "Use this program")}</button>
           {:else}
             <!-- Après l'installation d'un moteur, de nouvelles conversions deviennent possibles. -->
-            <button class="btn" onclick={() => store.setShell(true)} disabled={store.shellBusy} title={L("Après l'installation d'un moteur, par exemple", "After installing an engine, for example")}>
-              <Icon name="refresh" size={14} /> {L("Mettre à jour", "Update")}
+            <button class="btn" onclick={() => store.setShell(true)} disabled={!!store.shellOp} title={L("Après l'installation d'un moteur, par exemple", "After installing an engine, for example")}>
+              <Icon name="refresh" size={14} /> {store.shellOp === "installing" ? L("Mise à jour…", "Updating…") : L("Mettre à jour", "Update")}
             </button>
           {/if}
-          <button class="btn" onclick={() => store.setShell(false)} disabled={store.shellBusy}>{L("Retirer du menu", "Remove from menu")}</button>
+          <button class="btn" onclick={() => store.setShell(false)} disabled={!!store.shellOp}>{store.shellOp === "removing" ? L("Retrait…", "Removing…") : L("Retirer du menu", "Remove from menu")}</button>
         {/if}
       </div>
     </section>

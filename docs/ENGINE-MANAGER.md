@@ -64,7 +64,29 @@ Le chemin absolu résolu est conservé ; l'exécution ne refait jamais de recher
     install.json                origine, URL, SHA-256, date, taille, licence
 ```
 
-Étapes :
+**Implémenté (0.1.2, ADR-022)** pour FFmpeg (Windows) et 7-Zip (Windows, Linux) : écran Moteurs
+→ « Installer », ou `chud engines install ffmpeg|7zip`. La source (adresse HTTPS, taille,
+SHA-256) est écrite dans la section `[[install]]` du manifeste, intégré au programme signé :
+
+```toml
+[[install]]
+platform = "windows-x86_64"
+version = "9.0.2"
+method = "zip"                 # zip | tar-xz | sevenzip-sfx (installeur 7-Zip ouvert par 7zr, jamais exécuté)
+publisher = "Gyan Doshi (gyan.dev), compilation recommandée par ffmpeg.org"
+license = "GPL-3.0-or-later"
+page = "https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2"
+files = [{ url = "https://…/ffmpeg-9.0.2-essentials_build.zip", sha256 = "60f4…", size = 114768076 }]
+```
+
+Machine à états (`chud_enginemgr::install`), sans retour silencieux :
+`téléchargement → vérification → extraction → essai → activation`. Tout échec ou annulation
+supprime les fichiers temporaires et le dossier `.partial` : rien n'est activé. Un verrou
+(`.installing`) empêche deux installations simultanées du même moteur. Un moteur déjà prêt
+depuis le système n'est jamais remplacé (l'installation est refusée).
+
+Étapes prévues par la conception (celles qui ne sont pas encore faites sont signalées dans la
+section 8) :
 1. Résolution de la version cible (index signé ou API de la source) selon le canal (stable/bêta)
    et l'épinglage.
 2. Affichage à l'utilisateur : version, taille, licence, source, notes de version.
@@ -133,5 +155,7 @@ deux systèmes, deux écrans, deux réglages (ADR-015).
 | Manifestes, détection (Custom/Managed/connus/PATH), sonde de version | ✅ implémenté et testé |
 | Sonde de capacités FFmpeg / 7-Zip | ✅ implémenté et testé |
 | Désactivation d'un moteur | ✅ (registre) |
-| Téléchargement, vérification SHA-256, extraction contrôlée, installation versionnée | ⏳ prochaine itération |
-| Index signé, notes de version, mise à jour automatique, retour arrière | ⏳ |
+| Téléchargement, vérification SHA-256, extraction contrôlée, essai, installation versionnée (FFmpeg Windows, 7-Zip Windows/Linux) | ✅ 0.1.2 (`install.rs`, tests `install_real.rs` lancés à la main : réseau) |
+| Retrait, retour à la version précédente, mise à jour vers la version du manifeste | ✅ 0.1.2 (écran Moteurs, `chud engines uninstall|rollback`) |
+| FFmpeg pour Linux et macOS | ⏳ pas de compilation officielle versionnée et permanente : commande du gestionnaire de paquets affichée |
+| Index signé (versions entre deux versions de l'application), canaux, épinglage, conversion de test | ⏳ |

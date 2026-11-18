@@ -4,7 +4,7 @@
 
 import type { Api } from "./api";
 import type { Lang, LangChoice } from "./i18n.svelte";
-import type { EngineView, FileInfo, FileTargets, PlanView, PresetView, QuickBatch, SettingsView, TargetView, UiEvent, UpdateView } from "./types";
+import type { EngineView, FileInfo, InstallProgress, FileTargets, PlanView, PresetView, QuickBatch, SettingsView, TargetView, UiEvent, UpdateView } from "./types";
 
 const video = (format: string, name: string, fidelity: TargetView["fidelity"], headline: string, lost: string[] = []): TargetView => ({
   format,
@@ -76,6 +76,25 @@ const ENGINES: EngineView[] = [
     homepage: "https://ffmpeg.org",
     description: "Vidéo, audio, sous-titres (données fictives)",
     hint: null,
+    installable: { version: "9.0.2", size: 114768076, publisher: "gyan.dev (fictif)", license: "GPL-3.0-or-later", page: "https://example.org" },
+    previous: null,
+    installing: false,
+  },
+  {
+    id: "7zip",
+    name: "7-Zip",
+    state: "missing",
+    problem: null,
+    version: null,
+    path: null,
+    origin: null,
+    license: "LGPL-2.1-or-later (+ restriction unRAR)",
+    homepage: "https://www.7-zip.org",
+    description: "Archives : 7z, ZIP, RAR, TAR, GZ, XZ, ISO, CAB… (données fictives)",
+    hint: "winget install 7zip.7zip",
+    installable: { version: "26.06", size: 2259768, publisher: "Igor Pavlov (fictif)", license: "LGPL-2.1-or-later (+ restriction unRAR)", page: "https://example.org" },
+    previous: null,
+    installing: false,
   },
   {
     id: "pandoc",
@@ -88,7 +107,10 @@ const ENGINES: EngineView[] = [
     license: "GPL-2.0-or-later",
     homepage: "https://pandoc.org",
     description: "Documents (données fictives)",
-    hint: "winget install JohnMacFarlane.Pandoc",
+    hint: "winget install JohnMacFarlane.Pandoc --accept-source-agreements --accept-package-agreements --silent",
+    installable: null,
+    previous: null,
+    installing: false,
   },
 ];
 
@@ -116,6 +138,9 @@ const PRESETS: PresetView[] = [
   preset("zip", "ZIP", "zip", "ZIP", ["folder"]),
 ];
 
+let installCancel = false;
+const installListeners: ((id: string, p: InstallProgress) => void)[] = [];
+
 let langChoice: LangChoice = "system";
 const langListeners: ((l: Lang) => void)[] = [];
 const systemLang = (): Lang => (navigator.language.toLowerCase().startsWith("fr") ? "fr" : "en");
@@ -137,6 +162,7 @@ const updateView = (): UpdateView => ({
   manualReason: "version de développement",
   releases: "https://github.com/BigFatDeuce/chud-converter/releases",
   settingsError: null,
+  phase: "idle",
 });
 
 export function mockApi(): Api {
@@ -161,7 +187,39 @@ export function mockApi(): Api {
   const api: Api = {
     fake: true,
     appInfo: () => delay({ version: "0.0.0-fictif", dataDir: "C:\\Exemple", portable: false, formats: 0, conversions: 0, enginesReady: 1 }),
-    engines: () => delay(ENGINES),
+    engines: () => delay(ENGINES.map((e) => ({ ...e }))),
+    async engineInstall(id) {
+      const e = ENGINES.find((x) => x.id === id)!;
+      const total = e.installable!.size;
+      installCancel = false;
+      for (let i = 1; i <= 20; i++) {
+        await delay(null, 120);
+        if (installCancel) throw "installation annulée : rien n'a été installé (fictif)";
+        for (const cb of installListeners) cb(id, { phase: "downloading", received: (total * i) / 20, total });
+      }
+      for (const phase of ["verifying", "extracting", "checking"] as const) {
+        for (const cb of installListeners) cb(id, { phase });
+        await delay(null, 300);
+      }
+      Object.assign(e, { state: "ready", origin: "managed", version: e.installable!.version, path: `C:\\Exemple\\engines\\${id}\\${id}.exe` });
+      return ENGINES.map((x) => ({ ...x }));
+    },
+    async engineInstallCancel() {
+      installCancel = true;
+      return true;
+    },
+    async engineUninstall(id) {
+      const e = ENGINES.find((x) => x.id === id)!;
+      Object.assign(e, { state: "missing", origin: null, version: null, path: null, previous: null });
+      return delay(ENGINES.map((x) => ({ ...x })), 300);
+    },
+    async engineRollback() {
+      throw "aucune version précédente (fictif)";
+    },
+    async onEngineInstall(cb) {
+      installListeners.push(cb);
+      return () => {};
+    },
     inspect: (paths) =>
       delay(
         paths.map(

@@ -146,6 +146,25 @@ sources de téléchargement par OS/architecture, vérification), répertoire gé
 pointeur `current`, index signé, refus des sources non vérifiées, jamais de modification des
 installations système.
 
+### Machines à états de l'interface (`apps/desktop/src/lib/machines.ts`)
+
+Chaque processus long a **une** valeur qui dit où il en est (plus de drapeaux « chargement »,
+« erreur », « occupé » qui pouvaient se contredire). Les transitions sont des fonctions pures,
+testées par `npm test` (`apps/desktop/tests/machines.test.ts`) ; l'état est exposé dans le DOM
+en `data-state` (et `aria-busy`) pour les tests, l'accessibilité et les agents.
+
+| Machine | États | Où | Exposé |
+|---|---|---|---|
+| `Analysis` (fichier de la liste) | `unusable` · `loading` → `ready` / `failed` | `FileEntry.analysis` | `.row[data-state]` |
+| `JobStatus` (conversion) | `waiting` → `running` → `done` / `skipped` / `failed` / `cancelled` ; table `JOB_TRANSITIONS`, un état final ne change plus | `Job.status` | `.job[data-state][data-job]` |
+| `Load<T>` (liste des moteurs) | `idle` → `loading` → `ready` / `failed` (la dernière liste reste affichée) | `store.enginesLoad` | — |
+| `EngineOp` (moteur) | repos → `confirming` → `running` (progression, `cancelling`) → repos / `failed` | `store.engineOps[id]` | `article[data-engine][data-state][data-op]` |
+| `UpdateFlow` (application) | `idle` → `checking` / `installing` → `idle` / `failed` (avec l'opération en cause) | `store.updateFlow` ; côté Rust `updates::Phase` (`idle`/`checking`/`installing`, renvoyée dans la vue pour une fenêtre ouverte en cours de route) | `section[data-machine=update][data-state]` |
+| Menu clic droit | `null` / `installing` / `removing` | `store.shellOp` | — |
+
+Côté Rust : `chud_enginemgr::install` (téléchargement → vérification → extraction → essai →
+activation, `InstallProgress`), `updates::Phase`, et les tâches (`chud-jobs`, section 6).
+
 ## 8. Communication interface ↔ cœur
 
 - **Commandes** (requête/réponse) : `detect`, `targets`, `plan`, `enqueue`, `cancel`,

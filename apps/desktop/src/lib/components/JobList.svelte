@@ -98,7 +98,7 @@
   <div class="list card">
     {#each store.jobs as j (j.id)}
       {@const expandable = j.status !== "waiting"}
-      <div class="job {j.status}">
+      <div class="job {j.status}" data-state={j.status} data-job={j.id} aria-busy={j.status === "running"}>
         <div class="row">
           <span class="st" title={statusText[j.status]}><Icon name={statusIcon[j.status]} size={15} /></span>
           <div class="main">

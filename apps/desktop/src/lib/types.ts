@@ -106,7 +106,30 @@ export interface EngineView {
   homepage: string;
   description: string;
   hint: string | null;
+  /** Paquet que Chud Converter sait installer lui-même sur cette plateforme. */
+  installable: InstallOffer | null;
+  /** Version précédente d'une installation gérée (retour en arrière possible). */
+  previous: string | null;
+  /** Une installation est en cours (lancée depuis cette fenêtre ou une autre). */
+  installing: boolean;
 }
+
+export interface InstallOffer {
+  version: string;
+  /** Octets à télécharger. */
+  size: number;
+  publisher: string;
+  license: string;
+  /** Page de la publication, pour vérifier soi-même. */
+  page: string;
+}
+
+/** Étape d'une installation de moteur (événement « engine-install »). */
+export type InstallProgress =
+  | { phase: "downloading"; received: number; total: number }
+  | { phase: "verifying" }
+  | { phase: "extracting" }
+  | { phase: "checking" };
 
 /** Nouvelle version publiée. */
 export interface AvailableUpdate {
@@ -126,6 +149,8 @@ export interface UpdateView {
   manualReason: string | null;
   releases: string;
   settingsError: string | null;
+  /** Opération en cours côté cœur. */
+  phase: "idle" | "checking" | "installing";
 }
 
 export type UpdateProgress =

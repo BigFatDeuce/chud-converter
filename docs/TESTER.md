@@ -54,6 +54,30 @@ nécessaires pour la vidéo, l'audio et les archives (`winget install Gyan.FFmpe
 | 16e | `Exemples\pas-une-video.mp4` | Aucun format proposé : « ce fichier ne peut pas être analysé… » ; jamais une liste de conversions vouées à l'échec |
 | 16f | Une conversion qui échoue | Le libellé distingue « Vérification échouée, aucun fichier conservé », « Source illisible ou endommagée » et « Échec de la conversion », avec la cause exacte dessous |
 
+## Moteurs installés depuis l'application (nouveau)
+
+Le paquet portable range tout dans son dossier `data\` : les moteurs installés ici n'apparaissent
+que dans cette copie. Si FFmpeg ou 7-Zip est déjà installé sur votre PC, il reste utilisé et
+aucun bouton « Installer » n'apparaît pour lui (c'est voulu : Chud Converter ne remplace jamais
+une installation existante).
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 17a | **Moteurs** → une carte « Non installé » avec un bouton **Installer (… Mo)** | Un encadré demande confirmation : version, taille, éditeur, licence, lien « Voir la publication d'origine ». **Annuler** referme sans rien télécharger |
+| 17b | **Télécharger et installer** | Progression « Téléchargement : … sur … », puis « Vérification de l'empreinte SHA-256… », « Extraction… », « Essai de … » ; la carte passe à **Prêt**, origine « installé par Chud Converter » |
+| 17c | Pendant le téléchargement de FFmpeg (115 Mo) : **Annuler l'installation** | Message « Installation … annulée : rien n'a été installé » ; la carte redevient « Non installé » |
+| 17d | Après 17b, glisser une vidéo dans **Convertir** | Les formats vidéo/audio sont proposés sans relancer l'application ; la sélection et le format choisi sont gardés |
+| 17e | Moteur installé → **Retirer** | Confirmation, puis la carte redevient « Non installé » ; le dossier `data\engines\<moteur>` ne contient plus de version |
+| 17f | Une carte sans paquet vérifié (Pandoc, LibreOffice…) | La commande du gestionnaire de paquets s'affiche, **sans dépasser de la carte** même si elle est longue ; bouton copier |
+| 17g | En ligne de commande : `chud engines`, puis `chud engines install 7zip` | La liste indique `chud engines install …` pour les moteurs installables ; l'installation affiche ses étapes |
+
+## Écrans qui défilent (corrigé)
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 18a | **Préréglages**, fenêtre réduite en hauteur | La liste défile jusqu'au dernier préréglage et jusqu'au menu clic droit |
+| 18b | Même essai sur **Moteurs**, **Réglages**, **À propos**, et le panneau de droite de **Convertir** | Tout défile jusqu'en bas, rien n'est coupé |
+
 ## Préréglages et menu clic droit
 
 | # | Action | Résultat attendu |

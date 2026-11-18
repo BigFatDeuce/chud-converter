@@ -189,6 +189,16 @@ code,
   color: var(--text);
 }
 
+.btn.danger {
+  border-color: var(--lossy);
+  color: var(--lossy);
+  font-weight: 600;
+}
+
+.btn.danger:hover:not(:disabled) {
+  background: var(--lossy-soft);
+}
+
 .btn.small {
   height: 26px;
   padding: 0 8px;
@@ -269,4 +279,14 @@ input[type="radio"] {
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Colonnes qui défilent (écrans, panneau de droite, fenêtre rapide) : leurs enfants gardent leur
+   taille naturelle. Sans cela, un enfant en « overflow: hidden » se tasse à la hauteur restante,
+   son contenu est coupé et la colonne ne défile plus (liste des préréglages). */
+main .page > *,
+.convert .left > *,
+aside > .scroll > *,
+.quick .body > * {
+  flex-shrink: 0;
 }

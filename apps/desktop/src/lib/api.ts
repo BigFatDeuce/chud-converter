@@ -9,6 +9,7 @@ import type {
   EngineView,
   FileInfo,
   FileTargets,
+  InstallProgress,
   PlanRequest,
   PlanView,
   PresetView,
@@ -31,6 +32,14 @@ export interface Api {
   readonly fake: boolean;
   appInfo(): Promise<AppInfo>;
   engines(refresh: boolean): Promise<EngineView[]>;
+  /** Télécharge, vérifie, essaie puis active un moteur ; renvoie les moteurs détectés à nouveau. */
+  engineInstall(id: string): Promise<EngineView[]>;
+  /** Demande l'arrêt d'une installation en cours (rien n'est alors installé). */
+  engineInstallCancel(id: string): Promise<boolean>;
+  /** Retire un moteur installé par Chud Converter (jamais une installation du système). */
+  engineUninstall(id: string): Promise<EngineView[]>;
+  engineRollback(id: string): Promise<EngineView[]>;
+  onEngineInstall(cb: (id: string, p: InstallProgress) => void): Promise<() => void>;
   inspect(paths: string[]): Promise<FileInfo[]>;
   targets(path: string): Promise<FileTargets>;
   plan(request: PlanRequest): Promise<PlanView>;
@@ -87,6 +96,14 @@ function tauriApi(): Api {
     fake: false,
     appInfo: () => call("app_info"),
     engines: (refresh) => call("engines", { refresh }),
+    engineInstall: (id) => call("engine_install", { id }),
+    engineInstallCancel: (id) => call("engine_install_cancel", { id }),
+    engineUninstall: (id) => call("engine_uninstall", { id }),
+    engineRollback: (id) => call("engine_rollback", { id }),
+    async onEngineInstall(cb) {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<{ id: string; progress: InstallProgress }>("engine-install", (e) => cb(e.payload.id, e.payload.progress));
+    },
     inspect: (paths) => call("inspect", { paths }),
     targets: (path) => call("targets", { path }),
     plan: (request) => call("plan", { request }),

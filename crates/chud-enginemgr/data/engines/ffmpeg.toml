@@ -20,3 +20,18 @@ known_paths_macos = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg']
 windows = "winget install Gyan.FFmpeg"
 linux = "sudo apt install ffmpeg"
 macos = "brew install ffmpeg"
+
+# Installation depuis l'application. Paquet « essentials » de gyan.dev, l'une des deux sources de
+# compilations Windows citées par ffmpeg.org. Adresse, taille et SHA-256 figés : relevés sur la
+# publication GitHub (champ « digest »), vérifiés avant toute ouverture du fichier.
+[[install]]
+platform = "windows-x86_64"
+version = "9.0.2"
+method = "zip"
+publisher = "Gyan Doshi (gyan.dev), compilation recommandée par ffmpeg.org"
+publisher_en = "Gyan Doshi (gyan.dev), a build recommended by ffmpeg.org"
+license = "GPL-3.0-or-later"
+page = "https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2"
+files = [
+  { url = "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip", sha256 = "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba", size = 114768076 },
+]

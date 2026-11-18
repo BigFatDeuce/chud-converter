@@ -245,6 +245,30 @@ Les rapports déjà écrits restent dans leur langue. Les préréglages fournis 
 un nom choisi par l'utilisateur est conservé tel quel. Un fichier de réglages illisible n'est
 jamais écrasé : le changement est refusé et l'erreur affichée.
 
+## ADR-022 — Installer les moteurs depuis l'application
+
+**Contexte.** Demander d'ouvrir un terminal et de taper `winget install …` décourage la plupart
+des utilisateurs (2026-11-18 : « il faut que ce soit simple à utiliser »).
+
+**Décision.** FFmpeg et 7-Zip s'installent d'un clic dans l'écran Moteurs (et par
+`chud engines install`). La source de chaque paquet (adresse HTTPS, taille, SHA-256) est figée
+dans le manifeste du moteur, **intégré au programme signé** : une nouvelle version d'un moteur
+arrive avec une mise à jour de l'application, vérifiée par sa signature (ADR-021). L'index signé
+indépendant (ADR-007) reste prévu pour suivre les moteurs entre deux versions de l'application.
+
+- Sources : FFmpeg = compilation « essentials » de gyan.dev (citée par ffmpeg.org) sur GitHub ;
+  7-Zip = publication officielle d'Igor Pavlov sur GitHub. Empreintes relevées sur les
+  publications (champ `digest` des fichiers GitHub).
+- Avant tout téléchargement, l'interface montre la version, la taille, l'éditeur, la licence et
+  un lien vers la publication ; l'utilisateur confirme.
+- L'installeur 7-Zip pour Windows n'est jamais exécuté : il est ouvert comme une archive par
+  `7zr.exe`, lui-même vérifié par son empreinte.
+- Installé dans `<données>/engines/<id>` ; les installations du système ne sont jamais touchées
+  et un moteur déjà prêt n'est pas remplacé. Retrait et retour arrière en un clic (avec
+  confirmation).
+- La commande du gestionnaire de paquets reste affichée en second choix, et seule pour les
+  moteurs sans paquet vérifié (FFmpeg sous Linux, Pandoc, LibreOffice…).
+
 ## ADR-021 — Publication et mise à jour de l'application
 **Statut : Acceptée** (précise ADR-015)
 

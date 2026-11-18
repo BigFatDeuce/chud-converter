@@ -22,3 +22,29 @@ known_paths_macos = ['/opt/homebrew/bin/7zz', '/usr/local/bin/7zz']
 windows = "winget install 7zip.7zip"
 linux = "sudo apt install 7zip"
 macos = "brew install sevenzip"
+
+# Installation depuis l'application, depuis la publication officielle d'Igor Pavlov (ip7z/7zip).
+# Windows : l'installeur est ouvert comme une archive par 7zr.exe (vérifié lui aussi) ; il n'est
+# jamais exécuté et ne touche ni au registre ni à une installation existante.
+[[install]]
+platform = "windows-x86_64"
+version = "26.06"
+method = "sevenzip-sfx"
+publisher = "Igor Pavlov, auteur de 7-Zip (publication officielle)"
+publisher_en = "Igor Pavlov, author of 7-Zip (official release)"
+page = "https://github.com/ip7z/7zip/releases/tag/26.06"
+files = [
+  { url = "https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe", sha256 = "e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc", size = 600064 },
+  { url = "https://github.com/ip7z/7zip/releases/download/26.06/7z2606-x64.exe", sha256 = "9b697f65ecc2d9b0152f5ee96d72dde522a7827690349d9307935dacf40f42ec", size = 1659704 },
+]
+
+[[install]]
+platform = "linux-x86_64"
+version = "26.06"
+method = "tar-xz"
+publisher = "Igor Pavlov, auteur de 7-Zip (publication officielle)"
+publisher_en = "Igor Pavlov, author of 7-Zip (official release)"
+page = "https://github.com/ip7z/7zip/releases/tag/26.06"
+files = [
+  { url = "https://github.com/ip7z/7zip/releases/download/26.06/7z2606-linux-x64.tar.xz", sha256 = "2b539cf067b2ad48e1baa5093dbaa8818b73542d1222a0ffde9dc5f2922ea62e", size = 1575552 },
+]

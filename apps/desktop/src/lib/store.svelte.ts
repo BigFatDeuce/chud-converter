@@ -4,6 +4,28 @@
 import { L, i18n, type Lang, type LangChoice } from "./i18n.svelte";
 import { api, errorText } from "./api";
 import { baseName, fidelityRank } from "./format";
+import {
+  analysisTargets,
+  current,
+  engineStep,
+  failLoad,
+  finishLoad,
+  idle,
+  isActive,
+  isFinal,
+  moveJob,
+  startLoad,
+  updateBusy,
+  updateStep,
+  type Analysis,
+  type EngineAction,
+  type EngineOp,
+  type EngineOpEvent,
+  type JobStatus,
+  type Load,
+  type UpdateEvent,
+  type UpdateFlow,
+} from "./machines";
 import type {
   AppInfo,
   Category,
@@ -11,7 +33,6 @@ import type {
   EngineView,
   FidelityLevel,
   FileInfo,
-  FileTargets,
   OptionValue,
   PresetView,
   QuickBatch,
@@ -19,22 +40,23 @@ import type {
   ShellView,
   Submitted,
   UiEvent,
-  UpdateProgress,
   UpdateView,
   Verification,
 } from "./types";
 
 export type View = "convert" | "presets" | "engines" | "settings" | "about";
 
+export type { JobStatus } from "./machines";
+
 export interface FileEntry {
   info: FileInfo;
   checked: boolean;
-  targets: FileTargets | null;
-  targetsError: string | null;
-  loading: boolean;
+  /** Formats cibles : chargement, prêts, échec, ou fichier inutilisable (machine `Analysis`). */
+  analysis: Analysis;
 }
 
-export type JobStatus = "waiting" | "running" | "done" | "skipped" | "failed" | "cancelled";
+/** Fichier dont on peut demander les cibles (format reconnu, lisible). */
+const usable = (info: FileInfo) => !!info.format && !info.error;
 
 export interface Job {
   id: number;
@@ -71,13 +93,13 @@ export interface CommonTarget {
 
 /** Cibles possibles pour TOUS les fichiers cochés, avec la fidélité la moins bonne. */
 function commonTargets(entries: FileEntry[]): CommonTarget[] {
-  const ready = entries.filter((e) => e.targets);
+  const ready = entries.map((e) => analysisTargets(e.analysis)).filter((t) => t !== null);
   if (!ready.length) return [];
   const map = new Map<string, CommonTarget>(
-    ready[0].targets!.targets.map((t) => [t.format, { ...t, lost: [...t.lost] }]),
+    ready[0].targets.map((t) => [t.format, { ...t, lost: [...t.lost] }]),
   );
   for (const e of ready.slice(1)) {
-    const theirs = new Map(e.targets!.targets.map((t) => [t.format, t]));
+    const theirs = new Map(e.targets.map((t) => [t.format, t]));
     for (const [key, mine] of map) {
       const t = theirs.get(key);
       if (!t) {
@@ -149,24 +171,26 @@ class Store {
   /** Lots du menu contextuel (fenêtre rapide) : erreurs et fichiers ignorés y restent visibles. */
   quick = $state<QuickBatch[]>([]);
   shell = $state<ShellView | null>(null);
-  shellBusy = $state(false);
+  /** Menu clic droit : opération en cours (ajout ou retrait), sinon `null`. */
+  shellOp = $state<"installing" | "removing" | null>(null);
 
-  engines = $state<EngineView[] | null>(null);
-  enginesLoading = $state(false);
-  enginesError = $state<string | null>(null);
+  /** Moteurs détectés (machine `Load` : la dernière liste reste affichée pendant une recherche). */
+  enginesLoad = $state<Load<EngineView[]>>(idle());
+  engines = $derived(current(this.enginesLoad));
+  /** Opérations sur les moteurs (installation, retrait, retour en arrière), par identifiant. */
+  engineOps = $state<Record<string, EngineOp>>({});
   info = $state<AppInfo | null>(null);
   settings = $state<SettingsView | null>(null);
   update = $state<UpdateView | null>(null);
-  updateBusy = $state<"check" | "install" | null>(null);
-  updateProgress = $state<UpdateProgress | null>(null);
-  updateError = $state<string | null>(null);
+  /** Recherche ou installation d'une mise à jour (machine `UpdateFlow`). */
+  updateFlow = $state<UpdateFlow>({ state: "idle" });
   settingsBusy = $state(false);
 
-  checked = $derived(this.files.filter((f) => f.checked && f.info.format && !f.info.error));
-  loadingTargets = $derived(this.checked.some((f) => f.loading));
-  common = $derived(commonTargets(this.checked.filter((f) => !f.targetsError)));
+  checked = $derived(this.files.filter((f) => f.checked && usable(f.info)));
+  loadingTargets = $derived(this.checked.some((f) => f.analysis.state === "loading"));
+  common = $derived(commonTargets(this.checked));
   targetInfo = $derived(this.common.find((t) => t.format === this.target) ?? null);
-  active = $derived(this.jobs.filter((j) => j.status === "waiting" || j.status === "running").length);
+  active = $derived(this.jobs.filter((j) => isActive(j.status)).length);
   /** Sortes des fichiers cochés, au sens des préréglages (catégorie, ou « folder »). */
   checkedKinds = $derived([...new Set(this.checked.map((f) => (f.info.isDir ? "folder" : (f.info.category ?? "?"))))]);
   /** Préréglages applicables à toute la sélection, et réalisables avec les moteurs présents. */
@@ -204,6 +228,7 @@ class Store {
     this.fake = a.fake;
     await this.#initLanguage(true);
     void this.#initUpdates();
+    await a.onEngineInstall((id, progress) => this.#engine(id, { type: "progress", progress }));
     await a.onQueue((e) => this.#onEvent(e));
     await a.onDrop(
       (paths) => {
@@ -275,29 +300,24 @@ class Store {
       this.say(n === 1 ? L("Ce fichier est déjà dans la liste.", "This file is already in the list.") : L(`${n} fichiers étaient déjà dans la liste.`, `${n} files were already in the list.`));
     }
     for (const info of fresh) {
-      const usable = !!info.format && !info.error;
-      this.files.push({ info, checked: usable, targets: null, targetsError: null, loading: usable });
+      const ok = usable(info);
+      this.files.push({ info, checked: ok, analysis: ok ? { state: "loading" } : { state: "unusable" } });
     }
-    await Promise.all(
-      fresh
-        .filter((i) => i.format && !i.error)
-        .map(async (i) => {
-          let targets: FileTargets | null = null;
-          let error: string | null = null;
-          try {
-            targets = await a.targets(i.path);
-          } catch (e) {
-            error = errorText(e);
-          }
-          const entry = this.files.find((f) => f.info.path === i.path);
-          if (entry) {
-            entry.targets = targets;
-            entry.targetsError = error;
-            entry.loading = false;
-          }
-        }),
-    );
+    await Promise.all(fresh.filter(usable).map((i) => this.#analyze(i.path)));
     this.#keepTargetValid();
+  }
+
+  /** Demande les cibles d'un fichier de la liste (état `loading` → `ready` ou `failed`). */
+  async #analyze(path: string) {
+    const a = await api;
+    let next: Analysis;
+    try {
+      next = { state: "ready", targets: await a.targets(path) };
+    } catch (e) {
+      next = { state: "failed", error: errorText(e) };
+    }
+    const entry = this.files.find((f) => f.info.path === path);
+    if (entry) entry.analysis = next;
   }
 
   async pickFiles() {
@@ -350,7 +370,7 @@ class Store {
   }
 
   setAllChecked(on: boolean) {
-    for (const f of this.files) if (f.info.format && !f.info.error) f.checked = on;
+    for (const f of this.files) if (usable(f.info)) f.checked = on;
     this.#keepTargetValid();
   }
 
@@ -438,7 +458,7 @@ class Store {
   }
 
   clearFinished() {
-    this.jobs = this.jobs.filter((j) => j.status === "waiting" || j.status === "running");
+    this.jobs = this.jobs.filter((j) => isActive(j.status));
   }
 
   #onEvent(e: UiEvent) {
@@ -453,11 +473,13 @@ class Store {
 
   #apply(e: UiEvent) {
     const j = this.jobs.find((x) => x.id === e.id);
-    // Une tâche terminée ne revient jamais en arrière (événements rejoués en double).
-    if (!j || ["done", "skipped", "failed", "cancelled"].includes(j.status)) return;
+    // Une tâche terminée ne revient jamais en arrière (événements rejoués en double) :
+    // les transitions permises sont dans `JOB_TRANSITIONS` (machines.ts).
+    if (!j || isFinal(j.status)) return;
+    const move = (to: JobStatus) => (j.status = moveJob(j.status, to));
     switch (e.kind) {
       case "started":
-        j.status = "running";
+        move("running");
         break;
       case "planned":
         j.fidelity = e.fidelity;
@@ -476,7 +498,7 @@ class Store {
         j.skipReason = e.reason;
         break;
       case "done":
-        j.status = e.skipped ? "skipped" : "done";
+        move(e.skipped ? "skipped" : "done");
         j.output = e.output;
         if (e.fidelity) j.fidelity = e.fidelity;
         if (e.headline) j.headline = e.headline;
@@ -487,7 +509,7 @@ class Store {
         j.fraction = 1;
         break;
       case "failed":
-        j.status = e.code === "cancelled" ? "cancelled" : "failed";
+        move(e.code === "cancelled" ? "cancelled" : "failed");
         j.error = e.message;
         j.errorCode = e.code;
         break;
@@ -585,7 +607,8 @@ class Store {
 
   async setShell(install: boolean) {
     const a = await api;
-    this.shellBusy = true;
+    if (this.shellOp) return;
+    this.shellOp = install ? "installing" : "removing";
     try {
       this.shell = install ? await a.shellInstall() : await a.shellUninstall();
       this.say(install ? L(`Menu clic droit installé (${this.shell.entries} types de fichiers).`, `Right-click menu installed (${this.shell.entries} file types).`) : L("Menu clic droit retiré.", "Right-click menu removed."));
@@ -593,7 +616,7 @@ class Store {
       this.say(errorText(e));
       await this.loadShell();
     } finally {
-      this.shellBusy = false;
+      this.shellOp = null;
     }
   }
 
@@ -649,15 +672,16 @@ class Store {
         const entry = this.files.find((f) => f.info.path === info.path);
         if (!entry) return;
         entry.info = info;
-        if (!info.format || info.error) return;
-        try {
-          entry.targets = await a.targets(info.path);
-          entry.targetsError = null;
-        } catch (e) {
-          entry.targetsError = errorText(e);
+        if (!usable(info)) {
+          entry.analysis = { state: "unusable" };
+          entry.checked = false;
+          return;
         }
+        // Les anciennes cibles restent affichées jusqu'à la réponse (pas de clignotement).
+        await this.#analyze(info.path);
       }),
     );
+    this.#keepTargetValid();
   }
 
   // ---------------------------------------------------------------- mises à jour
@@ -666,23 +690,32 @@ class Store {
     const a = await api;
     try {
       this.update = await a.updateStatus();
+      // Recherche automatique déjà lancée au démarrage : affichée comme en cours.
+      if (this.update.phase === "checking") this.#updateEvent({ type: "check" });
+      if (this.update.phase === "installing") this.#updateEvent({ type: "install" });
     } catch {
       // Affichage seulement.
     }
-    await a.onUpdateAvailable((v) => (this.update = v));
-    await a.onUpdateProgress((p) => (this.updateProgress = p));
+    await a.onUpdateAvailable((v) => {
+      this.update = v;
+      if (this.updateFlow.state === "checking" && v.phase === "idle") this.#updateEvent({ type: "done" });
+    });
+    await a.onUpdateProgress((progress) => this.#updateEvent({ type: "progress", progress }));
+  }
+
+  #updateEvent(e: UpdateEvent) {
+    this.updateFlow = updateStep(this.updateFlow, e);
   }
 
   async checkUpdate() {
+    if (updateBusy(this.updateFlow)) return;
     const a = await api;
-    this.updateBusy = "check";
-    this.updateError = null;
+    this.#updateEvent({ type: "check" });
     try {
       this.update = await a.updateCheck(true);
+      this.#updateEvent({ type: "done" });
     } catch (e) {
-      this.updateError = errorText(e);
-    } finally {
-      this.updateBusy = null;
+      this.#updateEvent({ type: "error", error: errorText(e) });
     }
   }
 
@@ -691,23 +724,20 @@ class Store {
     try {
       this.update = await a.updateSetAuto(enabled);
     } catch (e) {
-      this.updateError = errorText(e);
+      this.say(errorText(e));
     }
   }
 
   /** Téléchargement, vérification de la signature, installation ; l'application redémarre. */
   async installUpdate() {
+    if (updateBusy(this.updateFlow)) return;
     const a = await api;
-    this.updateBusy = "install";
-    this.updateError = null;
-    this.updateProgress = null;
+    this.#updateEvent({ type: "install" });
     try {
       await a.updateInstall();
+      this.#updateEvent({ type: "done" });
     } catch (e) {
-      this.updateError = errorText(e);
-      this.updateProgress = null;
-    } finally {
-      this.updateBusy = null;
+      this.#updateEvent({ type: "error", error: errorText(e) });
     }
   }
 
@@ -715,21 +745,94 @@ class Store {
 
   async loadEngines(refresh: boolean) {
     const a = await api;
-    this.enginesLoading = true;
-    this.enginesError = null;
+    this.enginesLoad = startLoad(this.enginesLoad);
     try {
-      this.engines = await a.engines(refresh);
-      this.info = await a.appInfo();
-      if (refresh) {
-        // Les cibles possibles dépendent des moteurs disponibles.
-        const paths = this.files.map((f) => f.info.path);
-        this.files = [];
-        await this.addPaths(paths);
-      }
+      const list = await a.engines(refresh);
+      this.#enginesLoaded(list);
+      if (refresh) await this.#afterEnginesChanged();
+      else this.info = await a.appInfo();
     } catch (e) {
-      this.enginesError = errorText(e);
-    } finally {
-      this.enginesLoading = false;
+      this.enginesLoad = failLoad(this.enginesLoad, errorText(e));
+    }
+  }
+
+  #enginesLoaded(list: EngineView[]) {
+    this.enginesLoad = finishLoad(list);
+    // Une installation lancée avant l'ouverture de cette fenêtre : affichée comme en cours.
+    for (const e of list) {
+      if (e.installing && this.engineOps[e.id]?.state !== "running") {
+        this.engineOps[e.id] = { state: "running", action: "install", progress: null, cancelling: false };
+      }
+    }
+  }
+
+  /** Les cibles possibles dépendent des moteurs : elles sont redemandées, en gardant la
+   *  sélection, le format choisi et les options. */
+  async #afterEnginesChanged() {
+    const a = await api;
+    try {
+      this.info = await a.appInfo();
+    } catch {
+      // Affichage seulement.
+    }
+    await this.#reloadFiles();
+  }
+
+  #engine(id: string, e: EngineOpEvent) {
+    const next = engineStep(this.engineOps[id] ?? null, e);
+    if (next) this.engineOps[id] = next;
+    else delete this.engineOps[id];
+  }
+
+  /** Première étape de toute action : montrer ce qui va se passer et attendre l'accord. */
+  askEngine(id: string, action: EngineAction) {
+    this.#engine(id, { type: "ask", action });
+  }
+
+  dismissEngine(id: string) {
+    this.#engine(id, { type: "dismiss" });
+  }
+
+  /** L'utilisateur a confirmé : l'action est lancée. */
+  async confirmEngine(id: string) {
+    const op = this.engineOps[id];
+    if (op?.state !== "confirming") return;
+    const action = op.action;
+    const name = this.engines?.find((e) => e.id === id)?.name ?? id;
+    this.#engine(id, { type: "confirm" });
+    const a = await api;
+    try {
+      const list =
+        action === "install" ? await a.engineInstall(id) : action === "uninstall" ? await a.engineUninstall(id) : await a.engineRollback(id);
+      this.#engine(id, { type: "succeeded" });
+      this.#enginesLoaded(list);
+      const e = list.find((x) => x.id === id);
+      this.say(
+        action === "install"
+          ? L(`${name} ${e?.version ?? ""} est installé et prêt.`, `${name} ${e?.version ?? ""} is installed and ready.`)
+          : action === "uninstall"
+            ? L(`${name} a été retiré.`, `${name} was removed.`)
+            : L(`${name} est revenu à la version ${e?.version ?? ""}.`, `${name} is back to version ${e?.version ?? ""}.`),
+      );
+      await this.#afterEnginesChanged();
+    } catch (err) {
+      const cur = this.engineOps[id];
+      if (cur?.state === "running" && cur.cancelling) {
+        this.#engine(id, { type: "succeeded" });
+        this.say(L(`Installation de ${name} annulée : rien n'a été installé.`, `${name} installation cancelled: nothing was installed.`));
+      } else {
+        this.#engine(id, { type: "error", error: errorText(err) });
+      }
+    }
+  }
+
+  async cancelEngine(id: string) {
+    this.#engine(id, { type: "cancel" });
+    const a = await api;
+    try {
+      await a.engineInstallCancel(id);
+    } catch (e) {
+      this.say(errorText(e));
     }
   }
 }

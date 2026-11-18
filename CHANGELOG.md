@@ -2,6 +2,31 @@
 
 All notable changes to Chud Converter. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Install FFmpeg and 7-Zip from the app**, in one click on the Engines screen (or
+  `chud engines install ffmpeg|7zip`). Before anything is downloaded, the app shows the version,
+  size, publisher and license, with a link to the original release. Each file comes from a fixed
+  HTTPS address and is refused if its size or SHA-256 differs from the expected one; the engine is
+  extracted under strict rules, tried, and only then activated. Installs live in the app's own
+  folder: system installs are never touched or replaced. Cancel, remove and roll back are one
+  click away (with confirmation). Package-manager commands remain as an alternative.
+- `chud engines uninstall <id> --yes` and `chud engines rollback <id>`.
+
+### Fixed
+- Presets screen could not scroll to the bottom (the list was squeezed instead of scrolling);
+  the same fix applies to every scrolling screen and panel.
+- Long install commands overflowed the engine cards.
+- After the engines changed, the file list was rebuilt from scratch, losing the selection, the
+  chosen format and options; they are now kept.
+
+### Internal
+- Every long-running UI process is an explicit state machine (`apps/desktop/src/lib/machines.ts`,
+  tested by `npm test`): file analysis, conversion jobs (transition table), engine operations,
+  engine list, app update (also on the Rust side). States are exposed as `data-state` attributes
+  for tests, accessibility tools and agents.
+
 ## [0.1.1] — 2026-11-18
 
 Reliability release: a full audit of every offered conversion. Nearly 2,000 real conversions

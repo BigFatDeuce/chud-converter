@@ -19,7 +19,9 @@
   ]);
 
   const u = $derived(store.update);
-  const p = $derived(store.updateProgress);
+  const flow = $derived(store.updateFlow);
+  const busy = $derived(flow.state === "checking" || flow.state === "installing");
+  const p = $derived(flow.state === "installing" ? flow.progress : null);
 
   function when(secs: number | null): string {
     if (!secs) return L("jamais", "never");
@@ -111,7 +113,7 @@
     {/if}
   </section>
 
-  <section class="card">
+  <section class="card" data-machine="update" data-state={flow.state} aria-busy={busy}>
     <div class="card-head">
       <Icon name="refresh" size={18} />
       <h2>{L("Mises à jour", "Updates")}</h2>
@@ -139,7 +141,7 @@
           {#if u.available.notes}<p class="notes small selectable">{u.available.notes}</p>{/if}
           <div class="row">
             {#if u.canInstall}
-              <button class="btn primary" disabled={!!store.updateBusy} onclick={() => store.installUpdate()}>
+              <button class="btn primary" disabled={busy} onclick={() => store.installUpdate()}>
                 {L("Installer et redémarrer", "Install and restart")}
               </button>
             {/if}
@@ -151,28 +153,28 @@
           {#if !u.canInstall && u.manualReason}
             <p class="faint small">{L("Installation manuelle :", "Manual installation:")} {u.manualReason}.</p>
           {/if}
-          {#if store.updateBusy === "install"}
+          {#if flow.state === "installing"}
             <div class="progress small">
               <span>{progressText}</span>
               {#if fraction !== null}<progress max="1" value={fraction}></progress>{/if}
             </div>
           {/if}
         </div>
-      {:else if u.lastCheck && store.updateBusy !== "check"}
+      {:else if u.lastCheck && flow.state !== "checking"}
         <p class="small ok"><Icon name="check" size={14} /> {L("Vous avez la dernière version.", "You have the latest version.")}</p>
       {/if}
 
-      {#if store.updateError}
-        <p class="error small selectable"><Icon name="alert" size={14} /> {store.updateError}</p>
+      {#if flow.state === "failed"}
+        <p class="error small selectable"><Icon name="alert" size={14} /> {flow.error}</p>
       {/if}
       {#if u.settingsError}
         <p class="error small selectable"><Icon name="alert" size={14} /> {u.settingsError}</p>
       {/if}
 
       <div class="row">
-        <button class="btn ghost" disabled={!!store.updateBusy} onclick={() => store.checkUpdate()}>
+        <button class="btn ghost" disabled={busy} onclick={() => store.checkUpdate()}>
           <Icon name="refresh" size={14} />
-          {store.updateBusy === "check" ? L("Recherche…", "Checking…") : L("Rechercher maintenant", "Check now")}
+          {flow.state === "checking" ? L("Recherche…", "Checking…") : L("Rechercher maintenant", "Check now")}
         </button>
         <label class="auto">
           <input type="checkbox" checked={u.autoCheck} disabled={!!u.settingsError} onchange={(e) => store.setAutoUpdate(e.currentTarget.checked)} />

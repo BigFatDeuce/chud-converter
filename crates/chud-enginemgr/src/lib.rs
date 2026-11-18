@@ -8,13 +8,18 @@
 //! 4. `PATH` (chemins absolus seulement, alias d'applications du Store ignorés) — `System`.
 //!
 //! Le chemin absolu trouvé est conservé : l'exécution ne refait jamais de recherche.
-//! Les installations système ne sont jamais modifiées. Le téléchargement et l'installation
-//! gérés (index signé, ADR-007) arrivent dans l'itération suivante : voir `docs/ENGINE-MANAGER.md`.
+//! Les installations système ne sont jamais modifiées. L'installation gérée (téléchargement
+//! vérifié par SHA-256, extraction contrôlée, essai, activation réversible) est dans [`install`] :
+//! voir `docs/ENGINE-MANAGER.md`.
+
+pub mod install;
 
 use chud_core::{Engine, EngineId, EngineOrigin, FormatCatalog, Registry};
 use chud_engines::ffmpeg::Ffmpeg;
 use chud_engines::sevenzip::SevenZip;
 use chud_process::ProcessSpec;
+pub use install::{InstallError, InstallProgress, InstallSource, Installed};
+
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -90,6 +95,9 @@ pub struct Manifest {
     pub detect: Detect,
     #[serde(default)]
     pub hints: BTreeMap<String, String>,
+    /// Paquets installables depuis l'application, par plateforme (adresse, taille, SHA-256 figés).
+    #[serde(default)]
+    pub install: Vec<InstallSource>,
 }
 
 impl Manifest {
@@ -98,6 +106,9 @@ impl Manifest {
         Regex::new(&m.detect.version_regex).map_err(|e| ManagerError::Manifest(m.id.clone(), e.to_string()))?;
         if m.executables.is_empty() {
             return Err(ManagerError::Manifest(m.id.clone(), chud_core::tr!("aucun exécutable", "no executable").into()));
+        }
+        for src in &m.install {
+            src.validate().map_err(|e| ManagerError::Manifest(m.id.clone(), e))?;
         }
         Ok(m)
     }
@@ -138,6 +149,12 @@ impl Manifest {
             (chud_core::Lang::En, Some(en)) => en,
             _ => &self.license,
         }
+    }
+
+    /// Paquet installable sur cette plateforme, s'il y en a un.
+    pub fn install_source(&self) -> Option<&InstallSource> {
+        let here = install::current_platform();
+        self.install.iter().find(|s| s.platform == here)
     }
 
     pub fn hint(&self) -> Option<&str> {
@@ -330,9 +347,38 @@ pub struct EngineStatus {
     pub description: String,
     /// Commande d'installation suggérée (affichée, jamais exécutée sans accord).
     pub hint: Option<String>,
+    /// Ce que Chud Converter peut installer lui-même sur cette plateforme.
+    pub installable: Option<InstallOffer>,
+    /// Version précédente d'une installation gérée, gardée pour revenir en arrière.
+    pub previous: Option<String>,
 }
 
-fn exe_name(base: &str) -> String {
+/// Paquet proposé à l'installation : tout ce qu'il faut pour décider en connaissance de cause.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct InstallOffer {
+    pub version: String,
+    /// Taille totale à télécharger, en octets.
+    pub size: u64,
+    pub publisher: String,
+    pub license: String,
+    /// Page de la publication.
+    pub page: String,
+}
+
+impl InstallOffer {
+    fn from_manifest(m: &Manifest) -> Option<Self> {
+        let s = m.install_source()?;
+        Some(InstallOffer {
+            version: s.version.clone(),
+            size: s.total_size(),
+            publisher: s.publisher_l().to_owned(),
+            license: s.license.clone().unwrap_or_else(|| m.license_l().to_owned()),
+            page: s.page.clone(),
+        })
+    }
+}
+
+pub(crate) fn exe_name(base: &str) -> String {
     if cfg!(windows) && Path::new(base).extension().is_none() { format!("{base}.exe") } else { base.to_owned() }
 }
 
@@ -422,12 +468,16 @@ fn managed(paths: &AppPaths, id: &str, exe: &str) -> Option<(PathBuf, String)> {
     if version.is_empty() || version.contains(['/', '\\']) || version.contains("..") {
         return None;
     }
-    let base = root.join("versions").join(&version);
-    let mut stack = vec![(base, 0)];
+    find_exe(&root.join("versions").join(&version), exe).map(|p| (p, version))
+}
+
+/// Cherche un exécutable dans un dossier de version (jusqu'à trois niveaux : `ffmpeg-x/bin/ffmpeg`).
+pub(crate) fn find_exe(base: &Path, exe: &str) -> Option<PathBuf> {
+    let mut stack = vec![(base.to_path_buf(), 0)];
     while let Some((d, depth)) = stack.pop() {
         let candidate = d.join(exe_name(exe));
         if candidate.is_file() {
-            return Some((candidate, version));
+            return Some(candidate);
         }
         if depth < 3
             && let Ok(rd) = std::fs::read_dir(&d)
@@ -525,6 +575,8 @@ impl EngineManager {
             homepage: m.homepage.clone(),
             description: m.description_l().to_owned(),
             hint: m.hint().map(str::to_owned),
+            installable: InstallOffer::from_manifest(m),
+            previous: install::previous_version(&self.paths, &m.id),
         };
         if self.settings.engines.get(&m.id).is_some_and(|s| !s.enabled) {
             status.state = EngineState::Disabled;

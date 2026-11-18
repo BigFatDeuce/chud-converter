@@ -26,7 +26,54 @@ pub async fn app_info(app: Shared<'_>) -> Result<AppInfo, String> {
 #[tauri::command]
 pub async fn engines(app: Shared<'_>, refresh: bool) -> Result<Vec<EngineView>, String> {
     let app = app.inner().clone();
-    blocking(move || Ok(if refresh { app.reload_engines()? } else { app.engines()? }.views())).await
+    blocking(move || app.engine_views(refresh)).await
+}
+
+/// Progression d'une installation de moteur, envoyée à toutes les fenêtres.
+#[derive(Clone, serde::Serialize)]
+pub struct EngineInstallEvent {
+    id: String,
+    progress: chud_enginemgr::InstallProgress,
+}
+
+/// Installe un moteur ; la progression arrive par l'événement `engine-install`.
+/// Renvoie les moteurs détectés à nouveau.
+#[tauri::command]
+pub async fn engine_install(handle: AppHandle, app: Shared<'_>, id: String) -> Result<Vec<EngineView>, String> {
+    let app = app.inner().clone();
+    blocking(move || {
+        let mut last = None;
+        app.install_engine(&id, &mut |p| {
+            // Pas plus d'un événement par pour cent : la fenêtre n'est pas inondée.
+            let key = match &p {
+                chud_enginemgr::InstallProgress::Downloading { received, total } => Some(received * 100 / (*total).max(1)),
+                _ => None,
+            };
+            if key.is_some() && key == last {
+                return;
+            }
+            last = key;
+            let _ = handle.emit("engine-install", EngineInstallEvent { id: id.clone(), progress: p });
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn engine_install_cancel(app: Shared<'_>, id: String) -> bool {
+    app.cancel_engine_install(&id)
+}
+
+#[tauri::command]
+pub async fn engine_uninstall(app: Shared<'_>, id: String) -> Result<Vec<EngineView>, String> {
+    let app = app.inner().clone();
+    blocking(move || app.uninstall_engine(&id)).await
+}
+
+#[tauri::command]
+pub async fn engine_rollback(app: Shared<'_>, id: String) -> Result<Vec<EngineView>, String> {
+    let app = app.inner().clone();
+    blocking(move || app.rollback_engine(&id)).await
 }
 
 #[tauri::command]
