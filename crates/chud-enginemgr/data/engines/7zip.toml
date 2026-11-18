@@ -13,7 +13,8 @@ executables_macos = ['7zz', '7z']
 
 [detect]
 version_args = []
-version_regex = '7-Zip(?: \(a\))?(?: \[64\])? ([0-9]+\.[0-9]+)'
+# « 7-Zip 26.06 », « 7-Zip (a) 23.01 » (7za), « 7-Zip (z) 26.06 » (7zz sous Linux), « 7-Zip [64] 16.02 » (p7zip).
+version_regex = '7-Zip(?: \([a-z]\))?(?: \[64\])? ([0-9]+\.[0-9]+)'
 known_paths_windows = ['%ProgramFiles%\7-Zip\7z.exe', '%ProgramFiles(x86)%\7-Zip\7z.exe', '%LOCALAPPDATA%\Programs\7-Zip\7z.exe']
 known_paths_linux = ['/usr/bin/7zz', '/usr/bin/7z']
 known_paths_macos = ['/opt/homebrew/bin/7zz', '/usr/local/bin/7zz']

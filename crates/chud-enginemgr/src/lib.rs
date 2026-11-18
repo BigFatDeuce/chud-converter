@@ -716,6 +716,8 @@ mod tests {
         let re = Regex::new(&sz.detect.version_regex).unwrap();
         assert_eq!(&re.captures("7-Zip 26.06 (x64) : Copyright (c) 1999-2026 Igor Pavlov").unwrap()[1], "26.06");
         assert_eq!(&re.captures("7-Zip (a) 23.01 (x64) : Copyright").unwrap()[1], "23.01");
+        assert_eq!(&re.captures("7-Zip (z) 26.06 (x64) : Copyright (c) 1999-2026 Igor Pavlov").unwrap()[1], "26.06");
+        assert_eq!(&re.captures("7-Zip [64] 16.02 : Copyright (c) 1999-2016 Igor Pavlov").unwrap()[1], "16.02");
     }
 
     #[test]
