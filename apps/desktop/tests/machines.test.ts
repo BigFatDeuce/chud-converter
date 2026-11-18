@@ -12,6 +12,7 @@ import {
   idle,
   installsAlongside,
   isFinal,
+  missingEngineFor,
   moveJob,
   startLoad,
   updateStep,
@@ -70,6 +71,8 @@ const engine = (over: Partial<EngineView>): EngineView => ({
   homepage: "https://ffmpeg.org",
   description: "",
   hint: "winget install Gyan.FFmpeg",
+  supported: true,
+  categories: ["video", "audio"],
   installable: { version: "9.0.2", size: 114768076, publisher: "gyan.dev", license: "GPL-3.0-or-later", page: "https://example.org" },
   previous: null,
   installing: false,
@@ -104,4 +107,17 @@ test("moteurs : confirmer avant d'agir, annuler seulement une installation", () 
   assert.equal(engineStep(op, { type: "succeeded" }), null);
   const un = engineStep(engineStep(null, { type: "ask", action: "uninstall" }), { type: "confirm" });
   assert.equal(engineStep(un, { type: "cancel" }), un, "une suppression ne s'annule pas à moitié");
+});
+
+test("fichier sans conversion : le moteur à installer est proposé seulement s'il sert et s'installe d'ici", () => {
+  const ff = engine({});
+  const doc = engine({ id: "pandoc", name: "Pandoc", supported: false, categories: ["document"] });
+  assert.equal(missingEngineFor("video", [doc, ff])?.id, "ffmpeg");
+  assert.equal(missingEngineFor("document", [doc, ff]), null, "pas encore pris en charge : rien à installer");
+  assert.equal(missingEngineFor("archive", [ff]), null);
+  assert.equal(missingEngineFor(null, [ff]), null);
+  assert.equal(missingEngineFor("video", null), null, "moteurs pas encore chargés");
+  assert.equal(missingEngineFor("video", [engine({ state: "ready", origin: "system" })]), null, "déjà prêt");
+  assert.equal(missingEngineFor("video", [engine({ installable: null })]), null, "pas de source ici");
+  assert.equal(missingEngineFor("video", [engine({ state: "disabled" })]), null, "désactivé par l'utilisateur");
 });

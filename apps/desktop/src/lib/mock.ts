@@ -61,6 +61,23 @@ const FAKE: Record<string, { info: FileInfo; targets: TargetView[] }> = {
       { format: "bmp", name: "BMP", category: "image", extension: "bmp", fidelity: "partial", headline: "Contenu sans perte, mais certaines informations ne seront pas conservées", lost: ["transparence"], engines: ["image"] },
     ],
   },
+  "D:\Exemple\photos.7z": {
+    info: {
+      path: "D:\Exemple\photos.7z",
+      name: "photos.7z",
+      size: 12_582_912,
+      isDir: false,
+      format: "7z",
+      formatName: "7-Zip",
+      category: "archive",
+      confidence: "certaine",
+      method: "signature",
+      extensionMismatch: false,
+      note: null,
+      error: null,
+    },
+    targets: [{ format: "zip", name: "ZIP", category: "archive", extension: "zip", fidelity: "lossless", headline: "Sans perte", lost: [], engines: ["7zip"] }],
+  },
 };
 
 const ENGINES: EngineView[] = [
@@ -76,6 +93,8 @@ const ENGINES: EngineView[] = [
     homepage: "https://ffmpeg.org",
     description: "Vidéo, audio, sous-titres (données fictives)",
     hint: null,
+    supported: true,
+    categories: ["video", "audio", "subtitle", "image"],
     installable: { version: "9.0.2", size: 114768076, publisher: "gyan.dev (fictif)", license: "GPL-3.0-or-later", page: "https://example.org" },
     previous: null,
     installing: false,
@@ -92,6 +111,8 @@ const ENGINES: EngineView[] = [
     homepage: "https://www.7-zip.org",
     description: "Archives : 7z, ZIP, RAR, TAR, GZ, XZ, ISO, CAB… (données fictives)",
     hint: "winget install 7zip.7zip",
+    supported: true,
+    categories: ["archive"],
     installable: { version: "26.06", size: 2259768, publisher: "Igor Pavlov (fictif)", license: "LGPL-2.1-or-later (+ restriction unRAR)", page: "https://example.org" },
     previous: null,
     installing: false,
@@ -107,7 +128,9 @@ const ENGINES: EngineView[] = [
     license: "GPL-2.0-or-later",
     homepage: "https://pandoc.org",
     description: "Documents (données fictives)",
-    hint: "winget install JohnMacFarlane.Pandoc --accept-source-agreements --accept-package-agreements --silent",
+    hint: "winget install JohnMacFarlane.Pandoc",
+    supported: false,
+    categories: ["document"],
     installable: null,
     previous: null,
     installing: false,
@@ -198,10 +221,14 @@ export function mockApi(): Api {
         if (installCancel) throw "installation annulée : rien n'a été installé (fictif)";
         for (const cb of installListeners) cb(id, { phase: "downloading", received: (total * i) / 20, total });
       }
-      for (const phase of ["verifying", "extracting", "checking"] as const) {
-        for (const cb of installListeners) cb(id, { phase });
-        await delay(null, 300);
+      for (const cb of installListeners) cb(id, { phase: "verifying" });
+      await delay(null, 300);
+      for (let i = 0; i <= 10; i++) {
+        for (const cb of installListeners) cb(id, { phase: "extracting", done: i, total: 10 });
+        await delay(null, 80);
       }
+      for (const cb of installListeners) cb(id, { phase: "checking" });
+      await delay(null, 300);
       Object.assign(e, { state: "ready", origin: "managed", version: e.installable!.version, path: `C:\\Exemple\\engines\\${id}\\${id}.exe` });
       return ENGINES.map((x) => ({ ...x }));
     },
@@ -244,7 +271,9 @@ export function mockApi(): Api {
     targets: (path) => {
       const f = FAKE[path];
       if (!f) return Promise.reject("format non reconnu");
-      const t: FileTargets = { path, source: f.info.format!, summary: [["Durée", "fictive"]], targets: f.targets };
+      // Comme le vrai moteur de règles : une cible n'existe que si ses moteurs sont prêts.
+      const usable = f.targets.filter((t) => t.engines.every((id) => (ENGINES.find((e) => e.id === id)?.state ?? "ready") === "ready"));
+      const t: FileTargets = { path, source: f.info.format!, summary: [["Durée", "fictive"]], targets: usable };
       return delay(t, 300);
     },
     plan: (req) => {

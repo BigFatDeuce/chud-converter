@@ -140,7 +140,11 @@ pub enum InstallProgress {
         total: u64,
     },
     Verifying,
-    Extracting,
+    /// `done` / `total` : avancement estimé (unités arbitraires) ; `total = 0` : inconnu.
+    Extracting {
+        done: u64,
+        total: u64,
+    },
     Checking,
 }
 
@@ -292,11 +296,12 @@ pub fn install(
     cleanup();
     let result = (|| {
         let files = download_all(src, &downloads, cancel, progress)?;
-        progress(InstallProgress::Extracting);
+        progress(InstallProgress::Extracting { done: 0, total: 0 });
         std::fs::create_dir_all(&partial).map_err(|e| io_err(tr!("création du dossier de version", "creating the version folder"), e))?;
+        let mut report = |done: u64, total: u64| progress(InstallProgress::Extracting { done, total });
         match src.method {
-            InstallMethod::Zip => extract_zip(&files[0], &partial, cancel)?,
-            InstallMethod::TarXz => extract_tar_xz(&files[0], &partial, cancel)?,
+            InstallMethod::Zip => extract_zip(&files[0], &partial, cancel, &mut report)?,
+            InstallMethod::TarXz => extract_tar_xz(&files[0], &partial, cancel, &mut report)?,
             InstallMethod::SevenzipSfx => extract_with_7zr(&files[0], &files[1], &partial)?,
         }
         check_tree(&partial)?;
@@ -454,12 +459,34 @@ impl Budget {
     }
 }
 
-fn extract_zip(archive: &Path, dest: &Path, cancel: &AtomicBool) -> Result<(), InstallError> {
+/// Avancement d'une extraction : (fait, total).
+type Report<'a> = &'a mut dyn FnMut(u64, u64);
+
+/// Lecteur qui compte les octets lus (avancement de la décompression).
+struct Counting<'a, R> {
+    inner: R,
+    n: u64,
+    total: u64,
+    report: Report<'a>,
+}
+
+impl<R: Read> Read for Counting<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let k = self.inner.read(buf)?;
+        self.n += k as u64;
+        (self.report)(self.n, self.total);
+        Ok(k)
+    }
+}
+
+fn extract_zip(archive: &Path, dest: &Path, cancel: &AtomicBool, report: Report) -> Result<(), InstallError> {
     let f = std::fs::File::open(archive).map_err(|e| io_err(tr!("ouverture de l'archive", "opening the archive"), e))?;
     let mut zip =
         zip::ZipArchive::new(f).map_err(|e| InstallError::Failed(trf!("archive ZIP illisible : {}", "unreadable ZIP archive: {}", e)))?;
     let mut budget = Budget::new();
+    let total: u64 = (0..zip.len()).filter_map(|i| zip.by_index_raw(i).ok().map(|e| e.size())).sum();
     for i in 0..zip.len() {
+        report(budget.bytes, total);
         if cancel.load(Ordering::Relaxed) {
             return Err(InstallError::Cancelled);
         }
@@ -489,6 +516,7 @@ fn extract_zip(archive: &Path, dest: &Path, cancel: &AtomicBool) -> Result<(), I
             std::fs::create_dir_all(parent).map_err(|e| io_err(tr!("extraction", "extraction"), e))?;
         }
         budget.copy(&mut entry, &target)?;
+        report(budget.bytes, total);
         #[cfg(unix)]
         if let Some(mode) = entry.unix_mode() {
             use std::os::unix::fs::PermissionsExt;
@@ -498,29 +526,61 @@ fn extract_zip(archive: &Path, dest: &Path, cancel: &AtomicBool) -> Result<(), I
     Ok(())
 }
 
-/// Écrivain borné, pour décompresser le XZ sans pouvoir remplir la mémoire.
-struct Bounded(Vec<u8>);
+/// Écrivain borné vers un fichier : le XZ est décompressé sur le disque (FFmpeg pour Linux fait
+/// environ 450 Mo une fois décompressé), sans pouvoir dépasser la taille autorisée, et
+/// l'annulation est prise en compte pendant la décompression.
+struct Bounded<'a> {
+    file: std::io::BufWriter<std::fs::File>,
+    written: u64,
+    cancel: &'a AtomicBool,
+}
 
-impl Write for Bounded {
+impl Write for Bounded<'_> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if self.0.len() as u64 + buf.len() as u64 > MAX_EXTRACTED.min(512 * 1024 * 1024) {
+        if self.cancel.load(Ordering::Relaxed) {
+            return Err(std::io::Error::other("annulé / cancelled"));
+        }
+        if self.written + buf.len() as u64 > MAX_EXTRACTED {
             return Err(std::io::Error::other("trop volumineux / too large"));
         }
-        self.0.extend_from_slice(buf);
+        self.written += buf.len() as u64;
+        self.file.write_all(buf)?;
         Ok(buf.len())
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+        self.file.flush()
     }
 }
 
-fn extract_tar_xz(archive: &Path, dest: &Path, cancel: &AtomicBool) -> Result<(), InstallError> {
+/// Avancement : la décompression compte pour les neuf dixièmes (c'est le plus long), l'écriture
+/// des fichiers pour le reste.
+fn extract_tar_xz(archive: &Path, dest: &Path, cancel: &AtomicBool, report: Report) -> Result<(), InstallError> {
+    const SCALE: u64 = 1000;
     let f = std::fs::File::open(archive).map_err(|e| io_err(tr!("ouverture de l'archive", "opening the archive"), e))?;
-    let mut tar_bytes = Bounded(Vec::new());
-    lzma_rs::xz_decompress(&mut std::io::BufReader::new(f), &mut tar_bytes)
-        .map_err(|e| InstallError::Failed(trf!("archive XZ illisible : {}", "unreadable XZ archive: {}", e)))?;
-    let mut tar = tar::Archive::new(&tar_bytes.0[..]);
+    let xz_size = f.metadata().map(|m| m.len()).unwrap_or(0).max(1);
+    // Fichier intermédiaire dans le dossier des téléchargements (supprimé avec lui).
+    let tar_path = archive.with_extension("tar");
+    let out = std::fs::File::create(&tar_path).map_err(|e| io_err(tr!("extraction", "extraction"), e))?;
+    let mut sink = Bounded { file: std::io::BufWriter::new(out), written: 0, cancel };
+    let mut last = u64::MAX;
+    let mut on_read = |n: u64, total: u64| {
+        let done = n.min(total) * 900 / total;
+        if done != last {
+            last = done;
+            report(done, SCALE);
+        }
+    };
+    let counting = Counting { inner: f, n: 0, total: xz_size, report: &mut on_read };
+    let r = lzma_rs::xz_decompress(&mut std::io::BufReader::new(counting), &mut sink).and_then(|_| sink.flush().map_err(Into::into));
+    let tar_size = sink.written.max(1);
+    drop(sink);
+    if cancel.load(Ordering::Relaxed) {
+        return Err(InstallError::Cancelled);
+    }
+    r.map_err(|e| InstallError::Failed(trf!("archive XZ illisible : {}", "unreadable XZ archive: {}", e)))?;
+    let tar_file = std::fs::File::open(&tar_path).map_err(|e| io_err(tr!("extraction", "extraction"), e))?;
+    let mut tar = tar::Archive::new(std::io::BufReader::new(tar_file));
     let mut budget = Budget::new();
     let entries = tar.entries().map_err(|e| InstallError::Failed(trf!("archive TAR illisible : {}", "unreadable TAR archive: {}", e)))?;
     for entry in entries {
@@ -545,6 +605,7 @@ fn extract_tar_xz(archive: &Path, dest: &Path, cancel: &AtomicBool) -> Result<()
                 }
                 let mode = entry.header().mode().unwrap_or(0o644);
                 budget.copy(&mut entry, &target)?;
+                report(900 + budget.bytes.min(tar_size) * 100 / tar_size, SCALE);
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
@@ -565,6 +626,8 @@ fn extract_tar_xz(archive: &Path, dest: &Path, cancel: &AtomicBool) -> Result<()
             }
         }
     }
+    // Les en-têtes du tar comptent dans sa taille : la fin est annoncée explicitement.
+    report(SCALE, SCALE);
     Ok(())
 }
 
@@ -785,16 +848,85 @@ mod tests {
         std::fs::write(&ok, zip_with(&[("pkg/bin/tool.txt", b"hello")])).unwrap();
         let dest = dir.join("out");
         std::fs::create_dir_all(&dest).unwrap();
-        extract_zip(&ok, &dest, &AtomicBool::new(false)).unwrap();
+        extract_zip(&ok, &dest, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
         assert_eq!(std::fs::read(dest.join("pkg/bin/tool.txt")).unwrap(), b"hello");
 
         let bad = dir.join("bad.zip");
         std::fs::write(&bad, zip_with(&[("../evil.txt", b"x")])).unwrap();
         let dest2 = dir.join("out2");
         std::fs::create_dir_all(&dest2).unwrap();
-        assert!(extract_zip(&bad, &dest2, &AtomicBool::new(false)).is_err());
+        assert!(extract_zip(&bad, &dest2, &AtomicBool::new(false), &mut |_, _| {}).is_err());
         assert!(!dir.join("evil.txt").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn tar_xz_with(name: &str, data: &[u8]) -> Vec<u8> {
+        let mut tar = tar::Builder::new(Vec::new());
+        let mut h = tar::Header::new_gnu();
+        h.set_size(data.len() as u64);
+        h.set_mode(0o755);
+        h.set_cksum();
+        tar.append_data(&mut h, name, data).unwrap();
+        let tar = tar.into_inner().unwrap();
+        let mut out = Vec::new();
+        lzma_rs::xz_compress(&mut &tar[..], &mut out).unwrap();
+        out
+    }
+
+    #[test]
+    fn tar_xz_extraction_streams_to_disk_and_refuses_escapes() {
+        let dir = std::env::temp_dir().join(format!("chud-install-txz-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let ok = dir.join("ok.tar.xz");
+        std::fs::write(&ok, tar_xz_with("pkg/bin/tool", b"#!/bin/sh\n")).unwrap();
+        let dest = dir.join("out");
+        std::fs::create_dir_all(&dest).unwrap();
+        let mut seen = Vec::new();
+        extract_tar_xz(&ok, &dest, &AtomicBool::new(false), &mut |d, t| seen.push((d, t))).unwrap();
+        assert_eq!(seen.last(), Some(&(1000, 1000)), "avancement jusqu'au bout : {seen:?}");
+        assert!(seen.windows(2).all(|w| w[0].0 <= w[1].0), "avancement croissant");
+        assert_eq!(std::fs::read(dest.join("pkg/bin/tool")).unwrap(), b"#!/bin/sh\n");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(dest.join("pkg/bin/tool")).unwrap().permissions().mode() & 0o777, 0o755);
+        }
+        // Le tar ne permet pas d'écrire « ../ » avec l'API normale : en-tête modifié à la main.
+        let mut raw = tar::Builder::new(Vec::new());
+        let mut h = tar::Header::new_gnu();
+        h.as_mut_bytes()[..9].copy_from_slice(b"../evil\0\0");
+        h.set_size(1);
+        h.set_cksum();
+        raw.append(&h, &b"x"[..]).unwrap();
+        let raw = raw.into_inner().unwrap();
+        let mut xz = Vec::new();
+        lzma_rs::xz_compress(&mut &raw[..], &mut xz).unwrap();
+        let bad = dir.join("bad.tar.xz");
+        std::fs::write(&bad, xz).unwrap();
+        let dest2 = dir.join("out2");
+        std::fs::create_dir_all(&dest2).unwrap();
+        assert!(extract_tar_xz(&bad, &dest2, &AtomicBool::new(false), &mut |_, _| {}).is_err());
+        assert!(!dir.join("evil").exists());
+        // Annulation pendant la décompression.
+        assert!(matches!(extract_tar_xz(&ok, &dest2, &AtomicBool::new(true), &mut |_, _| {}), Err(InstallError::Cancelled)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Temps réel sur une vraie archive : `CHUD_TEST_TARXZ=<fichier> cargo test … -- --ignored`.
+    #[test]
+    #[ignore = "archive fournie à la main"]
+    fn tar_xz_real_archive() {
+        let Some(p) = std::env::var_os("CHUD_TEST_TARXZ") else { return };
+        let dest = std::env::temp_dir().join(format!("chud-install-txz-real-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dest);
+        std::fs::create_dir_all(&dest).unwrap();
+        let t = std::time::Instant::now();
+        extract_tar_xz(Path::new(&p), &dest, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
+        check_tree(&dest).unwrap();
+        eprintln!("extraction : {:.1} s", t.elapsed().as_secs_f64());
+        assert!(find_exe(&dest, "ffmpeg").or_else(|| find_exe(&dest, "7zz")).is_some() || cfg!(windows));
+        let _ = std::fs::remove_dir_all(&dest);
     }
 
     #[test]
@@ -824,6 +956,8 @@ mod tests {
             homepage: String::new(),
             description: String::new(),
             hint: None,
+            supported: true,
+            categories: vec!["video".into()],
             installable: None,
             previous: None,
         };

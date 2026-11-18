@@ -1,6 +1,7 @@
 <script lang="ts">
   import { L } from "../i18n.svelte";
   import Icon from "./Icon.svelte";
+  import { tick } from "svelte";
   import { store } from "../store.svelte";
   import { api, errorText } from "../api";
   import { formatSize } from "../format";
@@ -24,9 +25,11 @@
 
   const order: EngineState[] = ["ready", "no_adapter", "broken", "disabled", "missing"];
   const sorted = $derived([...(store.engines ?? [])].sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state)));
-  const ready = $derived(sorted.filter((e) => e.state === "ready").length);
-
-  let copied = $state<string | null>(null);
+  // Les moteurs dont Chud Converter sait se servir ; les autres sont seulement annoncés, sans
+  // jamais pousser à les installer (rien ne les utiliserait encore).
+  const used = $derived(sorted.filter((e) => e.supported));
+  const soon = $derived(sorted.filter((e) => !e.supported));
+  const ready = $derived(used.filter((e) => e.state === "ready").length);
 
   function progressText(e: EngineView, p: InstallProgress | null): string {
     if (!p) return L("Préparation…", "Preparing…");
@@ -36,7 +39,7 @@
       case "verifying":
         return L("Vérification de l'empreinte SHA-256…", "Checking the SHA-256 fingerprint…");
       case "extracting":
-        return L("Extraction…", "Extracting…");
+        return p.total ? L(`Extraction : ${Math.round((p.done * 100) / p.total)} %`, `Extracting: ${Math.round((p.done * 100) / p.total)}%`) : L("Extraction…", "Extracting…");
       case "checking":
         return L(`Essai de ${e.name}…`, `Trying ${e.name}…`);
     }
@@ -55,16 +58,18 @@
     return L("Le retour en arrière a échoué.", "Going back failed.");
   }
 
-  async function copy(e: EngineView) {
-    if (!e.hint) return;
-    try {
-      await navigator.clipboard.writeText(e.hint);
-      copied = e.id;
-      setTimeout(() => (copied = null), 1500);
-    } catch {
-      store.say(L("Copie impossible : sélectionnez la commande à la main.", "Copy failed: select the command by hand."));
-    }
-  }
+  // Arrivée depuis la liste des fichiers : la carte du moteur est montrée et sa confirmation
+  // reçoit le focus (clavier, lecteurs d'écran).
+  $effect(() => {
+    const id = store.focusEngine;
+    if (!id || !store.engines) return;
+    void tick().then(() => {
+      const card = document.querySelector<HTMLElement>(`[data-engine="${CSS.escape(id)}"]`);
+      card?.scrollIntoView({ block: "center" });
+      card?.querySelector<HTMLButtonElement>(".op.confirm .btn.primary")?.focus();
+      store.focusEngine = null;
+    });
+  });
 
   async function open(url: string) {
     try {
@@ -102,9 +107,9 @@
   {/if}
 
   {#if store.engines}
-    <p class="muted small">{L(`${ready} moteur${ready > 1 ? "s" : ""} prêt${ready > 1 ? "s" : ""} sur ${sorted.length} connus.`, `${ready} of ${sorted.length} known engines ready.`)}</p>
+    <p class="muted small">{L(`${ready} moteur${ready > 1 ? "s" : ""} prêt${ready > 1 ? "s" : ""} sur ${used.length}.`, `${ready} of ${used.length} engines ready.`)}</p>
     <div class="grid">
-      {#each sorted as e (e.id)}
+      {#each used as e (e.id)}
         {@const op = store.engineOps[e.id] ?? null}
         {@const actions = engineActions(e)}
         {@const offer = e.installable}
@@ -130,9 +135,6 @@
             <dd>{e.license}</dd>
           </dl>
           {#if e.problem}<p class="bad selectable">{e.problem}</p>{/if}
-          {#if e.state === "no_adapter"}
-            <p class="faint small">{L("Trouvé sur votre ordinateur ; son intégration arrive dans une prochaine version.", "Found on your computer; support for it comes in a future version.")}</p>
-          {/if}
           {#if op?.state === "confirming"}
             <div class="op confirm" role="group" aria-label={L("Confirmation", "Confirmation")}>
               {#if op.action === "install" && offer}
@@ -173,11 +175,16 @@
               </div>
             </div>
           {:else if op?.state === "running"}
-            {@const fraction = op.progress?.phase === "downloading" ? op.progress.received / Math.max(1, op.progress.total) : null}
+            {@const fraction =
+              op.progress?.phase === "downloading"
+                ? op.progress.received / Math.max(1, op.progress.total)
+                : op.progress?.phase === "extracting" && op.progress.total
+                  ? op.progress.done / op.progress.total
+                  : null}
             <div class="op running" aria-live="polite">
               <span class="small">{runningText(e, op)}</span>
               {#if fraction !== null}
-                <progress max="1" value={fraction} aria-label={L(`Téléchargement de ${e.name}`, `Downloading ${e.name}`)}></progress>
+                <progress max="1" value={fraction} aria-label={runningText(e, op)}></progress>
               {:else}
                 <progress aria-label={L(`${e.name} : opération en cours`, `${e.name}: operation in progress`)}></progress>
               {/if}
@@ -220,18 +227,13 @@
               {/if}
             </div>
           {/if}
-          {#if e.hint && (e.state === "missing" || e.state === "broken") && op?.state !== "running"}
-            {#if offer}
-              <details class="hint">
-                <summary class="small muted">{L("Ou avec le gestionnaire de paquets de votre système", "Or with your system's package manager")}</summary>
-                {@render command(e)}
-              </details>
-            {:else}
-              <div class="hint">
-                <span class="small muted">{L("Pour l'installer avec le gestionnaire de paquets de votre système :", "To install it with your system's package manager:")}</span>
-                {@render command(e)}
-              </div>
-            {/if}
+          {#if !offer && (e.state === "missing" || e.state === "broken") && !op}
+            <p class="faint small">
+              {L(
+                "Chud Converter ne sait pas encore l'installer lui-même sur ce système : téléchargez-le depuis son site officiel, puis « Rechercher à nouveau ».",
+                "Chud Converter cannot install it by itself on this system yet: download it from its official website, then “Search again”.",
+              )}
+            </p>
           {/if}
           <button class="link" onclick={() => open(e.homepage)}>
             {L("Site officiel", "Official website")} <Icon name="external" size={12} />
@@ -239,19 +241,36 @@
         </article>
       {/each}
     </div>
+    {#if soon.length}
+      <section class="soon" aria-labelledby="soon-title">
+        <h2 id="soon-title">{L("Bientôt pris en charge", "Coming soon")}</h2>
+        <p class="muted small">
+          {L(
+            "Chud Converter ne sait pas encore se servir de ces logiciels : il n'y a rien à installer pour l'instant. Ceux déjà présents sur votre ordinateur sont repérés et serviront dès qu'une prochaine version les prendra en charge.",
+            "Chud Converter cannot use these programs yet: there is nothing to install for now. Those already on your computer are noted and will be used as soon as a future version supports them.",
+          )}
+        </p>
+        <ul>
+          {#each soon as e (e.id)}
+            <li data-engine={e.id} data-state={e.state}>
+              <span class="name">{e.name}</span>
+              <span class="faint small desc-soon">{e.description}</span>
+              {#if e.state !== "missing"}
+                <span class="found small">{L("Trouvé sur votre ordinateur", "Found on your computer")}{e.version ? ` (${e.version})` : ""}</span>
+              {/if}
+              <button class="link small" aria-label={L(`Site officiel de ${e.name}`, `${e.name} official website`)} onclick={() => open(e.homepage)}>
+                {L("Site officiel", "Official website")} <Icon name="external" size={12} />
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
   {:else if store.enginesLoad.state === "loading"}
     <p class="muted">{L("Recherche des moteurs installés…", "Looking for installed engines…")}</p>
   {/if}
 </div>
 
-{#snippet command(e: EngineView)}
-  <div class="cmd">
-    <code class="selectable">{e.hint}</code>
-    <button class="icon-btn" title={L("Copier", "Copy")} aria-label={L("Copier la commande", "Copy the command")} onclick={() => copy(e)}>
-      <Icon name={copied === e.id ? "check" : "copy"} size={14} />
-    </button>
-  </div>
-{/snippet}
 
 <style>
   .page {
@@ -384,19 +403,6 @@
     flex: none;
   }
 
-  .hint {
-    display: grid;
-    gap: 4px;
-  }
-
-  details.hint summary {
-    cursor: pointer;
-  }
-
-  details.hint[open] summary {
-    margin-bottom: 4px;
-  }
-
   .row {
     display: flex;
     flex-wrap: wrap;
@@ -437,26 +443,46 @@
     justify-self: start;
   }
 
-  .cmd {
+  .soon {
+    display: grid;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .soon ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 2px;
+  }
+
+  .soon li {
     display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 4px 4px 10px;
-    border-radius: var(--radius-sm);
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-  }
-
-  .cmd code {
-    flex: 1;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    padding: 6px 2px;
+    border-bottom: 1px solid var(--border);
     min-width: 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    font-size: 12px;
   }
 
-  .cmd .icon-btn {
-    flex: none;
+  .soon .name {
+    font-weight: 600;
+    font-size: 13.5px;
+  }
+
+  .soon .desc-soon {
+    flex: 1;
+    min-width: 160px;
+  }
+
+  .soon .found {
+    color: var(--partial);
+  }
+
+  .soon .link {
+    margin-top: 0;
   }
 
   .link {

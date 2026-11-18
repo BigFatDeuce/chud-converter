@@ -105,7 +105,12 @@ export interface EngineView {
   license: string;
   homepage: string;
   description: string;
+  /** Commande pour la ligne de commande ; l'interface ne l'affiche jamais (tout s'installe d'ici). */
   hint: string | null;
+  /** Chud Converter sait se servir de ce moteur (sinon : intégration à venir). */
+  supported: boolean;
+  /** Familles de fichiers traitées : video, audio, image, archive… */
+  categories: string[];
   /** Paquet que Chud Converter sait installer lui-même sur cette plateforme. */
   installable: InstallOffer | null;
   /** Version précédente d'une installation gérée (retour en arrière possible). */
@@ -128,7 +133,8 @@ export interface InstallOffer {
 export type InstallProgress =
   | { phase: "downloading"; received: number; total: number }
   | { phase: "verifying" }
-  | { phase: "extracting" }
+  /** `total = 0` : avancement inconnu. */
+  | { phase: "extracting"; done: number; total: number }
   | { phase: "checking" };
 
 /** Nouvelle version publiée. */

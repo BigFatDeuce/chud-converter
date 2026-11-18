@@ -345,8 +345,13 @@ pub struct EngineStatus {
     pub license: String,
     pub homepage: String,
     pub description: String,
-    /// Commande d'installation suggérée (affichée, jamais exécutée sans accord).
+    /// Commande d'installation suggérée, pour la ligne de commande seulement (l'application
+    /// installe elle-même, ADR-022).
     pub hint: Option<String>,
+    /// Chud Converter sait se servir de ce moteur (un adaptateur existe).
+    pub supported: bool,
+    /// Familles de fichiers traitées (video, audio, archive…).
+    pub categories: Vec<String>,
     /// Ce que Chud Converter peut installer lui-même sur cette plateforme.
     pub installable: Option<InstallOffer>,
     /// Version précédente d'une installation gérée, gardée pour revenir en arrière.
@@ -575,6 +580,8 @@ impl EngineManager {
             homepage: m.homepage.clone(),
             description: m.description_l().to_owned(),
             hint: m.hint().map(str::to_owned),
+            supported: m.adapter != "none",
+            categories: m.categories.clone(),
             installable: InstallOffer::from_manifest(m),
             previous: install::previous_version(&self.paths, &m.id),
         };

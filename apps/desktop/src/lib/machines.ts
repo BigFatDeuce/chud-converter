@@ -149,6 +149,17 @@ export function engineActions(e: EngineView): EngineAction[] {
   return out;
 }
 
+/** Moteur que Chud Converter peut installer d'ici pour traiter une famille de fichiers qui n'a
+ *  aucune conversion possible : pris en charge, installable sur cette plateforme, pas prêt. */
+export function missingEngineFor(category: string | null, engines: readonly EngineView[] | null): EngineView | null {
+  if (!category || !engines) return null;
+  return (
+    engines.find(
+      (e) => e.supported && e.state !== "ready" && e.state !== "disabled" && e.categories.includes(category) && engineActions(e).includes("install"),
+    ) ?? null
+  );
+}
+
 export function engineStep(op: EngineOp | null, e: EngineOpEvent): EngineOp | null {
   switch (e.type) {
     case "ask":

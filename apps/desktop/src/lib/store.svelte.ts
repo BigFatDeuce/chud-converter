@@ -177,6 +177,10 @@ class Store {
 
   /** Moteurs détectés (machine `Load` : la dernière liste reste affichée pendant une recherche). */
   enginesLoad = $state<Load<EngineView[]>>(idle());
+  /** Moteur à faire défiler jusqu'à l'écran à l'ouverture des Moteurs. */
+  focusEngine = $state<string | null>(null);
+  /** Installation proposée depuis un autre écran : on y revient une fois le moteur prêt. */
+  #returnAfterInstall: { id: string; view: View } | null = null;
   engines = $derived(current(this.enginesLoad));
   /** Opérations sur les moteurs (installation, retrait, retour en arrière), par identifiant. */
   engineOps = $state<Record<string, EngineOp>>({});
@@ -792,6 +796,16 @@ class Store {
 
   dismissEngine(id: string) {
     this.#engine(id, { type: "dismiss" });
+    if (this.#returnAfterInstall?.id === id) this.#returnAfterInstall = null;
+  }
+
+  /** Depuis la liste des fichiers : ouvre les Moteurs sur la confirmation d'installation, et
+   *  revient à l'écran de départ quand le moteur est prêt. Rien n'est lancé sans accord. */
+  offerEngine(id: string) {
+    this.#returnAfterInstall = { id, view: this.view };
+    this.focusEngine = id;
+    this.view = "engines";
+    this.askEngine(id, "install");
   }
 
   /** L'utilisateur a confirmé : l'action est lancée. */
@@ -818,6 +832,9 @@ class Store {
             : L(`${name} est revenu à la version ${e?.version ?? ""}.`, `${name} is back to version ${e?.version ?? ""}.`),
       );
       await this.#afterEnginesChanged();
+      const back = this.#returnAfterInstall;
+      this.#returnAfterInstall = null;
+      if (action === "install" && back?.id === id && this.view === "engines" && e?.state === "ready") this.view = back.view;
     } catch (err) {
       const cur = this.engineOps[id];
       if (cur?.state === "running" && cur.cancelling) {

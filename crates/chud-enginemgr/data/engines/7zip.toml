@@ -48,3 +48,14 @@ page = "https://github.com/ip7z/7zip/releases/tag/26.06"
 files = [
   { url = "https://github.com/ip7z/7zip/releases/download/26.06/7z2606-linux-x64.tar.xz", sha256 = "2b539cf067b2ad48e1baa5093dbaa8818b73542d1222a0ffde9dc5f2922ea62e", size = 1575552 },
 ]
+
+[[install]]
+platform = "linux-aarch64"
+version = "26.06"
+method = "tar-xz"
+publisher = "Igor Pavlov, auteur de 7-Zip (publication officielle)"
+publisher_en = "Igor Pavlov, author of 7-Zip (official release)"
+page = "https://github.com/ip7z/7zip/releases/tag/26.06"
+files = [
+  { url = "https://github.com/ip7z/7zip/releases/download/26.06/7z2606-linux-arm64.tar.xz", sha256 = "edcc408aacce77da5223728f2eceb5e9f6dc713b8a9df934ad21e2a7f7560627", size = 1326668 },
+]

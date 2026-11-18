@@ -19,6 +19,8 @@ fn install_and_check(id: &str) {
     let mgr = EngineManager::new(paths.clone()).unwrap();
     let m = mgr.manifests().iter().find(|m| m.id == id).unwrap().clone();
     if m.install_source().is_none() {
+        // En CI, chaque plateforme proposée doit avoir sa source : une absence est une erreur.
+        assert!(std::env::var_os("CHUD_REQUIRE_SOURCE").is_none(), "{id} : pas de source pour {}", install::current_platform());
         eprintln!("{id} : pas de source pour cette plateforme");
         return;
     }
@@ -27,7 +29,7 @@ fn install_and_check(id: &str) {
         let name = match p {
             InstallProgress::Downloading { .. } => "downloading",
             InstallProgress::Verifying => "verifying",
-            InstallProgress::Extracting => "extracting",
+            InstallProgress::Extracting { .. } => "extracting",
             InstallProgress::Checking => "checking",
         };
         if phases.last() != Some(&name) {

@@ -3,6 +3,7 @@
   import Icon from "./Icon.svelte";
   import { store } from "../store.svelte";
   import { categoryLabel, formatSize } from "../format";
+  import { missingEngineFor } from "../machines";
 
   const usable = $derived(store.files.filter((f) => f.info.format && !f.info.error));
   const allChecked = $derived(usable.length > 0 && usable.every((f) => f.checked));
@@ -67,8 +68,16 @@
                 {:else if f.analysis.state === "failed"}
                   <span class="bad" title={f.analysis.error}><Icon name="alert" size={13} /> {f.analysis.error}</span>
                 {:else if f.analysis.state === "ready" && !f.analysis.targets.targets.length}
+                  {@const need = missingEngineFor(i.category, store.engines)}
                   <span class="warn">{L("aucune conversion possible avec les moteurs installés", "no conversion possible with the installed engines")}</span>
-                  <button class="link-inline" onclick={() => (store.view = "engines")}>{L("voir les moteurs", "see the engines")}</button>
+                  {#if need?.installable}
+                    <button class="link-inline strong" data-offer={need.id} onclick={() => store.offerEngine(need.id)}>
+                      <Icon name="download" size={12} />
+                      {L(`installer ${need.name} (${formatSize(need.installable.size)})`, `install ${need.name} (${formatSize(need.installable.size)})`)}
+                    </button>
+                  {:else}
+                    <button class="link-inline" onclick={() => (store.view = "engines")}>{L("voir les moteurs", "see the engines")}</button>
+                  {/if}
                 {/if}
               {/if}
             </div>
@@ -214,6 +223,13 @@
     padding: 0;
     color: var(--link);
     font-size: inherit;
+  }
+
+  .link-inline.strong {
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
   }
 
   .link-inline:hover {

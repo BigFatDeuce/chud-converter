@@ -1,0 +1,48 @@
+name: Sources des moteurs
+
+# Installe réellement FFmpeg et 7-Zip depuis les adresses figées dans les manifestes, sur chaque
+# plateforme proposée dans l'application : une source retirée ou modifiée (empreinte SHA-256
+# différente) est repérée avant qu'un utilisateur ne tombe dessus. Voir ADR-022.
+on:
+  schedule:
+    - cron: "17 5 * * 1"
+  push:
+    branches: [main]
+    paths:
+      - "crates/chud-enginemgr/data/engines/**"
+      - "crates/chud-enginemgr/src/install.rs"
+      - ".github/workflows/engine-sources.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: engine-sources-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CHUD_REQUIRE_SOURCE: "1"
+
+jobs:
+  install:
+    name: Installation réelle (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: engine-sources
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Téléchargement, vérification, extraction, essai, retrait
+        run: cargo test -p chud-enginemgr --test install_real -- --ignored --test-threads=1 --nocapture

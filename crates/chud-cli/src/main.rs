@@ -337,7 +337,10 @@ fn engine_action(action: EngineAction, json: bool) -> Result<i32> {
                     chud_enginemgr::InstallProgress::Verifying => {
                         tr!("vérification de l'empreinte SHA-256…", "checking the SHA-256…").into()
                     }
-                    chud_enginemgr::InstallProgress::Extracting => tr!("extraction…", "extracting…").into(),
+                    chud_enginemgr::InstallProgress::Extracting { done, total } if total > 0 => {
+                        trf!("extraction… {} %", "extracting… {} %", done * 100 / total)
+                    }
+                    chud_enginemgr::InstallProgress::Extracting { .. } => tr!("extraction…", "extracting…").into(),
                     chud_enginemgr::InstallProgress::Checking => tr!("essai du moteur…", "trying the engine…").into(),
                 };
                 if line != last {

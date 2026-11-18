@@ -248,7 +248,8 @@ jamais écrasé : le changement est refusé et l'erreur affichée.
 ## ADR-022 — Installer les moteurs depuis l'application
 
 **Contexte.** Demander d'ouvrir un terminal et de taper `winget install …` décourage la plupart
-des utilisateurs (2026-11-18 : « il faut que ce soit simple à utiliser »).
+des utilisateurs (2026-11-18 : « il faut que ce soit simple à utiliser », puis « tout doit se
+faire depuis notre logiciel »).
 
 **Décision.** FFmpeg et 7-Zip s'installent d'un clic dans l'écran Moteurs (et par
 `chud engines install`). La source de chaque paquet (adresse HTTPS, taille, SHA-256) est figée
@@ -270,8 +271,25 @@ indépendant (ADR-007) reste prévu pour suivre les moteurs entre deux versions 
   commande). Elle est alors utilisée en priorité ; la retirer rend la main à celle du système.
   Un chemin choisi par l'utilisateur passe avant tout : aucune copie n'est alors proposée.
   Règle unique pour l'application et la CLI : `install::check_allowed`.
-- La commande du gestionnaire de paquets reste affichée en second choix, et seule pour les
-  moteurs sans paquet vérifié (FFmpeg sous Linux, Pandoc, LibreOffice…).
+- **Aucune commande à taper ou à copier dans l'application** (2026-11-18 : « je ne veux pas que
+  l'utilisateur ait à copier/coller un lien dans son terminal »). Les commandes des
+  gestionnaires de paquets ne restent que dans `chud engines`, pour qui utilise déjà la ligne
+  de commande.
+- FFmpeg pour Linux (x86_64, ARM64) : compilation GPL de BtbN (citée par ffmpeg.org), prise
+  dans une publication de **fin de mois** (`autobuild-AAAA-MM-JJ-…`), conservée environ deux
+  ans, et non dans « latest » qui change chaque jour. johnvansickle.com écarté : adresse
+  mouvante, version ancienne. L'archive .tar.xz (≈ 540 Mo décompressée) est extraite en flux
+  vers le disque, avec progression, plafond de 2 Gio, liens et chemins sortants refusés.
+- Les moteurs connus que Chud Converter ne sait pas encore utiliser (Pandoc, LibreOffice…) sont
+  rangés à part, « Bientôt pris en charge », sans bouton d'installation : rien ne s'en
+  servirait encore.
+- Un fichier sans conversion possible propose directement le moteur qui manque (« installer
+  FFmpeg (110 Mo) ») ; la confirmation s'ouvre dans l'écran Moteurs, puis l'application revient
+  à la conversion, le fichier toujours sélectionné.
+- Le flux `.github/workflows/engine-sources.yml` installe réellement chaque moteur sur chaque
+  plateforme proposée (Windows, Linux x86_64, Linux ARM64) chaque semaine et à chaque
+  changement de source : une adresse retirée ou une empreinte modifiée est repérée avant les
+  utilisateurs.
 
 ## ADR-021 — Publication et mise à jour de l'application
 **Statut : Acceptée** (précise ADR-015)

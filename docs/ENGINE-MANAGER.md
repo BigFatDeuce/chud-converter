@@ -64,7 +64,8 @@ Le chemin absolu résolu est conservé ; l'exécution ne refait jamais de recher
     install.json                origine, URL, SHA-256, date, taille, licence
 ```
 
-**Implémenté (0.1.2, ADR-022)** pour FFmpeg (Windows) et 7-Zip (Windows, Linux) : écran Moteurs
+**Implémenté (0.1.2, ADR-022)** pour FFmpeg et 7-Zip, sous Windows x86_64, Linux x86_64 et
+Linux ARM64 : écran Moteurs
 → « Installer », ou `chud engines install ffmpeg|7zip`. La source (adresse HTTPS, taille,
 SHA-256) est écrite dans la section `[[install]]` du manifeste, intégré au programme signé :
 
@@ -155,7 +156,9 @@ deux systèmes, deux écrans, deux réglages (ADR-015).
 | Manifestes, détection (Custom/Managed/connus/PATH), sonde de version | ✅ implémenté et testé |
 | Sonde de capacités FFmpeg / 7-Zip | ✅ implémenté et testé |
 | Désactivation d'un moteur | ✅ (registre) |
-| Téléchargement, vérification SHA-256, extraction contrôlée, essai, installation versionnée (FFmpeg Windows, 7-Zip Windows/Linux) | ✅ 0.1.2 (`install.rs`, tests `install_real.rs` lancés à la main : réseau) |
+| Téléchargement, vérification SHA-256, extraction contrôlée, essai, installation versionnée (FFmpeg et 7-Zip : Windows x86_64, Linux x86_64 et ARM64) | ✅ 0.1.2 (`install.rs` ; installations réelles `install_real.rs` chaque semaine en CI, `engine-sources.yml`) |
 | Retrait, retour à la version précédente, mise à jour vers la version du manifeste | ✅ 0.1.2 (écran Moteurs, `chud engines uninstall|rollback`) |
-| FFmpeg pour Linux et macOS | ⏳ pas de compilation officielle versionnée et permanente : commande du gestionnaire de paquets affichée |
+| FFmpeg pour Linux | ✅ 0.1.2 (BtbN, publication de fin de mois, .tar.xz extrait en flux) |
+| Aucune commande à copier dans l'application ; moteurs pas encore utilisés rangés à part ; moteur manquant proposé depuis la liste des fichiers | ✅ 0.1.2 |
+| macOS, Windows ARM64 | ⏳ pas de source vérifiée : lien vers le site officiel seulement |
 | Index signé (versions entre deux versions de l'application), canaux, épinglage, conversion de test | ⏳ |

@@ -48,6 +48,7 @@ pub async fn engine_install(handle: AppHandle, app: Shared<'_>, id: String, alon
             // Pas plus d'un événement par pour cent : la fenêtre n'est pas inondée.
             let key = match &p {
                 chud_enginemgr::InstallProgress::Downloading { received, total } => Some(received * 100 / (*total).max(1)),
+                chud_enginemgr::InstallProgress::Extracting { done, total } if *total > 0 => Some(1000 + done * 100 / total),
                 _ => None,
             };
             if key.is_some() && key == last {

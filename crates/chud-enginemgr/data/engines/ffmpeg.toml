@@ -35,3 +35,30 @@ page = "https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2"
 files = [
   { url = "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip", sha256 = "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba", size = 114768076 },
 ]
+
+# Linux : compilations statiques de BtbN (FFmpeg-Builds, citées par ffmpeg.org), branche 9.0.
+# Publication de fin de mois, conservée environ deux ans : chaque version de Chud Converter
+# remet l'adresse à jour. Taille et SHA-256 relevés sur la publication GitHub.
+[[install]]
+platform = "linux-x86_64"
+version = "9.0.2"
+method = "tar-xz"
+publisher = "BtbN (FFmpeg-Builds), compilation statique citée par ffmpeg.org"
+publisher_en = "BtbN (FFmpeg-Builds), a static build listed by ffmpeg.org"
+license = "GPL-3.0-or-later"
+page = "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-10-31-12-59"
+files = [
+  { url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-31-12-59/ffmpeg-n9.0.2-39-g7adfbe40dc-linux64-gpl-9.0.tar.xz", sha256 = "73e29a56974ae5a651133a04584c7483b21afe941e17dc91d79814a758b608d3", size = 153175100 },
+]
+
+[[install]]
+platform = "linux-aarch64"
+version = "9.0.2"
+method = "tar-xz"
+publisher = "BtbN (FFmpeg-Builds), compilation statique citée par ffmpeg.org"
+publisher_en = "BtbN (FFmpeg-Builds), a static build listed by ffmpeg.org"
+license = "GPL-3.0-or-later"
+page = "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-10-31-12-59"
+files = [
+  { url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-31-12-59/ffmpeg-n9.0.2-39-g7adfbe40dc-linuxarm64-gpl-9.0.tar.xz", sha256 = "6cad88ae5bcec356cfc5d7979a036cc4007128201928a0cf243df3db483276cc", size = 128664064 },
+]

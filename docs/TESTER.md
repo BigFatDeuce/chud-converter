@@ -12,8 +12,9 @@ les abîmer, les supprimer sans crainte. Testez aussi avec vos propres fichiers 
 n'est jamais modifié.
 
 Prérequis : Windows 10 ou 11 (WebView2, déjà présent sur Windows 11). FFmpeg et 7-Zip sont
-nécessaires pour la vidéo, l'audio et les archives (`winget install Gyan.FFmpeg` et
-`winget install 7zip.7zip`). Les images et les données fonctionnent sans eux.
+nécessaires pour la vidéo, l'audio et les archives : s'ils manquent, l'application les installe
+elle-même (écran **Moteurs**, tests 17a–17k), sans terminal. Les images et les données
+fonctionnent sans eux.
 
 ## Lancer
 
@@ -40,7 +41,7 @@ nécessaires pour la vidéo, l'audio et les archives (`winget install Gyan.FFmpe
 | 12 | **Ajouter un dossier** → `Exemples\Dossier à compresser`, choisir **7z** ou **ZIP** | Archive créée avec l'arborescence et les noms accentués |
 | 13 | Options : **Qualité vidéo**, **Hauteur maximale** = 480 | Le plan se met à jour ; la fidélité devient « Avec perte » si on réencode |
 | 14 | Destination **Dans un dossier…** | Les résultats y sont écrits ; le réglage est mémorisé |
-| 15 | Écran **Moteurs** | FFmpeg et 7-Zip « Prêt » avec version et emplacement ; commande d'installation pour les autres |
+| 15 | Écran **Moteurs** | FFmpeg et 7-Zip avec leur état, version et emplacement ; aucune commande à copier nulle part |
 | 16 | Fermer la fenêtre pendant une conversion longue | Fermeture propre, aucun fichier partiel laissé |
 
 ## Audio et vérifications (0.1.1)
@@ -68,10 +69,12 @@ de tester l'installation sans rien toucher à votre installation (tests 17h–17
 | 17c | Pendant le téléchargement de FFmpeg (115 Mo) : **Annuler l'installation** | Message « Installation … annulée : rien n'a été installé » ; la carte redevient « Non installé » |
 | 17d | Après 17b, glisser une vidéo dans **Convertir** | Les formats vidéo/audio sont proposés sans relancer l'application ; la sélection et le format choisi sont gardés |
 | 17e | Moteur installé → **Retirer** | Confirmation, puis la carte redevient « Non installé » ; le dossier `data\engines\<moteur>` ne contient plus de version |
-| 17f | Une carte sans paquet vérifié (Pandoc, LibreOffice…) | La commande du gestionnaire de paquets s'affiche, **sans dépasser de la carte** même si elle est longue ; bouton copier |
+| 17f | Bas de l'écran **Moteurs** : section **Bientôt pris en charge** | Pandoc, LibreOffice, etc. en liste compacte, avec « Trouvé sur votre ordinateur » pour ceux présents et un lien « Site officiel » ; **aucune commande, aucun bouton d'installation** |
 | 17h | Moteur déjà installé sur votre PC → **Installer aussi la version … de Chud Converter** | La confirmation dit que votre version actuelle n'est pas modifiée et que celle de Chud Converter sera utilisée en priorité ; après installation, origine « installé par Chud Converter » |
 | 17i | Puis **Retirer** | La carte redevient « Prêt », origine « installé sur le système », avec le chemin d'origine (rien n'a été modifié) |
 | 17g | En ligne de commande : `chud engines`, puis `chud engines install 7zip` | La liste indique `chud engines install …` pour les moteurs installables ; l'installation affiche ses étapes |
+| 17j | Seulement si FFmpeg n'est **pas** installé sur votre PC : glisser une vidéo dans **Convertir** | La ligne du fichier dit « aucune conversion possible… » et propose **installer FFmpeg (… Mo)** ; le clic ouvre **Moteurs** sur la confirmation (rien n'est téléchargé sans **Télécharger et installer**) ; une fois prêt, retour automatique à **Convertir**, fichier toujours sélectionné, formats vidéo proposés |
+| 17k | Pendant l'installation de FFmpeg | Après la vérification, « Extraction : … % » avec une barre qui avance |
 
 ## Écrans qui défilent (corrigé)
 

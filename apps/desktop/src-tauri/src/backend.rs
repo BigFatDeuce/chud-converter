@@ -138,6 +138,10 @@ pub struct EngineView {
     pub homepage: String,
     pub description: String,
     pub hint: Option<String>,
+    /// Chud Converter sait se servir de ce moteur (sinon : détecté seulement, intégration à venir).
+    pub supported: bool,
+    /// Familles de fichiers traitées (video, audio, archive…).
+    pub categories: Vec<String>,
     /// Paquet que Chud Converter sait installer lui-même ici (version, taille, éditeur, licence).
     pub installable: Option<InstallOffer>,
     /// Version précédente d'une installation gérée (retour en arrière possible).
@@ -167,6 +171,8 @@ impl From<&EngineStatus> for EngineView {
             homepage: s.homepage.clone(),
             description: s.description.clone(),
             hint: s.hint.clone(),
+            supported: s.supported,
+            categories: s.categories.clone(),
             installable: s.installable.clone(),
             previous: s.previous.clone(),
             installing: false,
