@@ -18,7 +18,7 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [x] Moteurs : image natif, données natif (JSON/YAML/TOML/CSV/TSV/NDJSON), FFmpeg, 7-Zip
 - [x] Détection des moteurs installés (gérés, emplacements connus, PATH) et sonde de capacités
 - [x] CLI `chud` : `formats`, `engines`, `detect`, `targets`, `plan`, `convert`, `matrix`, sortie JSON, motifs `*.ext` sous Windows
-- [x] Tests unitaires et d'intégration sur fichiers réels générés (74 tests ; conflits, annulation, fichier tronqué, attaques d'archives)
+- [x] Tests unitaires et d'intégration sur fichiers réels générés (76 tests ; conflits, annulation, fichier tronqué, attaques d'archives)
 - [x] Qualité : `clippy` sans avertissement, `rustfmt`, documentation utilisateur (README, BUILDING)
 
 ### 2b. Gestionnaire de moteurs complet
@@ -60,7 +60,8 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [ ] Windows : installeur NSIS (par utilisateur), MSI, version portable ZIP
 - [ ] Linux : AppImage, .deb, .rpm
 - [ ] Mise à jour de l'application (updater Tauri signé), canal stable/bêta
-- [ ] CI GitHub Actions Windows + Linux, `cargo-deny`, `cargo-about`
+- [x] CI GitHub Actions Windows + Linux avec FFmpeg et 7-Zip réels (`fmt`, `clippy -D warnings`, tests)
+- [ ] `cargo-deny`, `cargo-about` en CI
 
 ## Phase 3 — Fonctionnalités avancées
 - [ ] Inspecteur universel (image, audio, vidéo, document, archive, données, police, 3D) + détection d'anomalies + aperçus

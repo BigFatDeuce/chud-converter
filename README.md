@@ -1,130 +1,125 @@
 <div align="center">
 
-<img src="assets/branding/svg/logo-small.svg" width="144" alt="Logo de Chud Converter : un document doré à lunettes et deux flèches de conversion">
+<img src="assets/branding/svg/logo-small.svg" width="144" alt="Chud Converter logo: a grumpy golden document with glasses and two conversion arrows">
 
 # Chud Converter
 
-**Le convertisseur de fichiers universel, local et honnête.**
+**The universal, local and honest file converter.**
 
-Il reconnaît le vrai format de vos fichiers, choisit le meilleur chemin de conversion,
-vous dit **avant** ce qui sera perdu, puis **vérifie** chaque résultat.
-Vos originaux ne sont jamais touchés.
+It finds out what your files really are, picks the best conversion path,
+tells you **beforehand** what will be lost, then **verifies** every result.
+Your originals are never touched.
 
 [![CI](https://github.com/BigFatDeuce/chud-converter/actions/workflows/ci.yml/badge.svg)](https://github.com/BigFatDeuce/chud-converter/actions/workflows/ci.yml)
-[![Licence : GPL-3.0-or-later](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 ![Rust 2024](https://img.shields.io/badge/Rust-2024-dea584?logo=rust&logoColor=white)
-![Plateformes : Windows, Linux](https://img.shields.io/badge/plateformes-Windows%20%7C%20Linux-2c639f)
-![État : alpha](https://img.shields.io/badge/%C3%A9tat-alpha-f9c83a)
+![Platforms: Windows, Linux](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux-2c639f)
+![Status: alpha](https://img.shields.io/badge/status-alpha-f9c83a)
 
-[Principes](#principes) ·
-[Exemple](#un-exemple) ·
-[Ce qui fonctionne](#ce-qui-fonctionne-déjà) ·
-[Installation](#installation) ·
-[Utilisation](#utilisation) ·
-[Feuille de route](#feuille-de-route) ·
-[Documentation](#documentation)
-
-<sub><i>A universal, local and honest file converter. Documentation is in French for now.</i></sub>
+[Principles](#principles) ·
+[Screenshots](#screenshots) ·
+[Features](#what-works-today) ·
+[Install](#installation) ·
+[Usage](#usage) ·
+[Roadmap](#roadmap) ·
+[Docs](#documentation)
 
 </div>
 
-> [!NOTE]
-> **Version 0.1 — alpha.** Le moteur de conversion et la ligne de commande `chud` fonctionnent
-> et sont testés sur de vrais fichiers. L'interface graphique (Tauri 2 + Svelte 5) est la
-> prochaine étape, suivie du menu clic droit de l'Explorateur. Voir la [feuille de route](#feuille-de-route).
+<p align="center">
+  <img src="docs/screenshots/cli-convert.svg" width="820" alt="Terminal: chud converts vacances.mkv to WebM, lists exactly what is lost, verifies the result by decoding it, and refuses a truncated reunion.mp4 with a clear reason">
+  <br>
+  <sub><i>Real output. One video converted, its losses listed and the result decoded end to end; one truncated file refused with the reason why.</i></sub>
+</p>
 
-## Principes
+> [!NOTE]
+> **Version 0.1 — alpha.** The conversion engine and the `chud` command line work and are tested
+> on real files, on Windows and Linux. The desktop app (Tauri 2 + Svelte 5) is the next step,
+> followed by the File Explorer right-click menu. The program currently speaks **French**;
+> English is planned with the desktop app.
+
+## Principles
 
 | | |
 |---|---|
-| **Honnête** | Chaque conversion annonce sa fidélité — *sans perte*, *selon le contenu* ou *avec perte* — et liste ce qui disparaît : pistes, sous-titres, chapitres, transparence, profondeur de bits, métadonnées. Jamais de faux « sans perte », jamais une simple extension renommée. |
-| **Vérifié** | Le résultat est relu par le moteur (décodage intégral quand c'est raisonnable) et son format est redétecté indépendamment. Un programme qui se termine « sans erreur » ne suffit pas. |
-| **Prudent** | L'original n'est jamais modifié. Le travail se fait à l'écart ; le fichier final n'apparaît qu'une fois complet et vérifié. Un nom déjà pris donne `fichier (1).ext`. |
-| **Local** | Tout se passe sur votre machine. Aucun fichier, aucun nom de fichier n'est envoyé sur Internet. Aucune télémétrie. |
-| **Sûr** | Jamais de ligne de commande construite avec vos noms de fichiers. Archives piégées refusées. Moteurs externes confinés, limités dans le temps, arrêtés proprement à l'annulation. |
-| **Transparent** | FFmpeg, 7-Zip et les autres moteurs sont détectés, jamais remplacés à votre insu ; leur version, leur origine et leur licence sont affichées. |
+| **Honest** | Every conversion states its fidelity — *lossless*, *depends on content* or *lossy* — and lists what goes away: tracks, subtitles, chapters, transparency, bit depth, metadata. Never a fake "lossless", never just a renamed extension. |
+| **Verified** | The result is read back by the engine (fully decoded when reasonable) and its format is detected again, independently. A tool that "exited without error" is not proof of success. |
+| **Careful** | The original is never modified. Work happens in a separate folder; the final file only appears once complete and verified. A name already taken becomes `file (1).ext`. |
+| **Local** | Everything happens on your machine. No file, no file name is ever sent over the Internet. No telemetry. |
+| **Safe** | Command lines are never built from your file names. Booby-trapped archives are refused. External engines are confined, time-limited and cleanly stopped on cancel. |
+| **Transparent** | FFmpeg, 7-Zip and the other engines are detected, never silently replaced; their version, origin and license are shown. |
 
-## Un exemple
+## Screenshots
 
-Une vidéo MKV avec deux pistes audio et des sous-titres stylés, à passer en MP4 :
+All screenshots are real output of the current version. Only local paths were replaced with
+neutral ones. Screenshots of the desktop app will be added here as soon as it exists.
 
-```console
-$ chud plan vacances.mkv --to mp4
-Plan : Matroska (MKV) (mkv) → MP4 (mp4)
-  1. mkv → mp4 avec ffmpeg — selon le contenu
-Fidélité : Selon le contenu du fichier
-  • Étape 1 : la fidélité dépend du contenu du fichier
-  • Étape 1 : vidéo h264 copiée sans ré-encodage
-  • Étape 1 : audio aac copié sans ré-encodage
-  • Étape 1 : sous-titres ASS convertis en mov_text : texte et temps conservés, styles avancés (polices, couleurs, positions, effets) perdus s'il y en a
-```
+**Plan before converting.** `chud plan` shows the path, the expected fidelity and every option,
+without writing anything. Here, video and audio are copied untouched, but MP4 cannot store
+styled ASS subtitles, so the conversion is *not* called lossless:
 
-La vidéo et le son sont copiés tels quels, mais le MP4 ne sait pas stocker les styles ASS :
-le logiciel ne prétend donc pas que c'est « sans perte ». Puis :
+<p align="center"><img src="docs/screenshots/cli-plan.svg" width="820" alt="Terminal: chud plan vacances.mkv to mp4, with fidelity depending on content and the list of available options"></p>
 
-```console
-$ chud convert vacances.mkv --to mp4
-✔ vacances.mkv → D:\Vidéos\vacances.mp4
-    Fidélité : Selon le contenu du fichier
-    …
-    ✓ vérifié : flux et durée contrôlés par ffprobe ; décodage intégral sans erreur
-```
+**Real format detection.** File signatures and content, not extensions:
 
-Et une image PNG déguisée en `.jpg` ne trompe pas la détection :
+<p align="center"><img src="docs/screenshots/cli-detect.svg" width="820" alt="Terminal: chud detect finds that faux.jpg is actually a PNG and that export.txt looks like CSV"></p>
 
-```console
-$ chud detect faux.jpg
-faux.jpg : PNG (png) — confiance élevée, méthode : signature binaire
-  ⚠ l'extension ne correspond pas au contenu
-```
+**Engines found on your machine**, with their version, location and the official command to
+install the missing ones:
 
-## Ce qui fonctionne déjà
+<p align="center"><img src="docs/screenshots/cli-engines.svg" width="820" alt="Terminal: chud engines lists FFmpeg and 7-Zip as ready, MKVToolNix as detected, and install commands for the others"></p>
 
-| Domaine | Moteur | Ce qu'il sait faire |
+## What works today
+
+| Domain | Engine | What it can do |
 |---|---|---|
-| **Vidéo** | FFmpeg | MKV ⇄ MP4 sans ré-encodage, WebM, AVI, MOV, TS… ; choix du codec et de la qualité, redimensionnement, découpe ; conservation des pistes, chapitres et pochettes |
-| **Audio** | FFmpeg | WAV → FLAC → ALAC identiques à l'octet près ; MP3, AAC, Opus, OGG… ; extraction de la piste d'une vidéo ; profondeur de bits et fréquence annoncées honnêtement |
-| **Sous-titres** | FFmpeg | SRT, VTT, ASS, TTML ; extraction depuis une vidéo ; encodage des vieux fichiers (Windows-1252…) détecté |
-| **Animations** | FFmpeg | vidéo → GIF (palette optimisée), WebP et APNG animés ; image extraite d'une vidéo |
-| **Images** | natif (Rust) | PNG, JPEG, WebP, GIF, BMP, TIFF, ICO, TGA, QOI, PNM, HDR, EXR, DDS ; orientation EXIF, limites contre les images piégées |
-| **Archives** | 7-Zip | ZIP, 7z, TAR, TGZ/TXZ/TZST, RAR (lecture), ISO, CAB, CBZ/CBR… ; dossier → archive, archive → dossier, archive → archive |
-| **Données** | natif (Rust) | JSON ⇄ YAML ⇄ TOML ⇄ CSV ⇄ TSV ⇄ NDJSON |
+| **Video** | FFmpeg | MKV ⇄ MP4 without re-encoding, WebM, AVI, MOV, TS…; codec and quality choice, resizing, trimming; keeps tracks, chapters and cover art |
+| **Audio** | FFmpeg | WAV → FLAC → ALAC bit-identical; MP3, AAC, Opus, OGG…; audio extraction from video; bit depth and sample rate reported honestly |
+| **Subtitles** | FFmpeg | SRT, VTT, ASS, TTML; extraction from video; legacy encodings (Windows-1252…) detected |
+| **Animations** | FFmpeg | video → GIF (optimized palette), animated WebP and APNG; still frame from a video |
+| **Images** | native (Rust) | PNG, JPEG, WebP, GIF, BMP, TIFF, ICO, TGA, QOI, PNM, HDR, EXR, DDS; EXIF orientation, limits against malicious images |
+| **Archives** | 7-Zip | ZIP, 7z, TAR, TGZ/TXZ/TZST, RAR (read), ISO, CAB, CBZ/CBR…; folder → archive, archive → folder, archive → archive |
+| **Data** | native (Rust) | JSON ⇄ YAML ⇄ TOML ⇄ CSV ⇄ TSV ⇄ NDJSON |
 
-Les tests automatiques, sur des fichiers réels générés à chaque exécution, couvrent notamment :
-MKV → MP4 sans perte (vérifié par décodage), WebM, MP3, GIF, image extraite d'une vidéo,
-sous-titres SRT en Windows-1252 → VTT, découpe, WAV → FLAC → ALAC identiques à l'octet,
-allers-retours ZIP / 7z / TGZ, archives piégées, conflits de noms, annulation et fichiers
-tronqués. Le reste du tableau est pris en charge mais pas encore couvert par un test dédié.
+The automated tests run on real files generated at each run, on Windows and Linux. They cover
+MKV → MP4 lossless (checked by decoding), WebM, MP3, GIF, frame extraction, Windows-1252 SRT →
+VTT, trimming, WAV → FLAC → ALAC bit-identical, ZIP / 7z / TGZ round trips, malicious archives,
+name conflicts, cancellation and truncated files. The rest of the table is supported but not
+yet covered by a dedicated test.
 
-`chud formats` liste les **195 formats** reconnus ; avec FFmpeg et 7-Zip installés,
-`chud matrix` en montre **1 706 conversions directes**, et le planificateur les enchaîne quand
-il le faut.
+`chud formats` lists the **195 known formats**. With FFmpeg and 7-Zip installed, `chud matrix`
+shows **1,706 direct conversions**, and the planner chains them when needed.
 
-Les extractions d'archives refusent les chemins qui sortent du dossier (`../`, chemins absolus),
-les liens, les doublons de casse et les bombes de décompression.
+Archive extraction refuses paths that escape the target folder (`../`, absolute paths), links,
+case-only duplicates and decompression bombs.
 
-## Comment ça marche
+## How it works
 
 ```mermaid
 flowchart LR
-    A[Fichier] --> B["Détection<br/>signature, contenu"]
-    B --> C["Sonde<br/>pistes, codecs, profondeur"]
-    C --> D["Planificateur<br/>graphe des moteurs"]
-    D --> E["Rapport<br/>de fidélité"]
-    E --> F["Conversion<br/>dossier temporaire,<br/>processus confiné"]
-    F --> G["Vérification<br/>relecture + redétection"]
-    G --> H["Livraison atomique<br/>à côté de l'original"]
+    subgraph before ["1 · Before touching the file"]
+        direction TB
+        A["Your file"] --> B["Real format detection<br/>signature, content"]
+        B --> C["Probe<br/>tracks, codecs, bit depth"]
+        C --> D["Plan + fidelity report<br/>what is kept or lost"]
+    end
+    subgraph during ["2 · Conversion"]
+        direction TB
+        E["Confined engine<br/>in a temporary folder"] --> F["Verification<br/>read back + re-detect"]
+        F --> G["Atomic delivery<br/>next to the original"]
+    end
+    D --> E
 ```
 
-Chaque moteur déclare ce qu'il sait faire et avec quelle fidélité ; le planificateur choisit le
-chemin qui perd le moins, puis le moins d'étapes, puis le plus rapide. Détails dans
-[ARCHITECTURE](docs/ARCHITECTURE.md).
+Each engine declares what it can do and with what fidelity. The planner picks the path that
+loses the least, then the one with the fewest steps, then the fastest. Details in
+[ARCHITECTURE](docs/ARCHITECTURE.md) (French).
 
 ## Installation
 
 > [!IMPORTANT]
-> Pas encore de version prête à télécharger : les installeurs Windows et Linux arriveront avec
-> l'interface graphique. En attendant, la ligne de commande se compile en une commande.
+> No ready-to-download release yet: Windows and Linux installers will come with the desktop
+> app. Meanwhile, the command line builds with a single command.
 
 ```bash
 git clone https://github.com/BigFatDeuce/chud-converter.git
@@ -132,109 +127,112 @@ cd chud-converter
 cargo build --release -p chud-cli
 ```
 
-Il faut [Rust](https://rustup.rs) 1.88 ou plus récent (et, sous Windows, les Build Tools de
-Visual Studio). Le programme obtenu est `target/release/chud` (`chud.exe` sous Windows).
-Tout est détaillé dans [BUILDING](docs/BUILDING.md).
+You need [Rust](https://rustup.rs) 1.88 or newer (and, on Windows, the Visual Studio Build
+Tools). The program is `target/release/chud` (`chud.exe` on Windows). See
+[BUILDING](docs/BUILDING.md) (French) for details.
 
-### Moteurs externes (facultatifs)
+### External engines (optional)
 
-Les images et les données fonctionnent sans rien installer. Pour le reste, installez les
-moteurs avec le gestionnaire de paquets de votre système ; `chud engines` vous dit ce qui est
-trouvé et ce qui manque.
+Images and data work with nothing else installed. For the rest, install the engines with your
+system's package manager; `chud engines` tells you what is found and what is missing.
 
-| Moteur | Apporte | Windows | Debian, Ubuntu |
+| Engine | Adds | Windows | Debian, Ubuntu |
 |---|---|---|---|
-| FFmpeg | vidéo, audio, sous-titres, animations | `winget install Gyan.FFmpeg` | `sudo apt install ffmpeg` |
+| FFmpeg | video, audio, subtitles, animations | `winget install Gyan.FFmpeg` | `sudo apt install ffmpeg` |
 | 7-Zip | archives | `winget install 7zip.7zip` | `sudo apt install 7zip` |
 
 MKVToolNix, Pandoc, LibreOffice, Calibre, ImageMagick, libvips, qpdf, Ghostscript, Tesseract,
-ExifTool et MediaInfo sont déjà détectés ; leur prise en charge arrive au fil des versions.
+ExifTool and MediaInfo are already detected; support for them is coming release by release.
 
-## Utilisation
+## Usage
 
-| Commande | Rôle |
+| Command | Purpose |
 |---|---|
-| `chud engines` | moteurs trouvés, versions, commandes d'installation |
-| `chud detect <fichiers>` | vrai format de chaque fichier, extension trompeuse signalée |
-| `chud targets <fichier>` | formats possibles pour ce fichier, avec la fidélité attendue |
-| `chud plan <fichier> --to <format>` | plan, rapport de fidélité et options, sans rien écrire |
-| `chud convert <fichiers> --to <format>` | conversion, vérification et rapport |
-| `chud formats [recherche]` | formats connus, par catégorie |
-| `chud matrix` | conversions offertes par chaque moteur |
+| `chud engines` | engines found, versions, install commands |
+| `chud detect <files>` | real format of each file, misleading extensions flagged |
+| `chud targets <file>` | possible output formats for this file, with expected fidelity |
+| `chud plan <file> --to <format>` | plan, fidelity report and options, without writing anything |
+| `chud convert <files> --to <format>` | conversion, verification and report |
+| `chud formats [search]` | known formats, by category |
+| `chud matrix` | conversions offered by each engine |
 
 ```bash
-# Toutes les vidéos .mov d'un dossier en MP4 léger 720p, dans un autre dossier
-chud convert *.mov --to mp4 -s video_quality=small -s max_height=720 -o D:/Sorties
+# Every .mov in a folder to a light 720p MP4, into another folder
+chud convert *.mov --to mp4 -s video_quality=small -s max_height=720 -o D:/Output
 
-# Un album en FLAC, 4 conversions à la fois, en gardant les dates
+# An album to FLAC, 4 conversions at a time, keeping the file dates
 chud convert *.wav --to flac -j 4 --keep-date
 
-# Un dossier en archive 7z, compression maximale
-chud convert "Mes documents" --to 7z -s level=9
+# A folder into a 7z archive, maximum compression
+chud convert "My documents" --to 7z -s level=9
 
-# Extraire une archive (dans un dossier à côté d'elle)
-chud convert sauvegarde.zip --to directory
+# Extract an archive (into a folder next to it)
+chud convert backup.zip --to directory
 ```
 
-- `-s clé=valeur` règle une option ; `chud plan` affiche les options de chaque étape.
-- `--on-conflict rename|skip|overwrite` : renommer (par défaut), ignorer ou remplacer — jamais la source.
-- `--name "{stem}-web"` : modèle du nom de sortie.
-- `--json` sur toutes les commandes, pour les scripts.
-- Code de sortie : `0` tout a réussi, `1` au moins un échec, `2` erreur d'utilisation.
+- `-s key=value` sets an option; `chud plan` lists the options of each step.
+- `--on-conflict rename|skip|overwrite`: rename (default), skip or replace — never the source.
+- `--name "{stem}-web"`: output name template.
+- `--json` on every command, for scripts.
+- Exit code: `0` all succeeded, `1` at least one failure, `2` usage error.
 
-**Mode portable** : un fichier vide nommé `portable` à côté de `chud.exe`, et réglages, cache
-et moteurs gérés restent dans un dossier `data` voisin — rien dans le profil utilisateur.
+**Portable mode**: put an empty file named `portable` next to `chud.exe`; settings, cache and
+managed engines then stay in a `data` folder beside it — nothing in your user profile.
 
-## Feuille de route
+## Roadmap
 
-- [x] Recherche, architecture et modèle de sécurité
-- [x] Cœur : détection, planification, rapport de fidélité, tâches vérifiées et annulables
-- [x] Moteurs : images et données natifs, FFmpeg, 7-Zip
-- [x] Ligne de commande `chud`
-- [ ] Interface graphique Tauri 2 + Svelte 5 — **prochaine étape**
-- [ ] Préréglages et menu clic droit (Explorateur Windows, Dolphin, Nautilus, Nemo, Thunar)
-- [ ] Installation et mise à jour vérifiées des moteurs
-- [ ] PDF, documents, livres électroniques (qpdf, LibreOffice, Pandoc, Calibre), OCR
-- [ ] Inspecteur universel, détecteur de doublons, optimisation automatique
-- [ ] Workflows visuels, surveillance de dossiers, historique, plugins
-- [ ] Installeurs Windows et Linux, mises à jour signées
+- [x] Research, architecture and security model
+- [x] Core: detection, planning, fidelity report, verified and cancellable jobs
+- [x] Engines: native images and data, FFmpeg, 7-Zip
+- [x] `chud` command line
+- [x] Continuous integration on Windows and Linux with real engines
+- [ ] Desktop app, Tauri 2 + Svelte 5 — **next step**
+- [ ] Presets and right-click menu (Windows File Explorer, Dolphin, Nautilus, Nemo, Thunar)
+- [ ] English localization
+- [ ] Verified installation and updates of engines
+- [ ] PDF, documents, e-books (qpdf, LibreOffice, Pandoc, Calibre), OCR
+- [ ] Universal inspector, duplicate finder, automatic optimization
+- [ ] Visual workflows, watch folders, history, plugins
+- [ ] Windows and Linux installers, signed updates
 
-Le détail, case par case, est dans [ROADMAP](docs/ROADMAP.md) : une case n'y est cochée que
-lorsque la fonction est réalisée **et** testée sur de vrais fichiers.
+The detailed checklist is in [ROADMAP](docs/ROADMAP.md) (French): an item is only checked
+once it is built **and** tested on real files.
 
 ## Documentation
 
-| Document | Contenu |
+The design documents are written in French for now.
+
+| Document | Content |
 |---|---|
-| [ARCHITECTURE](docs/ARCHITECTURE.md) | modules, déroulé d'une conversion, modèle de fidélité |
-| [DECISIONS](docs/DECISIONS.md) | décisions techniques (ADR) et leurs raisons |
-| [SECURITY](docs/SECURITY.md) | menaces, parades, état de chaque mesure |
-| [ENGINE-MANAGER](docs/ENGINE-MANAGER.md) | détection, installation et mise à jour des moteurs |
-| [SHELL-INTEGRATION](docs/SHELL-INTEGRATION.md) | menu clic droit sous Windows et Linux |
-| [PLUGINS](docs/PLUGINS.md) · [WORKFLOWS](docs/WORKFLOWS.md) | extensions et chaînes de traitement |
-| [RESEARCH](docs/RESEARCH.md) | étude des technologies, des moteurs et des logiciels existants |
-| [LICENSES](docs/LICENSES.md) | licences des moteurs et des dépendances |
-| [BUILDING](docs/BUILDING.md) | compiler, tester, contribuer |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | modules, life of a conversion, fidelity model |
+| [DECISIONS](docs/DECISIONS.md) | technical decisions (ADRs) and their reasons |
+| [SECURITY](docs/SECURITY.md) | threats, mitigations, status of each measure |
+| [ENGINE-MANAGER](docs/ENGINE-MANAGER.md) | detection, installation and updates of engines |
+| [SHELL-INTEGRATION](docs/SHELL-INTEGRATION.md) | right-click menu on Windows and Linux |
+| [PLUGINS](docs/PLUGINS.md) · [WORKFLOWS](docs/WORKFLOWS.md) | extensions and processing chains |
+| [RESEARCH](docs/RESEARCH.md) | study of technologies, engines and existing software |
+| [LICENSES](docs/LICENSES.md) | licenses of engines and dependencies |
+| [BUILDING](docs/BUILDING.md) | build, test, contribute |
 
-## Contribuer
+## Contributing
 
-Les rapports de bogue et les propositions sont les bienvenus dans les
-[issues](https://github.com/BigFatDeuce/chud-converter/issues). Avant une contribution de code :
-`cargo fmt`, `cargo clippy --workspace` et `cargo test --workspace`, et les règles de
-[BUILDING](docs/BUILDING.md#6-règles-de-contribution).
+Bug reports and ideas are welcome in the
+[issues](https://github.com/BigFatDeuce/chud-converter/issues), in English or French. Before
+contributing code, run `cargo fmt`, `cargo clippy --workspace` and `cargo test --workspace`, and
+follow the rules in [BUILDING](docs/BUILDING.md#6-règles-de-contribution).
 
-Une faille de sécurité se signale **en privé**, via
+Please report security vulnerabilities **privately** through
 [GitHub Security Advisories](https://github.com/BigFatDeuce/chud-converter/security/advisories/new),
-jamais dans une issue publique.
+never in a public issue.
 
-## Licence
+## License
 
-Chud Converter est un logiciel libre, distribué sous licence
-[GNU GPL version 3 ou ultérieure](LICENSE).
+Chud Converter is free software, released under the
+[GNU General Public License, version 3 or later](LICENSE).
 
-Les moteurs externes (FFmpeg, 7-Zip…) ne sont pas fournis avec le logiciel : ils sont installés
-par vous et gardent leur propre licence, détaillée dans [LICENSES](docs/LICENSES.md).
+External engines (FFmpeg, 7-Zip…) are not shipped with it: you install them, and they keep
+their own licenses, listed in [LICENSES](docs/LICENSES.md).
 
 <div align="center">
-<sub>Construit avec Rust, et grâce à FFmpeg, 7-Zip, et aux crates <code>image</code>, <code>clap</code>, <code>serde</code> et bien d'autres.</sub>
+<sub>Built with Rust, thanks to FFmpeg, 7-Zip, and the <code>image</code>, <code>clap</code>, <code>serde</code> crates and many more.</sub>
 </div>
