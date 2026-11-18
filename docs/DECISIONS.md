@@ -263,9 +263,13 @@ indépendant (ADR-007) reste prévu pour suivre les moteurs entre deux versions 
   un lien vers la publication ; l'utilisateur confirme.
 - L'installeur 7-Zip pour Windows n'est jamais exécuté : il est ouvert comme une archive par
   `7zr.exe`, lui-même vérifié par son empreinte.
-- Installé dans `<données>/engines/<id>` ; les installations du système ne sont jamais touchées
-  et un moteur déjà prêt n'est pas remplacé. Retrait et retour arrière en un clic (avec
-  confirmation).
+- Installé dans `<données>/engines/<id>` ; les installations du système ne sont jamais touchées.
+  Retrait et retour arrière en un clic (avec confirmation).
+- Moteur déjà prêt depuis le système : une copie gérée peut être posée **à côté**, seulement sur
+  demande explicite (bouton discret, confirmation qui le dit ; `--alongside` en ligne de
+  commande). Elle est alors utilisée en priorité ; la retirer rend la main à celle du système.
+  Un chemin choisi par l'utilisateur passe avant tout : aucune copie n'est alors proposée.
+  Règle unique pour l'application et la CLI : `install::check_allowed`.
 - La commande du gestionnaire de paquets reste affichée en second choix, et seule pour les
   moteurs sans paquet vérifié (FFmpeg sous Linux, Pandoc, LibreOffice…).
 

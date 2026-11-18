@@ -57,9 +57,9 @@ nécessaires pour la vidéo, l'audio et les archives (`winget install Gyan.FFmpe
 ## Moteurs installés depuis l'application (nouveau)
 
 Le paquet portable range tout dans son dossier `data\` : les moteurs installés ici n'apparaissent
-que dans cette copie. Si FFmpeg ou 7-Zip est déjà installé sur votre PC, il reste utilisé et
-aucun bouton « Installer » n'apparaît pour lui (c'est voulu : Chud Converter ne remplace jamais
-une installation existante).
+que dans cette copie. Si FFmpeg ou 7-Zip est déjà installé sur votre PC, sa carte est « Prêt » et
+propose seulement, en petit, **Installer aussi la version … de Chud Converter** : c'est le moyen
+de tester l'installation sans rien toucher à votre installation (tests 17h–17i).
 
 | # | Action | Résultat attendu |
 |---|---|---|
@@ -69,6 +69,8 @@ une installation existante).
 | 17d | Après 17b, glisser une vidéo dans **Convertir** | Les formats vidéo/audio sont proposés sans relancer l'application ; la sélection et le format choisi sont gardés |
 | 17e | Moteur installé → **Retirer** | Confirmation, puis la carte redevient « Non installé » ; le dossier `data\engines\<moteur>` ne contient plus de version |
 | 17f | Une carte sans paquet vérifié (Pandoc, LibreOffice…) | La commande du gestionnaire de paquets s'affiche, **sans dépasser de la carte** même si elle est longue ; bouton copier |
+| 17h | Moteur déjà installé sur votre PC → **Installer aussi la version … de Chud Converter** | La confirmation dit que votre version actuelle n'est pas modifiée et que celle de Chud Converter sera utilisée en priorité ; après installation, origine « installé par Chud Converter » |
+| 17i | Puis **Retirer** | La carte redevient « Prêt », origine « installé sur le système », avec le chemin d'origine (rien n'a été modifié) |
 | 17g | En ligne de commande : `chud engines`, puis `chud engines install 7zip` | La liste indique `chud engines install …` pour les moteurs installables ; l'installation affiche ses étapes |
 
 ## Écrans qui défilent (corrigé)

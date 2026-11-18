@@ -4,7 +4,7 @@
   import { store } from "../store.svelte";
   import { api, errorText } from "../api";
   import { formatSize } from "../format";
-  import { engineActions, type EngineOp } from "../machines";
+  import { engineActions, installsAlongside, type EngineOp } from "../machines";
   import type { EngineState, EngineView, InstallProgress } from "../types";
 
   const stateText: Record<EngineState, string> = {
@@ -140,6 +140,14 @@
                   <strong>{L(`Installer ${e.name} ${offer.version} ?`, `Install ${e.name} ${offer.version}?`)}</strong>
                 </p>
                 <ul class="small">
+                  {#if installsAlongside(e)}
+                    <li class="strong">
+                      {L(
+                        `Votre ${e.name} ${e.version ?? ""} actuel n'est pas modifié ; la copie de Chud Converter sera utilisée en priorité. Retirez-la pour revenir à celui du système.`,
+                        `Your current ${e.name} ${e.version ?? ""} is not changed; Chud Converter's copy will be used first. Remove it to go back to the system one.`,
+                      )}
+                    </li>
+                  {/if}
                   <li>{L(`Téléchargement de ${formatSize(offer.size)} depuis : ${offer.publisher}.`, `Downloads ${formatSize(offer.size)} from: ${offer.publisher}.`)}</li>
                   <li>{L(`Licence : ${offer.license}.`, `License: ${offer.license}.`)}</li>
                   <li>{L("Fichier refusé si son empreinte SHA-256 diffère de celle attendue ; moteur essayé avant d'être utilisé.", "The file is refused if its SHA-256 differs from the expected one; the engine is tried before being used.")}</li>
@@ -189,12 +197,20 @@
           {:else if actions.length}
             <div class="row">
               {#if actions.includes("install") && offer}
-                <button class="btn primary" onclick={() => store.askEngine(e.id, "install")}>
-                  <Icon name="download" size={14} />
-                  {e.origin === "managed"
-                    ? L(`Mettre à jour vers ${offer.version}`, `Update to ${offer.version}`)
-                    : L(`Installer (${formatSize(offer.size)})`, `Install (${formatSize(offer.size)})`)}
-                </button>
+                {#if installsAlongside(e)}
+                  <!-- Le moteur du système fonctionne : proposition discrète, jamais mise en avant. -->
+                  <button class="btn ghost small" onclick={() => store.askEngine(e.id, "install")}>
+                    <Icon name="download" size={13} />
+                    {L(`Installer aussi la version ${offer.version} de Chud Converter`, `Also install Chud Converter's version ${offer.version}`)}
+                  </button>
+                {:else}
+                  <button class="btn primary" onclick={() => store.askEngine(e.id, "install")}>
+                    <Icon name="download" size={14} />
+                    {e.origin === "managed"
+                      ? L(`Mettre à jour vers ${offer.version}`, `Update to ${offer.version}`)
+                      : L(`Installer (${formatSize(offer.size)})`, `Install (${formatSize(offer.size)})`)}
+                  </button>
+                {/if}
               {/if}
               {#if actions.includes("rollback")}
                 <button class="btn" onclick={() => store.askEngine(e.id, "rollback")}>{L(`Revenir à ${e.previous}`, `Go back to ${e.previous}`)}</button>
@@ -395,6 +411,10 @@
     border-radius: var(--radius-sm);
     background: var(--surface-2);
     border: 1px solid var(--border);
+  }
+
+  .op li.strong {
+    color: var(--text);
   }
 
   .op ul {

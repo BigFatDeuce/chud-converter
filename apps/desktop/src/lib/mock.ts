@@ -188,8 +188,9 @@ export function mockApi(): Api {
     fake: true,
     appInfo: () => delay({ version: "0.0.0-fictif", dataDir: "C:\\Exemple", portable: false, formats: 0, conversions: 0, enginesReady: 1 }),
     engines: () => delay(ENGINES.map((e) => ({ ...e }))),
-    async engineInstall(id) {
+    async engineInstall(id, alongside) {
       const e = ENGINES.find((x) => x.id === id)!;
+      if (e.state === "ready" && e.origin === "system" && !alongside) throw "déjà prêt (fictif)";
       const total = e.installable!.size;
       installCancel = false;
       for (let i = 1; i <= 20; i++) {

@@ -33,7 +33,8 @@ export interface Api {
   appInfo(): Promise<AppInfo>;
   engines(refresh: boolean): Promise<EngineView[]>;
   /** Télécharge, vérifie, essaie puis active un moteur ; renvoie les moteurs détectés à nouveau. */
-  engineInstall(id: string): Promise<EngineView[]>;
+  /** `alongside` : copie gérée posée à côté d'une installation du système déjà prête. */
+  engineInstall(id: string, alongside: boolean): Promise<EngineView[]>;
   /** Demande l'arrêt d'une installation en cours (rien n'est alors installé). */
   engineInstallCancel(id: string): Promise<boolean>;
   /** Retire un moteur installé par Chud Converter (jamais une installation du système). */
@@ -96,7 +97,7 @@ function tauriApi(): Api {
     fake: false,
     appInfo: () => call("app_info"),
     engines: (refresh) => call("engines", { refresh }),
-    engineInstall: (id) => call("engine_install", { id }),
+    engineInstall: (id, alongside) => call("engine_install", { id, alongside }),
     engineInstallCancel: (id) => call("engine_install_cancel", { id }),
     engineUninstall: (id) => call("engine_uninstall", { id }),
     engineRollback: (id) => call("engine_rollback", { id }),

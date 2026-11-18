@@ -12,6 +12,9 @@ All notable changes to Chud Converter. Versions follow [Semantic Versioning](htt
   extracted under strict rules, tried, and only then activated. Installs live in the app's own
   folder: system installs are never touched or replaced. Cancel, remove and roll back are one
   click away (with confirmation). Package-manager commands remain as an alternative.
+- When an engine is already installed on the system, Chud Converter's own copy can be added
+  alongside it, only on explicit request (`--alongside` on the command line); it is then used
+  first, and removing it hands back to the system one, which is never touched.
 - `chud engines uninstall <id> --yes` and `chud engines rollback <id>`.
 
 ### Fixed

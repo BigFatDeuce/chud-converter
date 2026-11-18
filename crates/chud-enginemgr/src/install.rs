@@ -234,6 +234,37 @@ pub struct Installed {
     pub previous: Option<String>,
 }
 
+/// Règle commune (application et ligne de commande) : peut-on installer une copie gérée ?
+///
+/// - absent, en panne ou déjà géré : oui ;
+/// - prêt depuis le système : seulement sur demande explicite (`alongside`) — la copie gérée est
+///   installée **à côté** et utilisée en priorité ; l'installation du système n'est pas touchée et
+///   redevient active si la copie est retirée ;
+/// - prêt depuis un chemin choisi par l'utilisateur : non (ce choix passe avant toute copie gérée).
+pub fn check_allowed(status: &crate::EngineStatus, alongside: bool) -> Result<(), String> {
+    use chud_core::EngineOrigin;
+    if status.state != crate::EngineState::Ready {
+        return Ok(());
+    }
+    let path = status.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
+    match status.origin {
+        Some(EngineOrigin::Managed) => Ok(()),
+        Some(EngineOrigin::Custom) => Err(trf!(
+            "{} utilise le chemin que vous avez choisi ({}) : une copie installée par Chud Converter ne serait pas utilisée",
+            "{} uses the path you chose ({}): a copy installed by Chud Converter would not be used",
+            status.name,
+            path
+        )),
+        _ if alongside => Ok(()),
+        _ => Err(trf!(
+            "{} est déjà prêt ({}). Chud Converter ne remplace pas une installation existante ; pour utiliser sa propre copie à côté, demandez-le explicitement",
+            "{} is already ready ({}). Chud Converter does not replace an existing install; to use its own copy alongside, ask for it explicitly",
+            status.name,
+            path
+        )),
+    }
+}
+
 /// Installe (ou met à jour) un moteur depuis la source de son manifeste pour cette plateforme.
 pub fn install(
     paths: &AppPaths,
@@ -775,6 +806,33 @@ mod tests {
         }
         let ffmpeg = crate::builtin_manifests().into_iter().find(|m| m.id == "ffmpeg").unwrap();
         assert!(ffmpeg.install.iter().any(|s| s.platform == "windows-x86_64"));
+    }
+
+    #[test]
+    fn existing_installs_are_never_replaced_silently() {
+        use crate::{EngineState, EngineStatus};
+        use chud_core::EngineOrigin;
+        let st = |state: EngineState, origin: Option<EngineOrigin>| EngineStatus {
+            id: "ffmpeg".into(),
+            name: "FFmpeg".into(),
+            state,
+            path: Some(PathBuf::from("/usr/bin/ffmpeg")),
+            companions: Default::default(),
+            version: Some("7.1".into()),
+            origin,
+            license: String::new(),
+            homepage: String::new(),
+            description: String::new(),
+            hint: None,
+            installable: None,
+            previous: None,
+        };
+        assert!(check_allowed(&st(EngineState::Missing, None), false).is_ok());
+        assert!(check_allowed(&st(EngineState::Broken("x".into()), Some(EngineOrigin::System)), false).is_ok());
+        assert!(check_allowed(&st(EngineState::Ready, Some(EngineOrigin::Managed)), false).is_ok());
+        assert!(check_allowed(&st(EngineState::Ready, Some(EngineOrigin::System)), false).is_err(), "jamais sans demande");
+        assert!(check_allowed(&st(EngineState::Ready, Some(EngineOrigin::System)), true).is_ok(), "à côté, sur demande");
+        assert!(check_allowed(&st(EngineState::Ready, Some(EngineOrigin::Custom)), true).is_err(), "le chemin choisi passe avant");
     }
 
     #[test]

@@ -808,19 +808,12 @@ impl App {
 
     /// Installe un moteur depuis la source figée de son manifeste (téléchargement vérifié,
     /// extraction contrôlée, essai, activation). Une installation du système n'est jamais
-    /// remplacée : un moteur déjà prêt hors de Chud Converter est refusé.
-    pub fn install_engine(&self, id: &str, progress: &mut dyn FnMut(InstallProgress)) -> Result<Vec<EngineView>, String> {
+    /// modifiée ; une copie gérée n'est posée à côté d'elle que sur demande explicite
+    /// (`alongside`, règle `install::check_allowed`).
+    pub fn install_engine(&self, id: &str, alongside: bool, progress: &mut dyn FnMut(InstallProgress)) -> Result<Vec<EngineView>, String> {
         let (engines, m) = self.manifest(id)?;
-        if let Some(st) = engines.statuses.iter().find(|s| s.id == id)
-            && st.state == EngineState::Ready
-            && st.origin != Some(chud_core::EngineOrigin::Managed)
-        {
-            return Err(chud_core::trf!(
-                "{} est déjà prêt ({}) : Chud Converter ne remplace pas une installation existante",
-                "{} is already ready ({}): Chud Converter does not replace an existing install",
-                m.name,
-                st.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default()
-            ));
+        if let Some(st) = engines.statuses.iter().find(|s| s.id == id) {
+            chud_enginemgr::install::check_allowed(st, alongside)?;
         }
         let cancel = Arc::new(AtomicBool::new(false));
         {

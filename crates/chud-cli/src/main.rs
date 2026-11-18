@@ -131,7 +131,13 @@ enum EngineAction {
     /// Télécharge et installe un moteur (FFmpeg, 7-Zip) dans le dossier de Chud Converter :
     /// source officielle, taille et empreinte SHA-256 vérifiées, essai avant activation.
     /// Une installation du système n'est jamais modifiée.
-    Install { id: String },
+    Install {
+        id: String,
+        /// Moteur déjà installé sur le système : installe quand même la copie de Chud Converter,
+        /// à côté (utilisée en priorité ; celle du système n'est pas touchée).
+        #[arg(long)]
+        alongside: bool,
+    },
     /// Retire un moteur installé par Chud Converter (jamais une installation du système).
     Uninstall {
         id: String,
@@ -222,6 +228,7 @@ fn localized_command() -> clap::Command {
             c.about("Detects the installed engines (FFmpeg, 7-Zip, LibreOffice…), or installs the missing ones.")
                 .mut_subcommand("install", |c| {
                     c.about("Downloads and installs an engine (FFmpeg, 7-Zip) into Chud Converter's folder: official source, size and SHA-256 checked, tried before being activated. A system install is never changed.")
+                        .mut_arg("alongside", help("Engine already installed on the system: install Chud Converter's copy anyway, alongside it (used first; the system one is not touched)."))
                 })
                 .mut_subcommand("uninstall", |c| {
                     c.about("Removes an engine installed by Chud Converter (never a system install).").mut_arg("yes", help("Confirms the removal."))
@@ -272,7 +279,7 @@ fn engine_action(action: EngineAction, json: bool) -> Result<i32> {
     let manager =
         EngineManager::new(AppPaths::detect()).context(tr!("chargement des réglages des moteurs", "loading the engine settings"))?;
     let id = match &action {
-        EngineAction::Install { id } | EngineAction::Uninstall { id, .. } | EngineAction::Rollback { id } => id.clone(),
+        EngineAction::Install { id, .. } | EngineAction::Uninstall { id, .. } | EngineAction::Rollback { id } => id.clone(),
     };
     let Some(m) = manager.manifests().iter().find(|m| m.id == id).cloned() else {
         let known: Vec<&str> = manager.manifests().iter().map(|m| m.id.as_str()).collect();
@@ -280,17 +287,12 @@ fn engine_action(action: EngineAction, json: bool) -> Result<i32> {
     };
     let status = manager.discover_one(&m);
     match action {
-        EngineAction::Install { .. } => {
-            if status.state == EngineState::Ready && status.origin != Some(chud_core::EngineOrigin::Managed) {
-                out!(
-                    "{}",
-                    trf!(
-                        "{} est déjà prêt ({}) : rien à installer. Chud Converter ne remplace pas une installation existante.",
-                        "{} is already ready ({}): nothing to install. Chud Converter does not replace an existing install.",
-                        m.name,
-                        status.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default()
-                    )
-                );
+        EngineAction::Install { alongside, .. } => {
+            if let Err(why) = chud_enginemgr::install::check_allowed(&status, alongside) {
+                out!("{why}");
+                if status.origin == Some(chud_core::EngineOrigin::System) {
+                    out!("{}", trf!("  chud engines install {} --alongside", "  chud engines install {} --alongside", m.id));
+                }
                 return Ok(0);
             }
             let Some(src) = m.install_source() else {

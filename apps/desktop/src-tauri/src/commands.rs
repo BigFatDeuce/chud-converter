@@ -37,13 +37,14 @@ pub struct EngineInstallEvent {
 }
 
 /// Installe un moteur ; la progression arrive par l'événement `engine-install`.
-/// Renvoie les moteurs détectés à nouveau.
+/// Renvoie les moteurs détectés à nouveau. `alongside` : l'utilisateur a demandé une copie gérée
+/// à côté d'une installation du système déjà prête.
 #[tauri::command]
-pub async fn engine_install(handle: AppHandle, app: Shared<'_>, id: String) -> Result<Vec<EngineView>, String> {
+pub async fn engine_install(handle: AppHandle, app: Shared<'_>, id: String, alongside: bool) -> Result<Vec<EngineView>, String> {
     let app = app.inner().clone();
     blocking(move || {
         let mut last = None;
-        app.install_engine(&id, &mut |p| {
+        app.install_engine(&id, alongside, &mut |p| {
             // Pas plus d'un événement par pour cent : la fenêtre n'est pas inondée.
             let key = match &p {
                 chud_enginemgr::InstallProgress::Downloading { received, total } => Some(received * 100 / (*total).max(1)),

@@ -10,6 +10,7 @@ import {
   failLoad,
   finishLoad,
   idle,
+  installsAlongside,
   isFinal,
   moveJob,
   startLoad,
@@ -75,10 +76,13 @@ const engine = (over: Partial<EngineView>): EngineView => ({
   ...over,
 });
 
-test("moteurs : actions proposées selon l'état, jamais sur une installation du système", () => {
+test("moteurs : actions proposées selon l'état, une installation du système n'est jamais modifiée", () => {
   assert.deepEqual(engineActions(engine({})), ["install"]);
   assert.deepEqual(engineActions(engine({ state: "broken", origin: "system" })), ["install"]);
-  assert.deepEqual(engineActions(engine({ state: "ready", origin: "system", version: "7.1" })), []);
+  assert.deepEqual(engineActions(engine({ state: "ready", origin: "system", version: "7.1" })), ["install"], "copie à côté, sur demande");
+  assert.deepEqual(engineActions(engine({ state: "ready", origin: "custom", version: "7.1" })), [], "chemin choisi : prioritaire");
+  assert.equal(installsAlongside(engine({ state: "ready", origin: "system" })), true);
+  assert.equal(installsAlongside(engine({})), false);
   assert.deepEqual(engineActions(engine({ state: "ready", origin: "managed", version: "9.0.2" })), ["uninstall"]);
   assert.deepEqual(engineActions(engine({ state: "ready", origin: "managed", version: "8.0", previous: "7.1" })), ["install", "rollback", "uninstall"]);
   assert.deepEqual(engineActions(engine({ installable: null })), []);

@@ -7,6 +7,7 @@ import { baseName, fidelityRank } from "./format";
 import {
   analysisTargets,
   current,
+  installsAlongside,
   engineStep,
   failLoad,
   finishLoad,
@@ -798,12 +799,14 @@ class Store {
     const op = this.engineOps[id];
     if (op?.state !== "confirming") return;
     const action = op.action;
-    const name = this.engines?.find((e) => e.id === id)?.name ?? id;
+    const before = this.engines?.find((e) => e.id === id);
+    const name = before?.name ?? id;
+    const alongside = !!before && installsAlongside(before);
     this.#engine(id, { type: "confirm" });
     const a = await api;
     try {
       const list =
-        action === "install" ? await a.engineInstall(id) : action === "uninstall" ? await a.engineUninstall(id) : await a.engineRollback(id);
+        action === "install" ? await a.engineInstall(id, alongside) : action === "uninstall" ? await a.engineUninstall(id) : await a.engineRollback(id);
       this.#engine(id, { type: "succeeded" });
       this.#enginesLoaded(list);
       const e = list.find((x) => x.id === id);

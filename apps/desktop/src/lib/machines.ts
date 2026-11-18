@@ -132,13 +132,18 @@ export type EngineOpEvent =
   | { type: "error"; error: string }
   | { type: "dismiss" };
 
-/** Actions possibles pour un moteur dans son état actuel (rien n'est proposé pour une
- *  installation du système : Chud Converter ne la modifie jamais). */
+/** Une installation du système est prête : une copie gérée ne peut être posée qu'à côté,
+ *  sur demande explicite (même règle que `install::check_allowed` côté Rust). */
+export const installsAlongside = (e: EngineView): boolean => e.state === "ready" && e.origin === "system";
+
+/** Actions possibles pour un moteur dans son état actuel. Une installation du système n'est
+ *  jamais modifiée ; un chemin choisi par l'utilisateur passe avant toute copie gérée. */
 export function engineActions(e: EngineView): EngineAction[] {
   const out: EngineAction[] = [];
   const managed = e.origin === "managed";
   const usable = e.state === "ready" || e.state === "no_adapter";
-  if (e.installable && (!usable || (managed && e.version !== e.installable.version))) out.push("install");
+  const install = !usable || (managed && e.version !== e.installable?.version) || installsAlongside(e);
+  if (e.installable && install && !(e.state === "ready" && e.origin === "custom")) out.push("install");
   if (managed && e.previous) out.push("rollback");
   if (managed) out.push("uninstall");
   return out;
