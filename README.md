@@ -108,7 +108,7 @@ flowchart LR
         E["Confined engine<br/>in a temporary folder"] --> F["Verification<br/>read back + re-detect"]
         F --> G["Atomic delivery<br/>next to the original"]
     end
-    D --> E
+    before --> during
 ```
 
 Each engine declares what it can do and with what fidelity. The planner picks the path that
