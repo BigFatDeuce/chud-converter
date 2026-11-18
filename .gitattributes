@@ -1,0 +1,7 @@
+# Fins de ligne normalisées (LF dans le dépôt), quel que soit le système du contributeur.
+* text=auto
+
+*.ico binary
+*.icns binary
+*.png binary
+*.jpg binary

@@ -1,0 +1,20 @@
+id = "pandoc"
+name = "Pandoc"
+adapter = "none"
+homepage = "https://pandoc.org"
+license = "GPL-2.0-or-later"
+description = "Documents texte : Markdown, HTML, DOCX, ODT, EPUB, LaTeX…"
+categories = ['document', 'ebook']
+executables = ['pandoc']
+
+[detect]
+version_args = ['--version']
+version_regex = 'pandoc(?:\.exe)? ([0-9][0-9.]*)'
+known_paths_windows = ['%LOCALAPPDATA%\Pandoc\pandoc.exe', '%ProgramFiles%\Pandoc\pandoc.exe']
+known_paths_linux = ['/usr/bin/pandoc']
+known_paths_macos = ['/opt/homebrew/bin/pandoc']
+
+[hints]
+windows = "winget install JohnMacFarlane.Pandoc"
+linux = "sudo apt install pandoc"
+macos = "brew install pandoc"

@@ -1,0 +1,21 @@
+id = "imagemagick"
+name = "ImageMagick"
+adapter = "none"
+homepage = "https://imagemagick.org"
+license = "ImageMagick (compatible Apache-2.0)"
+description = "Images : plus de 200 formats."
+categories = ['image']
+# « convert » n'est jamais utilisé : sous Windows, c'est l'outil système de conversion de disque.
+executables = ['magick']
+
+[detect]
+version_args = ['-version']
+version_regex = 'ImageMagick ([0-9][0-9.\-]*)'
+known_paths_windows = ['%ProgramFiles%\ImageMagick*\magick.exe']
+known_paths_linux = ['/usr/bin/magick']
+known_paths_macos = ['/opt/homebrew/bin/magick']
+
+[hints]
+windows = "winget install ImageMagick.ImageMagick"
+linux = "sudo apt install imagemagick"
+macos = "brew install imagemagick"

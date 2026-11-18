@@ -1,0 +1,27 @@
+[package]
+name = "chud-cli"
+description = "Command-line interface for Chud Converter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "chud"
+path = "src/main.rs"
+
+[dependencies]
+chud-core.workspace = true
+chud-engines.workspace = true
+chud-jobs.workspace = true
+chud-enginemgr.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+indicatif.workspace = true
+crossbeam-channel.workspace = true
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

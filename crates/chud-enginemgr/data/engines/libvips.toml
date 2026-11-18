@@ -1,0 +1,19 @@
+id = "libvips"
+name = "libvips"
+adapter = "none"
+homepage = "https://www.libvips.org"
+license = "LGPL-2.1-or-later"
+description = "Images très grandes, HEIC, AVIF, JPEG XL ; rapide et économe."
+categories = ['image']
+executables = ['vips']
+
+[detect]
+version_args = ['--version']
+version_regex = 'vips-([0-9][0-9.]*)'
+known_paths_windows = []
+known_paths_linux = ['/usr/bin/vips']
+known_paths_macos = ['/opt/homebrew/bin/vips']
+
+[hints]
+linux = "sudo apt install libvips-tools"
+macos = "brew install vips"

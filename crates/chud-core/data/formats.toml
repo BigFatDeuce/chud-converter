@@ -1,0 +1,1833 @@
+# Catalogue des formats connus de Chud Converter.
+#
+# Champs :
+#   id           identifiant stable (minuscules)            obligatoire
+#   name         nom affiché                                 obligatoire
+#   category     image | audio | video | document | spreadsheet | presentation | pdf | ebook
+#                | archive | data | subtitle | font | model3d | geo | other
+#   extensions   extensions sans point, la première sert à nommer les sorties
+#   mime         types MIME
+#   compression  lossless | lossy | both | none
+#   features     caractéristiques que le format PEUT contenir (sert au calcul des pertes)
+#   text         true si le format est textuel (heuristiques de détection)
+#   based_on     formats « porteurs » reconnus par signature (ex. CBZ → zip, NEF → tiff)
+#   variant_of   variante proposée comme cible mais jamais renvoyée par la détection
+#   pivot        format intermédiaire sans perte privilégié par le planificateur
+#   limitations  limites du format affichées avant conversion
+
+# ───────────────────────────── Images ─────────────────────────────
+[[format]]
+id = "png"
+name = "PNG"
+category = "image"
+extensions = ["png"]
+mime = ["image/png"]
+compression = "lossless"
+features = ["alpha", "high_bit_depth", "icc", "exif", "xmp"]
+pivot = true
+
+[[format]]
+id = "apng"
+name = "PNG animé (APNG)"
+category = "image"
+extensions = ["apng", "png"]
+mime = ["image/apng"]
+compression = "lossless"
+features = ["alpha", "animation", "icc"]
+based_on = ["png"]
+
+[[format]]
+id = "jpeg"
+name = "JPEG"
+category = "image"
+extensions = ["jpg", "jpeg", "jpe", "jfif"]
+mime = ["image/jpeg"]
+compression = "lossy"
+features = ["icc", "exif", "xmp", "iptc", "cmyk"]
+
+[[format]]
+id = "webp"
+name = "WebP"
+category = "image"
+extensions = ["webp"]
+mime = ["image/webp"]
+compression = "both"
+features = ["alpha", "animation", "icc", "exif", "xmp"]
+limitations = ["Dimensions limitées à 16383 × 16383 pixels"]
+
+[[format]]
+id = "avif"
+name = "AVIF"
+category = "image"
+extensions = ["avif"]
+mime = ["image/avif"]
+compression = "both"
+features = ["alpha", "animation", "high_bit_depth", "hdr", "icc", "exif", "xmp"]
+
+[[format]]
+id = "heic"
+name = "HEIF / HEIC"
+category = "image"
+extensions = ["heic", "heif", "hif"]
+mime = ["image/heic", "image/heif"]
+compression = "both"
+features = ["alpha", "high_bit_depth", "hdr", "icc", "exif", "xmp", "multipage"]
+
+[[format]]
+id = "jxl"
+name = "JPEG XL"
+category = "image"
+extensions = ["jxl"]
+mime = ["image/jxl"]
+compression = "both"
+features = ["alpha", "animation", "high_bit_depth", "hdr", "icc", "exif", "xmp", "layers"]
+
+[[format]]
+id = "jp2"
+name = "JPEG 2000"
+category = "image"
+extensions = ["jp2", "j2k", "jpf", "jpx", "jpm"]
+mime = ["image/jp2"]
+compression = "both"
+features = ["alpha", "high_bit_depth", "icc", "xmp"]
+
+[[format]]
+id = "gif"
+name = "GIF"
+category = "image"
+extensions = ["gif"]
+mime = ["image/gif"]
+compression = "lossless"
+features = ["alpha", "animation"]
+limitations = ["256 couleurs maximum par image", "Transparence binaire (pas de semi-transparence)"]
+
+[[format]]
+id = "bmp"
+name = "BMP"
+category = "image"
+extensions = ["bmp", "dib"]
+mime = ["image/bmp"]
+compression = "lossless"
+features = ["alpha"]
+
+[[format]]
+id = "tiff"
+name = "TIFF"
+category = "image"
+extensions = ["tif", "tiff"]
+mime = ["image/tiff"]
+compression = "both"
+features = ["alpha", "high_bit_depth", "icc", "exif", "xmp", "iptc", "multipage", "cmyk", "layers"]
+pivot = true
+
+[[format]]
+id = "ico"
+name = "Icône Windows (ICO)"
+category = "image"
+extensions = ["ico"]
+mime = ["image/vnd.microsoft.icon", "image/x-icon"]
+compression = "lossless"
+features = ["alpha", "multipage"]
+limitations = ["256 × 256 pixels maximum"]
+
+[[format]]
+id = "cur"
+name = "Curseur Windows (CUR)"
+category = "image"
+extensions = ["cur"]
+compression = "lossless"
+features = ["alpha"]
+
+[[format]]
+id = "icns"
+name = "Icône macOS (ICNS)"
+category = "image"
+extensions = ["icns"]
+mime = ["image/icns"]
+compression = "both"
+features = ["alpha", "multipage"]
+
+[[format]]
+id = "svg"
+name = "SVG"
+category = "image"
+extensions = ["svg", "svgz"]
+mime = ["image/svg+xml"]
+compression = "none"
+features = ["vector", "alpha", "animation", "text_layer"]
+text = true
+based_on = ["xml"]
+
+[[format]]
+id = "eps"
+name = "EPS (PostScript encapsulé)"
+category = "image"
+extensions = ["eps", "epsf"]
+mime = ["application/postscript"]
+compression = "none"
+features = ["vector", "cmyk"]
+
+[[format]]
+id = "ai"
+name = "Adobe Illustrator"
+category = "image"
+extensions = ["ai"]
+mime = ["application/illustrator"]
+compression = "none"
+features = ["vector", "layers", "cmyk"]
+based_on = ["pdf"]
+
+[[format]]
+id = "emf"
+name = "EMF (métafichier amélioré)"
+category = "image"
+extensions = ["emf"]
+compression = "none"
+features = ["vector"]
+
+[[format]]
+id = "wmf"
+name = "WMF (métafichier Windows)"
+category = "image"
+extensions = ["wmf"]
+compression = "none"
+features = ["vector"]
+
+[[format]]
+id = "psd"
+name = "Photoshop (PSD)"
+category = "image"
+extensions = ["psd", "psb"]
+mime = ["image/vnd.adobe.photoshop"]
+compression = "lossless"
+features = ["alpha", "layers", "high_bit_depth", "icc", "exif", "xmp", "cmyk"]
+
+[[format]]
+id = "xcf"
+name = "GIMP (XCF)"
+category = "image"
+extensions = ["xcf"]
+mime = ["image/x-xcf"]
+compression = "lossless"
+features = ["alpha", "layers", "high_bit_depth", "icc"]
+
+[[format]]
+id = "exr"
+name = "OpenEXR"
+category = "image"
+extensions = ["exr"]
+mime = ["image/x-exr"]
+compression = "both"
+features = ["alpha", "high_bit_depth", "hdr", "layers"]
+
+[[format]]
+id = "hdr"
+name = "Radiance HDR"
+category = "image"
+extensions = ["hdr", "pic"]
+mime = ["image/vnd.radiance"]
+compression = "lossy"
+features = ["hdr", "high_bit_depth"]
+
+[[format]]
+id = "dds"
+name = "DirectDraw Surface (DDS)"
+category = "image"
+extensions = ["dds"]
+mime = ["image/vnd-ms.dds"]
+compression = "both"
+features = ["alpha", "multipage"]
+
+[[format]]
+id = "ktx2"
+name = "KTX 2 (textures)"
+category = "image"
+extensions = ["ktx2"]
+mime = ["image/ktx2"]
+compression = "both"
+features = ["alpha", "multipage", "high_bit_depth"]
+
+[[format]]
+id = "tga"
+name = "Targa (TGA)"
+category = "image"
+extensions = ["tga", "icb", "vda", "vst"]
+mime = ["image/x-tga"]
+compression = "lossless"
+features = ["alpha"]
+
+[[format]]
+id = "pcx"
+name = "PCX"
+category = "image"
+extensions = ["pcx"]
+mime = ["image/vnd.zbrush.pcx"]
+compression = "lossless"
+features = []
+
+[[format]]
+id = "pnm"
+name = "Netpbm (PPM/PGM/PBM/PAM)"
+category = "image"
+extensions = ["ppm", "pgm", "pbm", "pnm", "pam"]
+mime = ["image/x-portable-anymap"]
+compression = "none"
+features = ["high_bit_depth", "alpha"]
+
+[[format]]
+id = "qoi"
+name = "QOI"
+category = "image"
+extensions = ["qoi"]
+mime = ["image/qoi"]
+compression = "lossless"
+features = ["alpha"]
+
+[[format]]
+id = "farbfeld"
+name = "Farbfeld"
+category = "image"
+extensions = ["ff"]
+compression = "none"
+features = ["alpha", "high_bit_depth"]
+
+[[format]]
+id = "dng"
+name = "Adobe DNG (RAW)"
+category = "image"
+extensions = ["dng"]
+mime = ["image/x-adobe-dng"]
+compression = "lossless"
+features = ["high_bit_depth", "exif", "xmp", "icc", "raw"]
+based_on = ["tiff"]
+
+[[format]]
+id = "cr2"
+name = "Canon RAW (CR2)"
+category = "image"
+extensions = ["cr2"]
+compression = "lossless"
+features = ["high_bit_depth", "exif", "raw"]
+based_on = ["tiff"]
+
+[[format]]
+id = "cr3"
+name = "Canon RAW (CR3)"
+category = "image"
+extensions = ["cr3"]
+compression = "lossless"
+features = ["high_bit_depth", "exif", "raw"]
+
+[[format]]
+id = "nef"
+name = "Nikon RAW (NEF)"
+category = "image"
+extensions = ["nef", "nrw"]
+compression = "lossless"
+features = ["high_bit_depth", "exif", "raw"]
+based_on = ["tiff"]
+
+[[format]]
+id = "arw"
+name = "Sony RAW (ARW)"
+category = "image"
+extensions = ["arw", "srf", "sr2"]
+compression = "lossless"
+features = ["high_bit_depth", "exif", "raw"]
+based_on = ["tiff"]
+
+[[format]]
+id = "orf"
+name = "Olympus RAW (ORF)"
+category = "image"
+extensions = ["orf"]
+compression = "lossless"
+features = ["high_bit_depth", "exif", "raw"]
+
+[[format]]
+id = "rw2"
+name = "Panasonic RAW (RW2)"
+category = "image"
+extensions = ["rw2"]
+compression = "lossless"
+features = ["high_bit_depth", "exif", "raw"]
+
+[[format]]
+id = "raf"
+name = "Fujifilm RAW (RAF)"
+category = "image"
+extensions = ["raf"]
+compression = "lossless"
+features = ["high_bit_depth", "exif", "raw"]
+
+[[format]]
+id = "pef"
+name = "Pentax RAW (PEF)"
+category = "image"
+extensions = ["pef"]
+compression = "lossless"
+features = ["high_bit_depth", "exif", "raw"]
+based_on = ["tiff"]
+
+# ───────────────────────────── Audio ─────────────────────────────
+[[format]]
+id = "mp3"
+name = "MP3"
+category = "audio"
+extensions = ["mp3"]
+mime = ["audio/mpeg"]
+compression = "lossy"
+features = ["audio", "tags", "cover_art", "chapters"]
+
+[[format]]
+id = "wav"
+name = "WAV"
+category = "audio"
+extensions = ["wav", "wave"]
+mime = ["audio/wav", "audio/x-wav"]
+compression = "none"
+features = ["audio", "tags", "high_bit_depth"]
+pivot = true
+limitations = ["Taille limitée à 4 Go (RIFF classique)"]
+
+[[format]]
+id = "flac"
+name = "FLAC"
+category = "audio"
+extensions = ["flac"]
+mime = ["audio/flac"]
+compression = "lossless"
+features = ["audio", "tags", "cover_art", "high_bit_depth"]
+pivot = true
+
+[[format]]
+id = "aac"
+name = "AAC (ADTS)"
+category = "audio"
+extensions = ["aac", "adts"]
+mime = ["audio/aac"]
+compression = "lossy"
+features = ["audio"]
+
+[[format]]
+id = "m4a"
+name = "M4A (MPEG-4 audio)"
+category = "audio"
+extensions = ["m4a", "m4b", "m4r"]
+mime = ["audio/mp4", "audio/x-m4a"]
+compression = "both"
+features = ["audio", "tags", "cover_art", "chapters"]
+
+[[format]]
+id = "alac"
+name = "Apple Lossless (ALAC, .m4a)"
+category = "audio"
+extensions = ["m4a"]
+compression = "lossless"
+features = ["audio", "tags", "cover_art", "chapters", "high_bit_depth"]
+variant_of = "m4a"
+
+[[format]]
+id = "ogg"
+name = "Ogg Vorbis"
+category = "audio"
+extensions = ["ogg", "oga"]
+mime = ["audio/ogg"]
+compression = "lossy"
+features = ["audio", "tags", "cover_art"]
+
+[[format]]
+id = "opus"
+name = "Opus"
+category = "audio"
+extensions = ["opus"]
+mime = ["audio/opus"]
+compression = "lossy"
+features = ["audio", "tags", "cover_art"]
+
+[[format]]
+id = "wma"
+name = "Windows Media Audio"
+category = "audio"
+extensions = ["wma"]
+mime = ["audio/x-ms-wma"]
+compression = "lossy"
+features = ["audio", "tags"]
+
+[[format]]
+id = "aiff"
+name = "AIFF"
+category = "audio"
+extensions = ["aiff", "aif", "aifc"]
+mime = ["audio/aiff"]
+compression = "none"
+features = ["audio", "tags", "high_bit_depth"]
+
+[[format]]
+id = "ape"
+name = "Monkey's Audio (APE)"
+category = "audio"
+extensions = ["ape"]
+mime = ["audio/ape"]
+compression = "lossless"
+features = ["audio", "tags", "high_bit_depth"]
+
+[[format]]
+id = "wv"
+name = "WavPack"
+category = "audio"
+extensions = ["wv"]
+mime = ["audio/wavpack"]
+compression = "both"
+features = ["audio", "tags", "high_bit_depth"]
+
+[[format]]
+id = "tta"
+name = "True Audio (TTA)"
+category = "audio"
+extensions = ["tta"]
+compression = "lossless"
+features = ["audio", "tags"]
+
+[[format]]
+id = "ac3"
+name = "Dolby Digital (AC-3)"
+category = "audio"
+extensions = ["ac3"]
+mime = ["audio/ac3"]
+compression = "lossy"
+features = ["audio", "surround"]
+
+[[format]]
+id = "eac3"
+name = "Dolby Digital Plus (E-AC-3)"
+category = "audio"
+extensions = ["eac3", "ec3"]
+mime = ["audio/eac3"]
+compression = "lossy"
+features = ["audio", "surround"]
+
+[[format]]
+id = "dts"
+name = "DTS"
+category = "audio"
+extensions = ["dts"]
+mime = ["audio/vnd.dts"]
+compression = "lossy"
+features = ["audio", "surround"]
+
+[[format]]
+id = "mka"
+name = "Matroska audio (MKA)"
+category = "audio"
+extensions = ["mka"]
+mime = ["audio/x-matroska"]
+compression = "both"
+features = ["audio", "multi_audio", "tags", "chapters", "cover_art", "attachments", "high_bit_depth", "surround"]
+
+[[format]]
+id = "amr"
+name = "AMR"
+category = "audio"
+extensions = ["amr"]
+mime = ["audio/amr"]
+compression = "lossy"
+features = ["audio"]
+
+[[format]]
+id = "caf"
+name = "Core Audio Format (CAF)"
+category = "audio"
+extensions = ["caf"]
+mime = ["audio/x-caf"]
+compression = "both"
+features = ["audio", "tags", "high_bit_depth"]
+
+[[format]]
+id = "au"
+name = "Sun AU"
+category = "audio"
+extensions = ["au", "snd"]
+mime = ["audio/basic"]
+compression = "none"
+features = ["audio"]
+
+[[format]]
+id = "dsf"
+name = "DSD (DSF)"
+category = "audio"
+extensions = ["dsf", "dff"]
+compression = "none"
+features = ["audio", "tags", "high_bit_depth"]
+
+[[format]]
+id = "midi"
+name = "MIDI"
+category = "audio"
+extensions = ["mid", "midi", "kar", "rmi"]
+mime = ["audio/midi"]
+compression = "none"
+features = ["notation"]
+limitations = ["Contient des notes, pas du son : la conversion en audio nécessite un synthétiseur (SoundFont)"]
+
+[[format]]
+id = "mod"
+name = "Module tracker (MOD/XM/IT/S3M)"
+category = "audio"
+extensions = ["mod", "xm", "it", "s3m", "mptm"]
+compression = "none"
+features = ["audio", "notation"]
+
+# ───────────────────────────── Vidéo ─────────────────────────────
+[[format]]
+id = "mp4"
+name = "MP4"
+category = "video"
+extensions = ["mp4", "m4v"]
+mime = ["video/mp4"]
+compression = "both"
+features = ["video", "audio", "multi_audio", "subtitles", "chapters", "tags", "cover_art", "hdr", "high_bit_depth", "surround"]
+
+[[format]]
+id = "mkv"
+name = "Matroska (MKV)"
+category = "video"
+extensions = ["mkv", "mk3d"]
+mime = ["video/x-matroska"]
+compression = "both"
+features = ["video", "audio", "multi_audio", "multi_video", "subtitles", "image_subtitles", "chapters", "tags", "cover_art", "attachments", "hdr", "high_bit_depth", "surround"]
+pivot = true
+
+[[format]]
+id = "webm"
+name = "WebM"
+category = "video"
+extensions = ["webm"]
+mime = ["video/webm"]
+compression = "lossy"
+features = ["video", "audio", "multi_audio", "subtitles", "chapters", "tags", "alpha", "hdr", "high_bit_depth", "surround"]
+limitations = ["Codecs limités à VP8/VP9/AV1 (vidéo) et Opus/Vorbis (audio)"]
+
+[[format]]
+id = "avi"
+name = "AVI"
+category = "video"
+extensions = ["avi"]
+mime = ["video/x-msvideo"]
+compression = "both"
+features = ["video", "audio", "multi_audio", "surround"]
+limitations = ["Pas de sous-titres ni de chapitres", "Codecs modernes (HEVC, AV1) mal pris en charge par les lecteurs"]
+
+[[format]]
+id = "mov"
+name = "QuickTime (MOV)"
+category = "video"
+extensions = ["mov", "qt"]
+mime = ["video/quicktime"]
+compression = "both"
+features = ["video", "audio", "multi_audio", "subtitles", "chapters", "tags", "alpha", "hdr", "high_bit_depth", "surround"]
+
+[[format]]
+id = "wmv"
+name = "Windows Media Video"
+category = "video"
+extensions = ["wmv", "asf"]
+mime = ["video/x-ms-wmv", "video/x-ms-asf"]
+compression = "lossy"
+features = ["video", "audio", "multi_audio", "tags"]
+
+[[format]]
+id = "flv"
+name = "Flash Video (FLV)"
+category = "video"
+extensions = ["flv", "f4v"]
+mime = ["video/x-flv"]
+compression = "lossy"
+features = ["video", "audio", "tags"]
+
+[[format]]
+id = "mpeg"
+name = "MPEG-PS (MPG)"
+category = "video"
+extensions = ["mpg", "mpeg", "m1v", "m2v", "mpe"]
+mime = ["video/mpeg"]
+compression = "lossy"
+features = ["video", "audio", "multi_audio", "surround"]
+
+[[format]]
+id = "ts"
+name = "MPEG-TS"
+category = "video"
+extensions = ["ts", "tsv", "trp"]
+mime = ["video/mp2t"]
+compression = "lossy"
+features = ["video", "audio", "multi_audio", "subtitles", "image_subtitles", "surround", "hdr", "high_bit_depth"]
+
+[[format]]
+id = "m2ts"
+name = "Blu-ray / AVCHD (M2TS, MTS)"
+category = "video"
+extensions = ["m2ts", "mts"]
+mime = ["video/mp2t"]
+compression = "lossy"
+features = ["video", "audio", "multi_audio", "subtitles", "image_subtitles", "surround", "hdr", "high_bit_depth"]
+
+[[format]]
+id = "3gp"
+name = "3GP / 3G2"
+category = "video"
+extensions = ["3gp", "3g2"]
+mime = ["video/3gpp", "video/3gpp2"]
+compression = "lossy"
+features = ["video", "audio"]
+
+[[format]]
+id = "vob"
+name = "DVD Video (VOB)"
+category = "video"
+extensions = ["vob"]
+mime = ["video/dvd"]
+compression = "lossy"
+features = ["video", "audio", "multi_audio", "image_subtitles", "surround"]
+
+[[format]]
+id = "ogv"
+name = "Ogg Video (OGV)"
+category = "video"
+extensions = ["ogv"]
+mime = ["video/ogg"]
+compression = "lossy"
+features = ["video", "audio", "tags"]
+
+[[format]]
+id = "mxf"
+name = "MXF (broadcast)"
+category = "video"
+extensions = ["mxf"]
+mime = ["application/mxf"]
+compression = "both"
+features = ["video", "audio", "multi_audio", "high_bit_depth", "timecode"]
+
+[[format]]
+id = "rm"
+name = "RealMedia"
+category = "video"
+extensions = ["rm", "rmvb"]
+mime = ["application/vnd.rn-realmedia"]
+compression = "lossy"
+features = ["video", "audio"]
+
+[[format]]
+id = "dv"
+name = "DV"
+category = "video"
+extensions = ["dv", "dif"]
+mime = ["video/dv"]
+compression = "lossy"
+features = ["video", "audio", "timecode"]
+
+# ───────────────────────────── Sous-titres ─────────────────────────────
+[[format]]
+id = "srt"
+name = "SubRip (SRT)"
+category = "subtitle"
+extensions = ["srt"]
+mime = ["application/x-subrip"]
+compression = "none"
+features = ["timed_text"]
+text = true
+
+[[format]]
+id = "vtt"
+name = "WebVTT"
+category = "subtitle"
+extensions = ["vtt"]
+mime = ["text/vtt"]
+compression = "none"
+features = ["timed_text", "styles", "positioning"]
+text = true
+
+[[format]]
+id = "ass"
+name = "Advanced SubStation Alpha (ASS/SSA)"
+category = "subtitle"
+extensions = ["ass", "ssa"]
+mime = ["text/x-ssa"]
+compression = "none"
+features = ["timed_text", "styles", "positioning", "fonts_embedded"]
+text = true
+
+[[format]]
+id = "ttml"
+name = "TTML / DFXP"
+category = "subtitle"
+extensions = ["ttml", "dfxp"]
+mime = ["application/ttml+xml"]
+compression = "none"
+features = ["timed_text", "styles", "positioning"]
+text = true
+based_on = ["xml"]
+
+[[format]]
+id = "microdvd"
+name = "MicroDVD (SUB)"
+category = "subtitle"
+extensions = ["sub"]
+compression = "none"
+features = ["timed_text"]
+text = true
+
+[[format]]
+id = "lrc"
+name = "Paroles synchronisées (LRC)"
+category = "subtitle"
+extensions = ["lrc"]
+compression = "none"
+features = ["timed_text"]
+text = true
+
+[[format]]
+id = "sup"
+name = "Sous-titres Blu-ray (PGS/SUP)"
+category = "subtitle"
+extensions = ["sup"]
+compression = "lossless"
+features = ["image_subtitles"]
+
+# ───────────────────────────── Documents ─────────────────────────────
+[[format]]
+id = "docx"
+name = "Word (DOCX)"
+category = "document"
+extensions = ["docx"]
+mime = ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
+compression = "none"
+features = ["rich_text", "styles", "images", "tables", "comments", "track_changes", "metadata", "fonts_embedded", "forms"]
+based_on = ["zip"]
+
+[[format]]
+id = "docm"
+name = "Word avec macros (DOCM)"
+category = "document"
+extensions = ["docm"]
+compression = "none"
+features = ["rich_text", "styles", "images", "tables", "comments", "track_changes", "metadata", "macros"]
+based_on = ["zip"]
+
+[[format]]
+id = "doc"
+name = "Word 97-2003 (DOC)"
+category = "document"
+extensions = ["doc"]
+mime = ["application/msword"]
+compression = "none"
+features = ["rich_text", "styles", "images", "tables", "comments", "track_changes", "metadata", "macros"]
+based_on = ["cfb"]
+
+[[format]]
+id = "odt"
+name = "OpenDocument Texte (ODT)"
+category = "document"
+extensions = ["odt"]
+mime = ["application/vnd.oasis.opendocument.text"]
+compression = "none"
+features = ["rich_text", "styles", "images", "tables", "comments", "track_changes", "metadata", "forms"]
+based_on = ["zip"]
+
+[[format]]
+id = "rtf"
+name = "Rich Text Format (RTF)"
+category = "document"
+extensions = ["rtf"]
+mime = ["application/rtf", "text/rtf"]
+compression = "none"
+features = ["rich_text", "styles", "images", "tables"]
+text = true
+
+[[format]]
+id = "txt"
+name = "Texte brut"
+category = "document"
+extensions = ["txt", "text", "log"]
+mime = ["text/plain"]
+compression = "none"
+features = []
+text = true
+
+[[format]]
+id = "md"
+name = "Markdown"
+category = "document"
+extensions = ["md", "markdown", "mdown", "mkd"]
+mime = ["text/markdown"]
+compression = "none"
+features = ["rich_text", "tables", "images"]
+text = true
+
+[[format]]
+id = "html"
+name = "HTML"
+category = "document"
+extensions = ["html", "htm", "xhtml"]
+mime = ["text/html", "application/xhtml+xml"]
+compression = "none"
+features = ["rich_text", "styles", "images", "tables", "forms", "scripts"]
+text = true
+
+[[format]]
+id = "latex"
+name = "LaTeX"
+category = "document"
+extensions = ["tex", "latex"]
+mime = ["application/x-latex"]
+compression = "none"
+features = ["rich_text", "styles", "tables", "formulas"]
+text = true
+
+[[format]]
+id = "rst"
+name = "reStructuredText"
+category = "document"
+extensions = ["rst"]
+compression = "none"
+features = ["rich_text", "tables", "images"]
+text = true
+
+[[format]]
+id = "org"
+name = "Org mode"
+category = "document"
+extensions = ["org"]
+compression = "none"
+features = ["rich_text", "tables"]
+text = true
+
+[[format]]
+id = "asciidoc"
+name = "AsciiDoc"
+category = "document"
+extensions = ["adoc", "asciidoc", "asc"]
+compression = "none"
+features = ["rich_text", "tables", "images"]
+text = true
+
+[[format]]
+id = "typst"
+name = "Typst"
+category = "document"
+extensions = ["typ"]
+compression = "none"
+features = ["rich_text", "styles", "tables", "formulas", "images"]
+text = true
+
+[[format]]
+id = "wpd"
+name = "WordPerfect"
+category = "document"
+extensions = ["wpd", "wp", "wp5", "wp6"]
+mime = ["application/vnd.wordperfect"]
+compression = "none"
+features = ["rich_text", "styles", "tables"]
+
+[[format]]
+id = "pages"
+name = "Apple Pages"
+category = "document"
+extensions = ["pages"]
+compression = "none"
+features = ["rich_text", "styles", "images", "tables"]
+based_on = ["zip"]
+
+[[format]]
+id = "abw"
+name = "AbiWord"
+category = "document"
+extensions = ["abw"]
+mime = ["application/x-abiword"]
+compression = "none"
+features = ["rich_text", "styles", "images", "tables"]
+
+[[format]]
+id = "ipynb"
+name = "Notebook Jupyter"
+category = "document"
+extensions = ["ipynb"]
+mime = ["application/x-ipynb+json"]
+compression = "none"
+features = ["rich_text", "images", "code"]
+text = true
+based_on = ["json"]
+
+# ───────────────────────────── Tableurs ─────────────────────────────
+[[format]]
+id = "xlsx"
+name = "Excel (XLSX)"
+category = "spreadsheet"
+extensions = ["xlsx"]
+mime = ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]
+compression = "none"
+features = ["multi_sheet", "formulas", "styles", "charts", "images", "comments", "types", "metadata"]
+based_on = ["zip"]
+
+[[format]]
+id = "xlsm"
+name = "Excel avec macros (XLSM)"
+category = "spreadsheet"
+extensions = ["xlsm"]
+compression = "none"
+features = ["multi_sheet", "formulas", "styles", "charts", "images", "comments", "types", "metadata", "macros"]
+based_on = ["zip"]
+
+[[format]]
+id = "xls"
+name = "Excel 97-2003 (XLS)"
+category = "spreadsheet"
+extensions = ["xls"]
+mime = ["application/vnd.ms-excel"]
+compression = "none"
+features = ["multi_sheet", "formulas", "styles", "charts", "images", "comments", "types", "macros"]
+based_on = ["cfb"]
+limitations = ["65 536 lignes et 256 colonnes maximum"]
+
+[[format]]
+id = "ods"
+name = "OpenDocument Tableur (ODS)"
+category = "spreadsheet"
+extensions = ["ods"]
+mime = ["application/vnd.oasis.opendocument.spreadsheet"]
+compression = "none"
+features = ["multi_sheet", "formulas", "styles", "charts", "images", "comments", "types", "metadata"]
+based_on = ["zip"]
+
+[[format]]
+id = "numbers"
+name = "Apple Numbers"
+category = "spreadsheet"
+extensions = ["numbers"]
+compression = "none"
+features = ["multi_sheet", "formulas", "styles", "charts", "types"]
+based_on = ["zip"]
+
+# ───────────────────────────── Présentations ─────────────────────────────
+[[format]]
+id = "pptx"
+name = "PowerPoint (PPTX)"
+category = "presentation"
+extensions = ["pptx"]
+mime = ["application/vnd.openxmlformats-officedocument.presentationml.presentation"]
+compression = "none"
+features = ["slides", "rich_text", "styles", "images", "animation", "notes", "media", "metadata"]
+based_on = ["zip"]
+
+[[format]]
+id = "ppt"
+name = "PowerPoint 97-2003 (PPT)"
+category = "presentation"
+extensions = ["ppt", "pps"]
+mime = ["application/vnd.ms-powerpoint"]
+compression = "none"
+features = ["slides", "rich_text", "styles", "images", "animation", "notes", "macros"]
+based_on = ["cfb"]
+
+[[format]]
+id = "odp"
+name = "OpenDocument Présentation (ODP)"
+category = "presentation"
+extensions = ["odp"]
+mime = ["application/vnd.oasis.opendocument.presentation"]
+compression = "none"
+features = ["slides", "rich_text", "styles", "images", "animation", "notes", "metadata"]
+based_on = ["zip"]
+
+[[format]]
+id = "key"
+name = "Apple Keynote"
+category = "presentation"
+extensions = ["key"]
+compression = "none"
+features = ["slides", "rich_text", "styles", "images", "animation", "notes"]
+based_on = ["zip"]
+
+# ───────────────────────────── PDF et mise en page ─────────────────────────────
+[[format]]
+id = "pdf"
+name = "PDF"
+category = "pdf"
+extensions = ["pdf"]
+mime = ["application/pdf"]
+compression = "both"
+features = ["multipage", "vector", "text_layer", "images", "fonts_embedded", "forms", "bookmarks", "metadata", "encryption", "comments", "cmyk", "icc"]
+
+[[format]]
+id = "pdfa"
+name = "PDF/A (archivage)"
+category = "pdf"
+extensions = ["pdf"]
+compression = "both"
+features = ["multipage", "vector", "text_layer", "images", "fonts_embedded", "bookmarks", "metadata", "icc", "cmyk"]
+variant_of = "pdf"
+limitations = ["Chiffrement, JavaScript et contenus externes interdits"]
+
+[[format]]
+id = "ps"
+name = "PostScript"
+category = "pdf"
+extensions = ["ps"]
+mime = ["application/postscript"]
+compression = "none"
+features = ["multipage", "vector", "text_layer", "images", "fonts_embedded", "cmyk"]
+
+[[format]]
+id = "xps"
+name = "XPS / OpenXPS"
+category = "pdf"
+extensions = ["xps", "oxps"]
+mime = ["application/oxps", "application/vnd.ms-xpsdocument"]
+compression = "none"
+features = ["multipage", "vector", "text_layer", "images", "fonts_embedded"]
+based_on = ["zip"]
+
+[[format]]
+id = "djvu"
+name = "DjVu"
+category = "pdf"
+extensions = ["djvu", "djv"]
+mime = ["image/vnd.djvu"]
+compression = "lossy"
+features = ["multipage", "text_layer", "images"]
+
+# ───────────────────────────── Livres électroniques ─────────────────────────────
+[[format]]
+id = "epub"
+name = "EPUB"
+category = "ebook"
+extensions = ["epub"]
+mime = ["application/epub+zip"]
+compression = "none"
+features = ["rich_text", "styles", "images", "tables", "metadata", "cover_art", "fonts_embedded", "toc"]
+based_on = ["zip"]
+
+[[format]]
+id = "mobi"
+name = "Mobipocket (MOBI)"
+category = "ebook"
+extensions = ["mobi", "prc"]
+mime = ["application/x-mobipocket-ebook"]
+compression = "none"
+features = ["rich_text", "images", "metadata", "cover_art", "toc"]
+limitations = ["Format obsolète : mise en forme limitée"]
+
+[[format]]
+id = "azw3"
+name = "Kindle (AZW3/KF8)"
+category = "ebook"
+extensions = ["azw3", "azw", "kf8"]
+mime = ["application/vnd.amazon.mobi8-ebook"]
+compression = "none"
+features = ["rich_text", "styles", "images", "tables", "metadata", "cover_art", "fonts_embedded", "toc"]
+
+[[format]]
+id = "fb2"
+name = "FictionBook (FB2)"
+category = "ebook"
+extensions = ["fb2", "fbz"]
+mime = ["application/x-fictionbook+xml"]
+compression = "none"
+features = ["rich_text", "images", "metadata", "cover_art", "toc"]
+text = true
+based_on = ["xml"]
+
+[[format]]
+id = "lit"
+name = "Microsoft Reader (LIT)"
+category = "ebook"
+extensions = ["lit"]
+compression = "none"
+features = ["rich_text", "images", "metadata"]
+
+[[format]]
+id = "pdb"
+name = "Palm eReader (PDB)"
+category = "ebook"
+extensions = ["pdb"]
+compression = "none"
+features = ["rich_text", "metadata"]
+
+[[format]]
+id = "lrf"
+name = "Sony BBeB (LRF)"
+category = "ebook"
+extensions = ["lrf"]
+compression = "none"
+features = ["rich_text", "images", "metadata"]
+
+[[format]]
+id = "cbz"
+name = "Bande dessinée ZIP (CBZ)"
+category = "ebook"
+extensions = ["cbz"]
+mime = ["application/vnd.comicbook+zip"]
+compression = "none"
+features = ["multipage", "images", "directories"]
+based_on = ["zip"]
+
+[[format]]
+id = "cbr"
+name = "Bande dessinée RAR (CBR)"
+category = "ebook"
+extensions = ["cbr"]
+mime = ["application/vnd.comicbook-rar"]
+compression = "none"
+features = ["multipage", "images", "directories"]
+based_on = ["rar"]
+
+[[format]]
+id = "cb7"
+name = "Bande dessinée 7z (CB7)"
+category = "ebook"
+extensions = ["cb7"]
+compression = "none"
+features = ["multipage", "images", "directories"]
+based_on = ["7z"]
+
+[[format]]
+id = "cbt"
+name = "Bande dessinée TAR (CBT)"
+category = "ebook"
+extensions = ["cbt"]
+compression = "none"
+features = ["multipage", "images", "directories"]
+based_on = ["tar"]
+
+# ───────────────────────────── Archives ─────────────────────────────
+[[format]]
+id = "zip"
+name = "ZIP"
+category = "archive"
+extensions = ["zip", "zipx"]
+mime = ["application/zip"]
+compression = "lossless"
+features = ["directories", "timestamps", "encryption", "comments"]
+pivot = true
+
+[[format]]
+id = "7z"
+name = "7-Zip"
+category = "archive"
+extensions = ["7z"]
+mime = ["application/x-7z-compressed"]
+compression = "lossless"
+features = ["directories", "timestamps", "encryption", "symlinks"]
+
+[[format]]
+id = "rar"
+name = "RAR"
+category = "archive"
+extensions = ["rar"]
+mime = ["application/vnd.rar"]
+compression = "lossless"
+features = ["directories", "timestamps", "encryption", "comments", "recovery"]
+limitations = ["Création réservée à WinRAR (logiciel propriétaire)"]
+
+[[format]]
+id = "tar"
+name = "TAR"
+category = "archive"
+extensions = ["tar"]
+mime = ["application/x-tar"]
+compression = "none"
+features = ["directories", "timestamps", "permissions", "symlinks"]
+
+[[format]]
+id = "tgz"
+name = "TAR + gzip"
+category = "archive"
+extensions = ["tar.gz", "tgz"]
+mime = ["application/gzip"]
+compression = "lossless"
+features = ["directories", "timestamps", "permissions", "symlinks"]
+based_on = ["gz"]
+
+[[format]]
+id = "tbz2"
+name = "TAR + bzip2"
+category = "archive"
+extensions = ["tar.bz2", "tbz2", "tbz"]
+compression = "lossless"
+features = ["directories", "timestamps", "permissions", "symlinks"]
+based_on = ["bz2"]
+
+[[format]]
+id = "txz"
+name = "TAR + xz"
+category = "archive"
+extensions = ["tar.xz", "txz"]
+compression = "lossless"
+features = ["directories", "timestamps", "permissions", "symlinks"]
+based_on = ["xz"]
+
+[[format]]
+id = "tzst"
+name = "TAR + Zstandard"
+category = "archive"
+extensions = ["tar.zst", "tzst"]
+compression = "lossless"
+features = ["directories", "timestamps", "permissions", "symlinks"]
+based_on = ["zst"]
+
+[[format]]
+id = "gz"
+name = "gzip"
+category = "archive"
+extensions = ["gz", "gzip"]
+mime = ["application/gzip"]
+compression = "lossless"
+features = []
+limitations = ["Compresse un seul fichier"]
+
+[[format]]
+id = "bz2"
+name = "bzip2"
+category = "archive"
+extensions = ["bz2"]
+mime = ["application/x-bzip2"]
+compression = "lossless"
+features = []
+limitations = ["Compresse un seul fichier"]
+
+[[format]]
+id = "xz"
+name = "xz"
+category = "archive"
+extensions = ["xz"]
+mime = ["application/x-xz"]
+compression = "lossless"
+features = []
+limitations = ["Compresse un seul fichier"]
+
+[[format]]
+id = "zst"
+name = "Zstandard"
+category = "archive"
+extensions = ["zst"]
+mime = ["application/zstd"]
+compression = "lossless"
+features = []
+limitations = ["Compresse un seul fichier"]
+
+[[format]]
+id = "lz4"
+name = "LZ4"
+category = "archive"
+extensions = ["lz4"]
+compression = "lossless"
+features = []
+
+[[format]]
+id = "lzma"
+name = "LZMA"
+category = "archive"
+extensions = ["lzma"]
+compression = "lossless"
+features = []
+
+[[format]]
+id = "iso"
+name = "Image disque ISO"
+category = "archive"
+extensions = ["iso"]
+mime = ["application/x-iso9660-image"]
+compression = "none"
+features = ["directories", "timestamps"]
+
+[[format]]
+id = "wim"
+name = "Windows Imaging (WIM)"
+category = "archive"
+extensions = ["wim", "swm", "esd"]
+compression = "lossless"
+features = ["directories", "timestamps", "permissions"]
+
+[[format]]
+id = "cab"
+name = "Cabinet Windows (CAB)"
+category = "archive"
+extensions = ["cab"]
+mime = ["application/vnd.ms-cab-compressed"]
+compression = "lossless"
+features = ["directories", "timestamps"]
+
+[[format]]
+id = "arj"
+name = "ARJ"
+category = "archive"
+extensions = ["arj"]
+compression = "lossless"
+features = ["directories", "timestamps"]
+
+[[format]]
+id = "lzh"
+name = "LHA / LZH"
+category = "archive"
+extensions = ["lzh", "lha"]
+compression = "lossless"
+features = ["directories", "timestamps"]
+
+[[format]]
+id = "cpio"
+name = "CPIO"
+category = "archive"
+extensions = ["cpio"]
+compression = "none"
+features = ["directories", "timestamps", "permissions", "symlinks"]
+
+[[format]]
+id = "deb"
+name = "Paquet Debian (DEB)"
+category = "archive"
+extensions = ["deb"]
+compression = "lossless"
+features = ["directories", "permissions"]
+
+[[format]]
+id = "rpm"
+name = "Paquet RPM"
+category = "archive"
+extensions = ["rpm"]
+compression = "lossless"
+features = ["directories", "permissions"]
+
+[[format]]
+id = "dmg"
+name = "Image disque Apple (DMG)"
+category = "archive"
+extensions = ["dmg"]
+compression = "lossless"
+features = ["directories"]
+
+[[format]]
+id = "vhd"
+name = "Disque virtuel (VHD/VHDX)"
+category = "archive"
+extensions = ["vhd", "vhdx"]
+compression = "none"
+features = ["directories"]
+
+[[format]]
+id = "squashfs"
+name = "SquashFS"
+category = "archive"
+extensions = ["squashfs", "sqfs", "snap"]
+compression = "lossless"
+features = ["directories", "permissions", "symlinks"]
+
+[[format]]
+id = "directory"
+name = "Dossier (extraction)"
+category = "archive"
+extensions = []
+compression = "none"
+features = ["directories", "timestamps", "permissions", "symlinks"]
+
+# ───────────────────────────── Données ─────────────────────────────
+[[format]]
+id = "json"
+name = "JSON"
+category = "data"
+extensions = ["json"]
+mime = ["application/json"]
+compression = "none"
+features = ["nesting", "types", "null"]
+text = true
+pivot = true
+
+[[format]]
+id = "ndjson"
+name = "JSON Lines (NDJSON)"
+category = "data"
+extensions = ["ndjson", "jsonl"]
+mime = ["application/x-ndjson"]
+compression = "none"
+features = ["nesting", "types", "null"]
+text = true
+
+[[format]]
+id = "yaml"
+name = "YAML"
+category = "data"
+extensions = ["yaml", "yml"]
+mime = ["application/yaml"]
+compression = "none"
+features = ["nesting", "types", "null", "comments", "anchors"]
+text = true
+
+[[format]]
+id = "toml"
+name = "TOML"
+category = "data"
+extensions = ["toml"]
+mime = ["application/toml"]
+compression = "none"
+features = ["nesting", "types", "comments", "datetime"]
+text = true
+limitations = ["Pas de valeur nulle", "La racine doit être un objet (table)"]
+
+[[format]]
+id = "xml"
+name = "XML"
+category = "data"
+extensions = ["xml"]
+mime = ["application/xml", "text/xml"]
+compression = "none"
+features = ["nesting", "comments", "attributes"]
+text = true
+
+[[format]]
+id = "csv"
+name = "CSV"
+category = "data"
+extensions = ["csv"]
+mime = ["text/csv"]
+compression = "none"
+features = []
+text = true
+limitations = ["Tableau plat : pas d'imbrication ni de types (tout est texte)"]
+
+[[format]]
+id = "tsv"
+name = "TSV (valeurs séparées par tabulations)"
+category = "data"
+extensions = ["tsv", "tab"]
+mime = ["text/tab-separated-values"]
+compression = "none"
+features = []
+text = true
+limitations = ["Tableau plat : pas d'imbrication ni de types (tout est texte)"]
+
+[[format]]
+id = "ini"
+name = "INI"
+category = "data"
+extensions = ["ini", "cfg", "conf"]
+compression = "none"
+features = ["comments"]
+text = true
+
+[[format]]
+id = "sqlite"
+name = "Base SQLite"
+category = "data"
+extensions = ["sqlite", "sqlite3", "db", "db3"]
+mime = ["application/vnd.sqlite3"]
+compression = "none"
+features = ["tables", "types", "multi_sheet", "schema"]
+
+[[format]]
+id = "sql"
+name = "Script SQL"
+category = "data"
+extensions = ["sql"]
+mime = ["application/sql"]
+compression = "none"
+features = ["tables", "types", "schema", "comments"]
+text = true
+
+[[format]]
+id = "parquet"
+name = "Apache Parquet"
+category = "data"
+extensions = ["parquet"]
+mime = ["application/vnd.apache.parquet"]
+compression = "lossless"
+features = ["types", "nesting", "null", "schema"]
+
+[[format]]
+id = "arrow"
+name = "Apache Arrow / Feather"
+category = "data"
+extensions = ["arrow", "feather"]
+compression = "lossless"
+features = ["types", "nesting", "null", "schema"]
+
+[[format]]
+id = "plist"
+name = "Property List (plist)"
+category = "data"
+extensions = ["plist"]
+compression = "none"
+features = ["nesting", "types"]
+
+# ───────────────────────────── Polices ─────────────────────────────
+[[format]]
+id = "ttf"
+name = "TrueType"
+category = "font"
+extensions = ["ttf"]
+mime = ["font/ttf"]
+compression = "none"
+features = ["hinting", "metadata"]
+
+[[format]]
+id = "otf"
+name = "OpenType (CFF)"
+category = "font"
+extensions = ["otf"]
+mime = ["font/otf"]
+compression = "none"
+features = ["hinting", "metadata"]
+
+[[format]]
+id = "ttc"
+name = "Collection TrueType (TTC)"
+category = "font"
+extensions = ["ttc", "otc"]
+mime = ["font/collection"]
+compression = "none"
+features = ["hinting", "metadata", "multipage"]
+
+[[format]]
+id = "woff"
+name = "WOFF"
+category = "font"
+extensions = ["woff"]
+mime = ["font/woff"]
+compression = "lossless"
+features = ["hinting", "metadata"]
+
+[[format]]
+id = "woff2"
+name = "WOFF2"
+category = "font"
+extensions = ["woff2"]
+mime = ["font/woff2"]
+compression = "lossless"
+features = ["hinting", "metadata"]
+
+[[format]]
+id = "pfb"
+name = "PostScript Type 1"
+category = "font"
+extensions = ["pfb", "pfa"]
+compression = "none"
+features = ["hinting"]
+
+# ───────────────────────────── 3D ─────────────────────────────
+[[format]]
+id = "obj"
+name = "Wavefront OBJ"
+category = "model3d"
+extensions = ["obj"]
+compression = "none"
+features = ["mesh", "materials", "uv"]
+text = true
+
+[[format]]
+id = "stl"
+name = "STL"
+category = "model3d"
+extensions = ["stl"]
+mime = ["model/stl"]
+compression = "none"
+features = ["mesh"]
+
+[[format]]
+id = "gltf"
+name = "glTF (JSON)"
+category = "model3d"
+extensions = ["gltf"]
+mime = ["model/gltf+json"]
+compression = "none"
+features = ["mesh", "materials", "uv", "scene", "animation", "skinning"]
+text = true
+based_on = ["json"]
+
+[[format]]
+id = "glb"
+name = "glTF binaire (GLB)"
+category = "model3d"
+extensions = ["glb"]
+mime = ["model/gltf-binary"]
+compression = "none"
+features = ["mesh", "materials", "uv", "scene", "animation", "skinning", "images"]
+
+[[format]]
+id = "fbx"
+name = "Autodesk FBX"
+category = "model3d"
+extensions = ["fbx"]
+compression = "none"
+features = ["mesh", "materials", "uv", "scene", "animation", "skinning"]
+
+[[format]]
+id = "dae"
+name = "COLLADA"
+category = "model3d"
+extensions = ["dae"]
+mime = ["model/vnd.collada+xml"]
+compression = "none"
+features = ["mesh", "materials", "uv", "scene", "animation", "skinning"]
+text = true
+based_on = ["xml"]
+
+[[format]]
+id = "3ds"
+name = "3D Studio (3DS)"
+category = "model3d"
+extensions = ["3ds"]
+compression = "none"
+features = ["mesh", "materials", "uv", "scene"]
+
+[[format]]
+id = "ply"
+name = "PLY"
+category = "model3d"
+extensions = ["ply"]
+compression = "none"
+features = ["mesh", "vertex_colors"]
+
+[[format]]
+id = "3mf"
+name = "3MF"
+category = "model3d"
+extensions = ["3mf"]
+mime = ["model/3mf"]
+compression = "none"
+features = ["mesh", "materials", "vertex_colors"]
+based_on = ["zip"]
+
+[[format]]
+id = "blend"
+name = "Blender"
+category = "model3d"
+extensions = ["blend"]
+compression = "none"
+features = ["mesh", "materials", "uv", "scene", "animation", "skinning"]
+
+[[format]]
+id = "usd"
+name = "Universal Scene Description"
+category = "model3d"
+extensions = ["usd", "usda", "usdc", "usdz"]
+compression = "none"
+features = ["mesh", "materials", "uv", "scene", "animation", "skinning"]
+
+[[format]]
+id = "step"
+name = "STEP (CAO)"
+category = "model3d"
+extensions = ["step", "stp"]
+mime = ["model/step"]
+compression = "none"
+features = ["brep", "assemblies"]
+text = true
+
+[[format]]
+id = "iges"
+name = "IGES (CAO)"
+category = "model3d"
+extensions = ["iges", "igs"]
+mime = ["model/iges"]
+compression = "none"
+features = ["brep"]
+text = true
+
+# ───────────────────────────── Géographie ─────────────────────────────
+[[format]]
+id = "geojson"
+name = "GeoJSON"
+category = "geo"
+extensions = ["geojson"]
+mime = ["application/geo+json"]
+compression = "none"
+features = ["vector", "attributes", "crs"]
+text = true
+based_on = ["json"]
+
+[[format]]
+id = "kml"
+name = "KML"
+category = "geo"
+extensions = ["kml"]
+mime = ["application/vnd.google-earth.kml+xml"]
+compression = "none"
+features = ["vector", "attributes", "styles"]
+text = true
+based_on = ["xml"]
+
+[[format]]
+id = "kmz"
+name = "KMZ"
+category = "geo"
+extensions = ["kmz"]
+mime = ["application/vnd.google-earth.kmz"]
+compression = "lossless"
+features = ["vector", "attributes", "styles", "images"]
+based_on = ["zip"]
+
+[[format]]
+id = "gpx"
+name = "GPX"
+category = "geo"
+extensions = ["gpx"]
+mime = ["application/gpx+xml"]
+compression = "none"
+features = ["vector", "attributes", "timestamps"]
+text = true
+based_on = ["xml"]
+
+[[format]]
+id = "shp"
+name = "Shapefile"
+category = "geo"
+extensions = ["shp"]
+compression = "none"
+features = ["vector", "attributes", "crs"]
+
+[[format]]
+id = "gpkg"
+name = "GeoPackage"
+category = "geo"
+extensions = ["gpkg"]
+mime = ["application/geopackage+sqlite3"]
+compression = "none"
+features = ["vector", "raster", "attributes", "crs", "multi_sheet"]
+based_on = ["sqlite"]
+
+# ───────────────────────────── Divers ─────────────────────────────
+[[format]]
+id = "eml"
+name = "E-mail (EML)"
+category = "other"
+extensions = ["eml"]
+mime = ["message/rfc822"]
+compression = "none"
+features = ["rich_text", "attachments", "metadata"]
+text = true
+
+[[format]]
+id = "mbox"
+name = "Boîte mail (MBOX)"
+category = "other"
+extensions = ["mbox"]
+mime = ["application/mbox"]
+compression = "none"
+features = ["rich_text", "attachments", "metadata", "multipage"]
+text = true
+
+[[format]]
+id = "msg"
+name = "Message Outlook (MSG)"
+category = "other"
+extensions = ["msg"]
+mime = ["application/vnd.ms-outlook"]
+compression = "none"
+features = ["rich_text", "attachments", "metadata"]
+based_on = ["cfb"]
+
+[[format]]
+id = "cfb"
+name = "Conteneur OLE/CFB (Office ancien)"
+category = "other"
+extensions = []
+compression = "none"
+features = []

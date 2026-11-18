@@ -1,0 +1,21 @@
+id = "libreoffice"
+name = "LibreOffice"
+adapter = "none"
+homepage = "https://www.libreoffice.org"
+license = "MPL-2.0"
+description = "Bureautique : DOCX, XLSX, PPTX, ODT, ODS, ODP, PDF…"
+categories = ['document', 'spreadsheet', 'presentation', 'pdf']
+executables = ['soffice']
+executables_windows = ['soffice.com']
+
+[detect]
+version_args = ['--version']
+version_regex = 'LibreOffice ([0-9][0-9.]*)'
+known_paths_windows = ['%ProgramFiles%\LibreOffice\program\soffice.com', '%ProgramFiles(x86)%\LibreOffice\program\soffice.com']
+known_paths_linux = ['/usr/bin/soffice', '/usr/lib/libreoffice/program/soffice']
+known_paths_macos = ['/Applications/LibreOffice.app/Contents/MacOS/soffice']
+
+[hints]
+windows = "winget install TheDocumentFoundation.LibreOffice"
+linux = "sudo apt install libreoffice"
+macos = "brew install --cask libreoffice"

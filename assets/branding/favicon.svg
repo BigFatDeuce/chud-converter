@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Chud Converter (16-24 px)"><title>Chud Converter (16-24 px)</title><circle cx="32" cy="32" r="32" fill="#011128"/>
+<path fill="#2c639f" d="M9 9H27L35 17V37H9Z"/>
+<path fill="none" stroke="#f9c83a" stroke-width="4" stroke-linecap="round" d="M38 14Q48 14 49 20"/>
+<path fill="#f9c83a" d="M43 20H55L49 27Z"/>
+<path fill="none" stroke="#f9c83a" stroke-width="4" stroke-linecap="round" d="M20 52Q13 52 13 46"/>
+<path fill="#f9c83a" d="M7 46H19L13 39Z"/>
+<path fill="#f9c83a" stroke="#011128" stroke-width="2.5" stroke-linejoin="round" d="M24 27H46L54 35V57H24Z"/>
+<rect x="27" y="37" width="11" height="7" rx="1" fill="#ffffff" stroke="#011128" stroke-width="2"/>
+<rect x="41" y="37" width="11" height="7" rx="1" fill="#ffffff" stroke="#011128" stroke-width="2"/>
+<path fill="none" stroke="#011128" stroke-width="2.5" stroke-linecap="round" d="M34 52Q39 48 44 52"/></svg>

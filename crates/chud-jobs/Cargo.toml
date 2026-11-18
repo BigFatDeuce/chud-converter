@@ -1,0 +1,21 @@
+[package]
+name = "chud-jobs"
+description = "Job execution: staging, plan execution, output verification, atomic finalization, worker pool"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chud-core.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+crossbeam-channel.workspace = true
+
+[dev-dependencies]
+chud-engines.workspace = true
+chud-enginemgr.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+chud-process.workspace = true

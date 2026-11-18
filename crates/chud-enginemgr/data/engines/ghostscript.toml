@@ -1,0 +1,21 @@
+id = "ghostscript"
+name = "Ghostscript"
+adapter = "none"
+homepage = "https://www.ghostscript.com"
+license = "AGPL-3.0-or-later"
+description = "PDF et PostScript : rendu, PDF/A, compression."
+categories = ['pdf']
+executables = ['gs']
+executables_windows = ['gswin64c']
+
+[detect]
+version_args = ['--version']
+version_regex = '^([0-9]+\.[0-9]+(?:\.[0-9]+)?)'
+known_paths_windows = ['%ProgramFiles%\gs\gs*\bin\gswin64c.exe']
+known_paths_linux = ['/usr/bin/gs']
+known_paths_macos = ['/opt/homebrew/bin/gs']
+
+[hints]
+windows = "winget install ArtifexSoftware.GhostScript"
+linux = "sudo apt install ghostscript"
+macos = "brew install ghostscript"

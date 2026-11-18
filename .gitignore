@@ -1,0 +1,21 @@
+# Compilation Rust
+/target/
+**/*.rs.bk
+
+# Interface (à venir)
+node_modules/
+dist/
+.svelte-kit/
+
+# Systèmes et éditeurs
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# Mode portable et données locales
+/portable
+/portable.txt
+/data/

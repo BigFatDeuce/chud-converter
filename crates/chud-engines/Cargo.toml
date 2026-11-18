@@ -1,0 +1,24 @@
+[package]
+name = "chud-engines"
+description = "Built-in engines: native image/data engines and external tool adapters (FFmpeg, 7-Zip)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chud-core.workspace = true
+chud-process.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+serde_norway.workspace = true
+csv.workspace = true
+image.workspace = true
+regex.workspace = true
+encoding_rs = "0.8"
+chardetng = "1"
+
+[dev-dependencies]
+zip.workspace = true

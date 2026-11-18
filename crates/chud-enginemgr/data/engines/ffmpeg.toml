@@ -1,0 +1,20 @@
+id = "ffmpeg"
+name = "FFmpeg"
+adapter = "ffmpeg"
+homepage = "https://ffmpeg.org"
+license = "LGPL-2.1-or-later ou GPL-3.0-or-later selon la compilation"
+description = "Audio, vidéo, animations, sous-titres et extraction d'images."
+categories = ['video', 'audio', 'subtitle', 'image']
+executables = ['ffmpeg', 'ffprobe']
+
+[detect]
+version_args = ['-hide_banner', '-version']
+version_regex = 'ffmpeg version (?:n)?([0-9][^\s]*)'
+known_paths_windows = ['%ProgramFiles%\ffmpeg\bin\ffmpeg.exe', '%LOCALAPPDATA%\Microsoft\WinGet\Links\ffmpeg.exe', 'C:\ffmpeg\bin\ffmpeg.exe']
+known_paths_linux = ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg']
+known_paths_macos = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg']
+
+[hints]
+windows = "winget install Gyan.FFmpeg"
+linux = "sudo apt install ffmpeg"
+macos = "brew install ffmpeg"

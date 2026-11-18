@@ -1,0 +1,20 @@
+id = "mediainfo"
+name = "MediaInfo"
+adapter = "none"
+homepage = "https://mediaarea.net/MediaInfo"
+license = "BSD-2-Clause"
+description = "Analyse technique détaillée des fichiers audio et vidéo."
+categories = ['video', 'audio']
+executables = ['mediainfo']
+
+[detect]
+version_args = ['--Version']
+version_regex = 'v([0-9][0-9.]*)'
+known_paths_windows = ['%ProgramFiles%\MediaInfo\MediaInfo.exe']
+known_paths_linux = ['/usr/bin/mediainfo']
+known_paths_macos = ['/opt/homebrew/bin/mediainfo']
+
+[hints]
+windows = "winget install MediaArea.MediaInfo"
+linux = "sudo apt install mediainfo"
+macos = "brew install media-info"
