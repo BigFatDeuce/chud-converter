@@ -9,16 +9,23 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
+  # Reprise sur un tag existant (la publication est remise en brouillon pendant la construction).
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag à (re)publier, par exemple v0.1.0"
+        required: true
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   draft:
@@ -29,14 +36,16 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
 
       - name: Version du tag = version du code
         id: version
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          tag="${TAG#v}"
           code=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           if [ "$tag" != "$code" ]; then
-            echo "::error::tag $GITHUB_REF_NAME mais Cargo.toml dit $code"
+            echo "::error::tag $TAG mais Cargo.toml dit $code"
             exit 1
           fi
           echo "version=$code" >> "$GITHUB_OUTPUT"
@@ -55,14 +64,25 @@ jobs:
           fi
           cat notes.md
 
+      # L'identifiant vient directement de l'API (une publication en brouillon n'est pas
+      # retrouvable par son tag) ; sans identifiant, rien ne serait envoyé : on s'arrête.
       - name: Création du brouillon
         id: create
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
-            --title "Chud Converter $GITHUB_REF_NAME" --notes-file notes.md
-          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name == \"$GITHUB_REF_NAME\") | .id" | head -1)
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" -F draft=true \
+              -f name="Chud Converter $TAG" -F body=@notes.md > /dev/null
+          else
+            id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" -f tag_name="$TAG" -F draft=true \
+              -f name="Chud Converter $TAG" -F body=@notes.md --jq .id)
+          fi
+          if [ -z "$id" ]; then
+            echo "::error::identifiant de publication introuvable"
+            exit 1
+          fi
           echo "id=$id" >> "$GITHUB_OUTPUT"
 
   build:
@@ -80,6 +100,8 @@ jobs:
             args: ""
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -130,7 +152,7 @@ jobs:
           Copy-Item "$r/chud-converter.exe", "$r/chud.exe", LICENSE $p
           Set-Content -Encoding utf8 "$p/portable" "Portable mode: settings and cache stay in the data folder next to the programs. / Mode portable : réglages et cache dans le dossier data/ ci-contre."
           Compress-Archive -Path "dist/portable/Chud Converter" -DestinationPath "dist/Chud.Converter_${env:V}_x64_portable.zip"
-          gh release upload $env:GITHUB_REF_NAME "dist/chud_${env:V}_windows_x64.zip" "dist/Chud.Converter_${env:V}_x64_portable.zip" --clobber
+          gh release upload $env:TAG "dist/chud_${env:V}_windows_x64.zip" "dist/Chud.Converter_${env:V}_x64_portable.zip" --clobber
 
       - name: Ligne de commande (Linux)
         if: runner.os == 'Linux'
@@ -141,24 +163,34 @@ jobs:
           mkdir -p dist/chud
           cp target/release/chud LICENSE dist/chud/
           tar -C dist -czf "dist/chud_${V}_linux_x86_64.tar.gz" chud
-          gh release upload "$GITHUB_REF_NAME" "dist/chud_${V}_linux_x86_64.tar.gz" --clobber
+          gh release upload "$TAG" "dist/chud_${V}_linux_x86_64.tar.gz" --clobber
 
   publish:
     name: Empreintes et publication
     needs: [draft, build]
     runs-on: ubuntu-latest
     steps:
-      - name: SHA256SUMS
+      # Rien n'est publié s'il manque un paquet, une signature ou une plateforme de latest.json.
+      - name: Fichiers attendus et SHA256SUMS
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir assets && cd assets
-          gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY"
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY"
+          rm -f SHA256SUMS.txt
+          ls -la
+          missing=0
+          for pat in '*_x64-setup.exe' '*_x64-setup.exe.sig' '*_amd64.AppImage' '*_amd64.AppImage.sig' '*_amd64.deb' '*.x86_64.rpm' 'latest.json' '*_x64_portable.zip' 'chud_*_windows_x64.zip' 'chud_*_linux_x86_64.tar.gz'; do
+            if ! compgen -G "$pat" > /dev/null; then echo "::error::fichier manquant : $pat"; missing=1; fi
+          done
+          [ "$missing" = 0 ]
+          jq -e '.platforms["windows-x86_64"].signature and .platforms["linux-x86_64"].signature' latest.json > /dev/null \
+            || { echo "::error::latest.json incomplet"; exit 1; }
           sha256sum -- * > ../SHA256SUMS.txt
           cat ../SHA256SUMS.txt
-          gh release upload "$GITHUB_REF_NAME" ../SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$TAG" ../SHA256SUMS.txt -R "$GITHUB_REPOSITORY" --clobber
 
       - name: Publication
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft=false --latest
+        run: gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --draft=false --latest
