@@ -572,7 +572,8 @@ fn extract_tar_xz(archive: &Path, dest: &Path, cancel: &AtomicBool, report: Repo
         }
     };
     let counting = Counting { inner: f, n: 0, total: xz_size, report: &mut on_read };
-    let r = lzma_rs::xz_decompress(&mut std::io::BufReader::new(counting), &mut sink).and_then(|_| sink.flush().map_err(Into::into));
+    let mut xz = lzma_rust2::XzReader::new(std::io::BufReader::new(counting), true);
+    let r = std::io::copy(&mut xz, &mut sink).and_then(|_| sink.flush());
     let tar_size = sink.written.max(1);
     drop(sink);
     if cancel.load(Ordering::Relaxed) {
@@ -868,9 +869,39 @@ mod tests {
         h.set_cksum();
         tar.append_data(&mut h, name, data).unwrap();
         let tar = tar.into_inner().unwrap();
-        let mut out = Vec::new();
-        lzma_rs::xz_compress(&mut &tar[..], &mut out).unwrap();
-        out
+        xz(&tar, false)
+    }
+
+    /// Compression XZ ; `bcj` ajoute le filtre x86 que les archives Linux de 7-Zip utilisent.
+    fn xz(data: &[u8], bcj: bool) -> Vec<u8> {
+        let mut opts = lzma_rust2::XzOptions::with_preset(1);
+        if bcj {
+            opts.prepend_pre_filter(lzma_rust2::FilterType::BcjX86, 0);
+        }
+        let mut w = lzma_rust2::XzWriter::new(Vec::new(), opts).unwrap();
+        w.write_all(data).unwrap();
+        w.finish().unwrap()
+    }
+
+    #[test]
+    fn tar_xz_with_bcj_filter_is_read() {
+        let dir = std::env::temp_dir().join(format!("chud-install-bcj-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let body: Vec<u8> = (0..20_000u32).flat_map(|i| [0xE8, i as u8, (i >> 8) as u8, 0, 0]).collect();
+        let mut tar = tar::Builder::new(Vec::new());
+        let mut h = tar::Header::new_gnu();
+        h.set_size(body.len() as u64);
+        h.set_mode(0o755);
+        h.set_cksum();
+        tar.append_data(&mut h, "7zz", &body[..]).unwrap();
+        let archive = dir.join("bcj.tar.xz");
+        std::fs::write(&archive, xz(&tar.into_inner().unwrap(), true)).unwrap();
+        let dest = dir.join("out");
+        std::fs::create_dir_all(&dest).unwrap();
+        extract_tar_xz(&archive, &dest, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
+        assert_eq!(std::fs::read(dest.join("7zz")).unwrap(), body);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -900,10 +931,8 @@ mod tests {
         h.set_cksum();
         raw.append(&h, &b"x"[..]).unwrap();
         let raw = raw.into_inner().unwrap();
-        let mut xz = Vec::new();
-        lzma_rs::xz_compress(&mut &raw[..], &mut xz).unwrap();
         let bad = dir.join("bad.tar.xz");
-        std::fs::write(&bad, xz).unwrap();
+        std::fs::write(&bad, xz(&raw, false)).unwrap();
         let dest2 = dir.join("out2");
         std::fs::create_dir_all(&dest2).unwrap();
         assert!(extract_tar_xz(&bad, &dest2, &AtomicBool::new(false), &mut |_, _| {}).is_err());

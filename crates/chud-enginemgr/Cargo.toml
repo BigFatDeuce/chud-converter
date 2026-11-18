@@ -19,8 +19,12 @@ thiserror.workspace = true
 directories.workspace = true
 zip.workspace = true
 tar = { version = "0.4", default-features = false }
-lzma-rs = "0.3"
+# XZ en pur Rust, avec les filtres BCJ (x86, ARM64…) utilisés par les archives de 7-Zip.
+lzma-rust2 = { version = "0.25", default-features = false, features = ["std", "xz", "optimization"] }
 sha2 = "0.10"
 # Téléchargement des moteurs : HTTPS avec les certificats du système (même pile que la mise à jour).
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider", "http2", "system-proxy"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+
+[dev-dependencies]
+lzma-rust2 = { version = "0.25", default-features = false, features = ["std", "xz", "encoder"] }
