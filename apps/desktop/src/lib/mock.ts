@@ -3,7 +3,7 @@
 // bandeau « données fictives ». Rien ici n'est jamais présenté comme un vrai résultat.
 
 import type { Api } from "./api";
-import type { EngineView, FileInfo, FileTargets, PlanView, TargetView, UiEvent } from "./types";
+import type { EngineView, FileInfo, FileTargets, PlanView, PresetView, QuickBatch, TargetView, UiEvent } from "./types";
 
 const video = (format: string, name: string, fidelity: TargetView["fidelity"], headline: string, lost: string[] = []): TargetView => ({
   format,
@@ -91,6 +91,30 @@ const ENGINES: EngineView[] = [
   },
 ];
 
+const preset = (id: string, name: string, target: string, targetName: string, appliesTo: string[], options = {}): PresetView => ({
+  id,
+  name,
+  target,
+  targetName,
+  appliesTo,
+  options,
+  outputDir: null,
+  nameTemplate: null,
+  conflict: "rename",
+  keepDate: false,
+  enabled: true,
+  builtin: true,
+});
+
+const PRESETS: PresetView[] = [
+  preset("mp4", "MP4 (vidéo)", "mp4", "MPEG-4 Part 14", ["video"]),
+  preset("mp4-leger", "MP4 léger (720p)", "mp4", "MPEG-4 Part 14", ["video"], { video_quality: "small", max_height: 720 }),
+  preset("webm", "WebM", "webm", "WebM", ["video"]),
+  preset("mp3", "MP3 192 kbit/s", "mp3", "MP3", ["audio", "video"], { audio_bitrate: 192 }),
+  preset("webp", "WebP", "webp", "WebP", ["image"]),
+  preset("zip", "ZIP", "zip", "ZIP", ["folder"]),
+];
+
 export function mockApi(): Api {
   let listener: ((e: UiEvent) => void) | null = null;
   let next = 0;
@@ -98,7 +122,9 @@ export function mockApi(): Api {
   const delay = <T>(v: T, ms = 150) => new Promise<T>((r) => setTimeout(() => r(v), ms));
   const emit = (e: UiEvent) => listener?.(e);
 
-  return {
+  let presets = PRESETS.map((p) => ({ ...p }));
+  let quickTaken = false;
+  const api: Api = {
     fake: true,
     appInfo: () => delay({ version: "0.0.0-fictif", dataDir: "C:\\Exemple", portable: false, formats: 0, conversions: 0, enginesReady: 1 }),
     engines: () => delay(ENGINES),
@@ -218,5 +244,44 @@ export function mockApi(): Api {
     async openUrl(url) {
       window.open(url, "_blank", "noopener");
     },
+    presets: () => delay({ file: "C:\Exemple\presets.toml", presets, error: null }),
+    async savePresets(list) {
+      presets = list.map((p) => ({ ...p, targetName: p.targetName || p.target.toUpperCase() }));
+      return delay({ file: "C:\Exemple\presets.toml", presets, error: null });
+    },
+    async resetPresets() {
+      presets = PRESETS.map((p) => ({ ...p }));
+      return delay({ view: { file: "C:\Exemple\presets.toml", presets, error: null }, backup: "C:\Exemple\presets.toml.bak-1" });
+    },
+    presetsFor: (paths) =>
+      delay(presets.filter((p) => p.enabled && paths.every((x) => p.appliesTo.includes(FAKE[x]?.info.category ?? "?")))),
+    async runPreset(id, files) {
+      const p = presets.find((x) => x.id === id);
+      if (!p) throw `préréglage inconnu : ${id}`;
+      const submitted = await api.convert({ files, target: p.target, options: p.options, outputDir: null, conflict: p.conflict, keepDate: p.keepDate });
+      return { preset: p, submitted, ignored: [] };
+    },
+    windowKind: async () => (location.hash === "#quick" ? "quick" : "main"),
+    async takeQuick() {
+      if (quickTaken) return [];
+      quickTaken = true;
+      const files = Object.keys(FAKE).slice(0, 1);
+      const batch: QuickBatch = { files, run: await api.runPreset("mp4", files), error: null };
+      return [batch];
+    },
+    async onQuick() {
+      return () => {};
+    },
+    async onOpenFiles() {
+      return () => {};
+    },
+    async showMain() {
+      location.hash = "";
+      location.reload();
+    },
+    async closeWindow() {
+      window.close();
+    },
   };
+  return api;
 }

@@ -5,7 +5,7 @@
   import { store, type CommonTarget } from "../store.svelte";
   import { api, errorText } from "../api";
   import { categoryLabel, categoryOrder, fidelityLabel } from "../format";
-  import type { Category, Conflict, PlanView } from "../types";
+  import type { Category, Conflict, PlanView, PresetView } from "../types";
 
   let query = $state("");
   let picking = $state(false);
@@ -73,6 +73,30 @@
     query = "";
   }
 
+  // Préréglage dont le format et les options sont exactement ceux du panneau.
+  function current(p: PresetView): boolean {
+    if (p.target !== store.target) return false;
+    const a = Object.entries(p.options).sort();
+    const b = Object.entries(store.optionValues).sort();
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  function usePreset(p: PresetView) {
+    store.applyPreset(p);
+    picking = false;
+    query = "";
+  }
+
+  let naming = $state(false);
+  let presetName = $state("");
+
+  async function saveAs() {
+    if (await store.saveAsPreset(presetName)) {
+      naming = false;
+      presetName = "";
+    }
+  }
+
   function setConflict(e: Event & { currentTarget: HTMLSelectElement }) {
     store.conflict = e.currentTarget.value as Conflict;
     store.saveSettings();
@@ -94,6 +118,18 @@
         Aucun format de sortie commun à ces {store.checked.length} fichiers. Décochez-en certains pour les convertir par groupes.
       </p>
     {:else}
+      {#if store.suggested.length}
+        <div class="presets">
+          <div class="section-title">Préréglages</div>
+          <div class="pchips">
+            {#each store.suggested as p (p.id)}
+              <button class="pchip" class:sel={current(p)} onclick={() => usePreset(p)} title="{p.name} → {p.targetName}">
+                {p.name}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
       {#if showPicker}
         <div class="picker">
           <label class="search">
@@ -208,6 +244,34 @@
             <input type="checkbox" bind:checked={store.keepDate} onchange={() => store.saveSettings()} />
             Garder la date de modification de l'original
           </label>
+        </div>
+
+        <div class="save-as">
+          {#if naming}
+            <input
+              type="text"
+              placeholder="Nom du préréglage"
+              maxlength="60"
+              aria-label="Nom du préréglage"
+              bind:value={presetName}
+              onkeydown={(e) => {
+                if (e.key === "Enter") void saveAs();
+                if (e.key === "Escape") naming = false;
+              }}
+            />
+            <button class="btn small primary" disabled={!presetName.trim()} onclick={saveAs}>Enregistrer</button>
+            <button class="btn small" onclick={() => (naming = false)}>Annuler</button>
+          {:else}
+            <button
+              class="btn small ghost"
+              onclick={() => {
+                naming = true;
+                presetName = t.name;
+              }}
+            >
+              <Icon name="preset" size={13} /> Enregistrer comme préréglage…
+            </button>
+          {/if}
         </div>
       {/if}
     {/if}
@@ -474,6 +538,49 @@
 
   .field select {
     color: var(--text);
+  }
+
+  .presets {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .pchips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .pchip {
+    height: 28px;
+    padding: 0 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+
+  .pchip:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
+  }
+
+  .pchip.sel {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  .save-as {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .save-as input {
+    flex: 1;
+    min-width: 0;
   }
 
   .go {

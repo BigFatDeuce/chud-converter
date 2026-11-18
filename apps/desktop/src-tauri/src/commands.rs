@@ -1,7 +1,10 @@
 //! Commandes appelées par l'interface. Tout ce qui touche au disque ou aux moteurs part sur un
 //! fil bloquant pour ne jamais figer la fenêtre.
 
-use crate::backend::{App, AppInfo, ConvertRequest, EngineView, FileInfo, FileTargets, PlanRequest, PlanView, Submitted};
+use crate::backend::{
+    App, AppInfo, ConvertRequest, EngineView, FileInfo, FileTargets, PlanRequest, PlanView, PresetView, PresetsView, QuickBatch, RunPreset,
+    Submitted,
+};
 use chud_jobs::JobId;
 use std::sync::Arc;
 use tauri::State;
@@ -62,4 +65,56 @@ pub fn cancel(app: Shared<'_>, id: JobId) -> bool {
 #[tauri::command]
 pub fn cancel_all(app: Shared<'_>) {
     app.cancel_all();
+}
+
+// ---------------------------------------------------------------------------------- préréglages
+
+#[tauri::command]
+pub async fn presets(app: Shared<'_>) -> Result<PresetsView, String> {
+    let app = app.inner().clone();
+    blocking(move || Ok(app.presets())).await
+}
+
+#[tauri::command]
+pub async fn save_presets(app: Shared<'_>, presets: Vec<PresetView>) -> Result<PresetsView, String> {
+    let app = app.inner().clone();
+    blocking(move || app.save_presets(presets)).await
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetPresets {
+    view: PresetsView,
+    backup: Option<String>,
+}
+
+#[tauri::command]
+pub async fn reset_presets(app: Shared<'_>) -> Result<ResetPresets, String> {
+    let app = app.inner().clone();
+    blocking(move || app.reset_presets().map(|(view, backup)| ResetPresets { view, backup })).await
+}
+
+#[tauri::command]
+pub async fn presets_for(app: Shared<'_>, paths: Vec<String>) -> Result<Vec<PresetView>, String> {
+    let app = app.inner().clone();
+    blocking(move || app.presets_for(&paths)).await
+}
+
+#[tauri::command]
+pub async fn run_preset(app: Shared<'_>, id: String, files: Vec<String>) -> Result<RunPreset, String> {
+    let app = app.inner().clone();
+    blocking(move || app.run_preset(&id, &files)).await
+}
+
+/// Lots lancés par le menu contextuel, pas encore affichés.
+#[tauri::command]
+pub fn take_quick(app: Shared<'_>) -> Vec<QuickBatch> {
+    app.take_quick()
+}
+
+/// Ouvre (ou montre) la fenêtre principale depuis la fenêtre rapide. Asynchrone : sous Windows,
+/// créer une fenêtre depuis une commande synchrone la laisse vide (WebView2 bloqué).
+#[tauri::command]
+pub async fn show_main(handle: tauri::AppHandle) -> Result<(), String> {
+    crate::show_main(&handle, Vec::new()).map_err(|e| e.to_string())
 }

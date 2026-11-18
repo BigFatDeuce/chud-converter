@@ -3,18 +3,33 @@
   import Sidebar from "./lib/components/Sidebar.svelte";
   import ConvertView from "./lib/components/ConvertView.svelte";
   import EnginesView from "./lib/components/EnginesView.svelte";
+  import PresetsView from "./lib/components/PresetsView.svelte";
   import AboutView from "./lib/components/AboutView.svelte";
+  import QuickView from "./lib/components/QuickView.svelte";
   import Icon from "./lib/components/Icon.svelte";
   import { store } from "./lib/store.svelte";
-  import { errorText } from "./lib/api";
+  import { api, errorText, type WindowKind } from "./lib/api";
 
   let fatal = $state<string | null>(null);
+  let kind = $state<WindowKind | null>(null);
 
   onMount(() => {
-    store.init().catch((e) => (fatal = errorText(e)));
+    (async () => {
+      kind = await (await api).windowKind();
+      await (kind === "quick" ? store.initQuick() : store.init());
+    })().catch((e) => (fatal = errorText(e)));
   });
 </script>
 
+{#if kind === "quick"}
+  <QuickView />
+  {#if store.notice}
+    <div class="toast card" role="status">
+      <span>{store.notice}</span>
+      <button class="icon-btn" aria-label="Fermer" onclick={() => (store.notice = null)}><Icon name="x" size={14} /></button>
+    </div>
+  {/if}
+{:else}
 <div class="shell">
   <Sidebar />
   <main>
@@ -34,6 +49,8 @@
       </div>
     {:else if store.view === "convert"}
       <ConvertView />
+    {:else if store.view === "presets"}
+      <PresetsView />
     {:else if store.view === "engines"}
       <EnginesView />
     {:else}
@@ -58,6 +75,7 @@
     </div>
   {/if}
 </div>
+{/if}
 
 <style>
   .shell {

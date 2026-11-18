@@ -22,6 +22,10 @@
     search: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM21 21l-4.3-4.3",
     upload: "M12 15V3M7 8l5-5 5 5M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4",
     skip: "M5 4l10 8-10 8ZM19 5v14",
+    up: "m6 15 6-6 6 6",
+    trash: "M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6",
+    preset: "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6",
+    bolt: "M13 2 3 14h9l-1 8 10-12h-9Z",
   } as const;
   export type IconName = keyof typeof PATHS;
 </script>

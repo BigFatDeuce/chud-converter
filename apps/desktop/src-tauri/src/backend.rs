@@ -8,7 +8,7 @@ use chud_core::{
     Category, Fidelity, FidelityReport, FormatCatalog, FormatId, OptionSpec, OptionValue, OptionValues, Verification, detect_path,
 };
 use chud_enginemgr::{AppPaths, EngineManager, EngineState, EngineStatus};
-use chud_jobs::{Conflict, JobEvent, JobId, JobQueue, JobRunner, JobSpec, QueueEvent, QueueListener};
+use chud_jobs::{Conflict, JobEvent, JobId, JobQueue, JobRunner, JobSpec, Preset, PresetStore, QueueEvent, QueueListener};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -201,6 +201,143 @@ pub struct ConvertRequest {
 pub struct Submitted {
     pub path: String,
     pub id: JobId,
+}
+
+/// Préréglage tel que l'interface l'affiche et le renvoie.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetView {
+    pub id: String,
+    pub name: String,
+    pub target: String,
+    #[serde(default, skip_deserializing)]
+    pub target_name: String,
+    pub applies_to: Vec<String>,
+    #[serde(default)]
+    pub options: BTreeMap<String, OptionValue>,
+    #[serde(default)]
+    pub output_dir: Option<String>,
+    #[serde(default)]
+    pub name_template: Option<String>,
+    #[serde(default)]
+    pub conflict: Conflict,
+    #[serde(default)]
+    pub keep_date: bool,
+    pub enabled: bool,
+    /// Fait partie des préréglages fournis (même identifiant).
+    #[serde(default, skip_deserializing)]
+    pub builtin: bool,
+}
+
+impl PresetView {
+    fn of(p: &Preset) -> Self {
+        Self {
+            id: p.id.clone(),
+            name: p.name.clone(),
+            target_name: format_name(&p.target),
+            target: p.target.to_string(),
+            applies_to: p.applies_to.clone(),
+            options: p.options.clone(),
+            output_dir: p.output_dir.as_ref().map(|d| d.display().to_string()),
+            name_template: p.name_template.clone(),
+            conflict: p.conflict,
+            keep_date: p.keep_date,
+            enabled: p.enabled,
+            builtin: PresetStore::builtin().presets.iter().any(|b| b.id == p.id),
+        }
+    }
+
+    fn into_preset(self) -> Preset {
+        Preset {
+            id: self.id,
+            name: self.name.trim().to_owned(),
+            target: FormatId::new(&self.target),
+            applies_to: self.applies_to,
+            options: self.options,
+            output_dir: self.output_dir.filter(|d| !d.trim().is_empty()).map(PathBuf::from),
+            name_template: self.name_template.filter(|t| !t.trim().is_empty()),
+            conflict: self.conflict,
+            keep_date: self.keep_date,
+            enabled: self.enabled,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ignored {
+    pub path: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunPreset {
+    pub preset: PresetView,
+    pub submitted: Vec<Submitted>,
+    pub ignored: Vec<Ignored>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresetsView {
+    /// Emplacement de presets.toml (modifiable à la main).
+    pub file: String,
+    pub presets: Vec<PresetView>,
+    /// Fichier illisible : rien n'est proposé ni enregistré tant qu'il n'est pas corrigé.
+    pub error: Option<String>,
+}
+
+/// Lot lancé depuis le menu contextuel (`--preset`), affiché par la fenêtre de conversion rapide.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuickBatch {
+    pub files: Vec<String>,
+    pub run: Option<RunPreset>,
+    pub error: Option<String>,
+}
+
+/// Ce que demande la ligne de commande de `chud-converter`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Launch {
+    /// Ouvrir ces fichiers dans la fenêtre principale (éventuellement aucun).
+    Open(Vec<String>),
+    /// `--preset <id> [--] fichiers…` : conversion directe, sans passer par la fenêtre principale.
+    Preset { id: String, files: Vec<String> },
+}
+
+impl Launch {
+    /// Arguments sans le nom du programme. Les chemins restent des données, jamais interprétés.
+    pub fn parse(args: impl IntoIterator<Item = std::ffi::OsString>) -> Self {
+        let mut preset: Option<String> = None;
+        let mut files = Vec::new();
+        let mut options_done = false;
+        let mut it = args.into_iter().map(|a| a.to_string_lossy().into_owned());
+        while let Some(a) = it.next() {
+            if a.is_empty() {
+                continue;
+            }
+            if !options_done {
+                if a == "--" {
+                    options_done = true;
+                    continue;
+                }
+                if a == "--preset" {
+                    preset = Some(it.next().unwrap_or_default());
+                    continue;
+                }
+                if let Some(id) = a.strip_prefix("--preset=") {
+                    preset = Some(id.to_owned());
+                    continue;
+                }
+            }
+            files.push(a);
+        }
+        match preset {
+            Some(id) => Self::Preset { id, files },
+            None => Self::Open(files),
+        }
+    }
 }
 
 /// Événements de la file, déjà mis en forme pour l'interface.
@@ -497,16 +634,28 @@ pub struct App {
     listener: UiListener,
     /// Fichiers passés au lancement (« Ouvrir avec », futur menu contextuel), remis une fois.
     initial: Mutex<Vec<String>>,
+    /// Sérialise les écritures de presets.toml.
+    presets_lock: Mutex<()>,
+    /// Lots `--preset` pas encore affichés par la fenêtre rapide.
+    quick: Mutex<Vec<QuickBatch>>,
 }
 
 impl App {
     pub fn new(paths: AppPaths, listener: UiListener) -> Self {
-        Self { paths, engines: Mutex::new(None), queue: Mutex::new(None), listener, initial: Mutex::default() }
+        Self {
+            paths,
+            engines: Mutex::new(None),
+            queue: Mutex::new(None),
+            listener,
+            initial: Mutex::default(),
+            presets_lock: Mutex::default(),
+            quick: Mutex::default(),
+        }
     }
 
-    pub fn with_initial(self, files: Vec<String>) -> Self {
-        *lock(&self.initial) = files;
-        self
+    /// Fichiers à ajouter à la liste de la fenêtre principale à son ouverture.
+    pub fn add_initial(&self, files: Vec<String>) {
+        lock(&self.initial).extend(files);
     }
 
     pub fn take_initial(&self) -> Vec<String> {
@@ -534,6 +683,10 @@ impl App {
     pub fn submit(&self, req: &ConvertRequest) -> Result<Vec<Submitted>, String> {
         let engines = self.engines()?;
         let specs = engines.job_specs(req)?;
+        self.submit_specs(&engines, specs)
+    }
+
+    fn submit_specs(&self, engines: &Arc<Engines>, specs: Vec<JobSpec>) -> Result<Vec<Submitted>, String> {
         let mut q = lock(&self.queue);
         // Après une nouvelle détection des moteurs, la file repart avec le nouveau registre dès
         // qu'elle est inactive ; sinon les tâches s'ajoutent à la file existante.
@@ -550,6 +703,97 @@ impl App {
         }
         let queue = q.as_ref().expect("file créée ci-dessus");
         Ok(specs.into_iter().map(|s| Submitted { path: s.input.display().to_string(), id: queue.submit(s) }).collect())
+    }
+
+    // ------------------------------------------------------------------ préréglages
+
+    fn load_presets(&self) -> Result<PresetStore, String> {
+        PresetStore::load(&self.paths.presets_file(), catalog()).map_err(|e| e.to_string())
+    }
+
+    pub fn presets(&self) -> PresetsView {
+        let file = self.paths.presets_file().display().to_string();
+        match self.load_presets() {
+            Ok(s) => PresetsView { file, presets: s.presets.iter().map(PresetView::of).collect(), error: None },
+            Err(e) => PresetsView { file, presets: Vec::new(), error: Some(e) },
+        }
+    }
+
+    /// Remplace la liste entière (l'interface envoie toujours la liste complète, dans l'ordre).
+    /// Refusé si le fichier actuel est illisible : on ne l'écrase jamais sans le dire.
+    pub fn save_presets(&self, presets: Vec<PresetView>) -> Result<PresetsView, String> {
+        let _g = lock(&self.presets_lock);
+        self.load_presets().map_err(|e| format!("{e} — corrigez le fichier ou rétablissez les préréglages par défaut"))?;
+        let store = PresetStore { version: 1, presets: presets.into_iter().map(PresetView::into_preset).collect() };
+        store.save(&self.paths.presets_file(), catalog()).map_err(|e| e.to_string())?;
+        Ok(self.presets())
+    }
+
+    /// Rétablit les préréglages fournis. L'ancien fichier, s'il existe, est gardé à côté
+    /// (presets.toml.bak-<horodatage>) : rien n'est perdu.
+    pub fn reset_presets(&self) -> Result<(PresetsView, Option<String>), String> {
+        let _g = lock(&self.presets_lock);
+        let file = self.paths.presets_file();
+        let mut backup = None;
+        if file.exists() {
+            let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            let b = file.with_extension(format!("toml.bak-{stamp}"));
+            std::fs::copy(&file, &b).map_err(|e| format!("copie de sauvegarde impossible : {e}"))?;
+            backup = Some(b.display().to_string());
+        }
+        PresetStore::builtin().save(&file, catalog()).map_err(|e| e.to_string())?;
+        Ok((self.presets(), backup))
+    }
+
+    /// Préréglages proposés pour ces chemins, d'après leurs noms (comme le menu contextuel).
+    pub fn presets_for(&self, paths: &[String]) -> Result<Vec<PresetView>, String> {
+        let store = self.load_presets()?;
+        let paths: Vec<PathBuf> = paths.iter().map(|p| absolute(p)).collect::<Result<_, _>>()?;
+        Ok(store.for_paths(&paths, catalog()).into_iter().map(PresetView::of).collect())
+    }
+
+    /// Lance un préréglage sur des fichiers. Un fichier déjà au format visé (préréglage sans
+    /// option) est ignoré avec sa raison plutôt que copié tel quel.
+    pub fn run_preset(&self, id: &str, files: &[String]) -> Result<RunPreset, String> {
+        let store = self.load_presets()?;
+        let preset = store.get(id).map_err(|e| e.to_string())?.clone();
+        if let Some(d) = &preset.output_dir
+            && !d.is_dir()
+        {
+            return Err(format!("« {} » : dossier de destination introuvable : {}", preset.name, d.display()));
+        }
+        let engines = self.engines()?;
+        let mut specs = Vec::new();
+        let mut ignored = Vec::new();
+        for f in files {
+            let path = absolute(f)?;
+            let same = !path.is_dir()
+                && detect_path(&path, catalog()).ok().and_then(|d| d.format).is_some_and(|src| preset.is_pointless_for(&src));
+            if same {
+                ignored
+                    .push(Ignored {
+                        path: path.display().to_string(), reason: format!("déjà au format {}", format_name(&preset.target))
+                    });
+            } else {
+                specs.push(preset.job_spec(path));
+            }
+        }
+        let submitted = self.submit_specs(&engines, specs)?;
+        Ok(RunPreset { preset: PresetView::of(&preset), submitted, ignored })
+    }
+
+    /// Lance un lot `--preset` et le garde pour la fenêtre rapide (même en cas d'erreur, pour
+    /// l'afficher au lieu de l'avaler).
+    pub fn quick(&self, id: &str, files: Vec<String>) {
+        let batch = match self.run_preset(id, &files) {
+            Ok(run) => QuickBatch { files, run: Some(run), error: None },
+            Err(e) => QuickBatch { files, run: None, error: Some(e) },
+        };
+        lock(&self.quick).push(batch);
+    }
+
+    pub fn take_quick(&self) -> Vec<QuickBatch> {
+        std::mem::take(&mut *lock(&self.quick))
     }
 
     pub fn cancel(&self, id: JobId) -> bool {
@@ -646,6 +890,87 @@ mod tests {
         assert_eq!(fidelity, Some(FidelityLevel::Lossless));
         assert!(verifications.iter().all(|v| v.is_ok()));
         assert!(evs.iter().any(|e| matches!(e, UiEvent::Planned { .. })));
+        drop(app);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn presets_round_trip_never_overwrite_broken_file_and_run() {
+        let (dir, app, events) = setup("presets");
+        let v = app.presets();
+        assert!(v.error.is_none());
+        assert!(v.presets.iter().all(|p| p.builtin));
+        let mut list = v.presets.clone();
+        let mut mine = list.iter().find(|p| p.id == "jpeg").unwrap().clone();
+        mine.id = "mon-bmp".into();
+        mine.name = "  Mon BMP ".into();
+        mine.target = "bmp".into();
+        mine.options.clear();
+        list.insert(0, mine);
+        let saved = app.save_presets(list.clone()).unwrap();
+        assert_eq!(saved.presets[0].name, "Mon BMP");
+        assert_eq!(saved.presets[0].target_name, "BMP");
+        assert!(!saved.presets[0].builtin);
+
+        // Un identifiant invalide est refusé, le fichier reste intact.
+        let mut bad = list.clone();
+        bad[0].id = "Pas Bon".into();
+        assert!(app.save_presets(bad).is_err());
+        assert_eq!(app.presets().presets[0].id, "mon-bmp");
+
+        // Proposés d'après le nom : un PNG n'a pas le préréglage PNG, mais a « Mon BMP ».
+        let png = dir.join("a.png");
+        std::fs::write(&png, PNG_1X1).unwrap();
+        let ids: Vec<String> = app.presets_for(&[png.display().to_string()]).unwrap().into_iter().map(|p| p.id).collect();
+        assert!(ids.contains(&"mon-bmp".to_string()) && !ids.contains(&"png".to_string()), "{ids:?}");
+
+        // Lancer : le PNG est ignoré par « PNG », converti par « Mon BMP ».
+        let r = app.run_preset("png", &[png.display().to_string()]).unwrap();
+        assert!(r.submitted.is_empty() && r.ignored.len() == 1);
+        let r = app.run_preset("mon-bmp", &[png.display().to_string()]).unwrap();
+        let id = r.submitted[0].id;
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while !events.lock().unwrap().iter().any(|e| matches!(e, UiEvent::Done { id: i, .. } if *i == id)) {
+            assert!(std::time::Instant::now() < deadline, "conversion bloquée");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(dir.join("a.bmp").is_file());
+        assert!(app.run_preset("inconnu", &[png.display().to_string()]).is_err());
+
+        // Fichier abîmé : pas d'écrasement, mais « rétablir » garde une copie.
+        let file = AppPaths::at(&dir.join("app")).presets_file();
+        std::fs::write(&file, "ceci n'est pas du toml [").unwrap();
+        assert!(app.presets().error.is_some());
+        assert!(app.save_presets(list).is_err());
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "ceci n'est pas du toml [");
+        let (v, backup) = app.reset_presets().unwrap();
+        assert!(v.error.is_none() && !v.presets.is_empty());
+        assert_eq!(std::fs::read_to_string(backup.unwrap()).unwrap(), "ceci n'est pas du toml [");
+        drop(app);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parses_launch_arguments() {
+        let p = |a: &[&str]| Launch::parse(a.iter().map(std::ffi::OsString::from));
+        assert_eq!(p(&[]), Launch::Open(vec![]));
+        assert_eq!(p(&["a.mkv", ""]), Launch::Open(vec!["a.mkv".into()]));
+        assert_eq!(
+            p(&["--preset", "mp4", "--", "--preset", "b c.mkv"]),
+            Launch::Preset { id: "mp4".into(), files: vec!["--preset".into(), "b c.mkv".into()] }
+        );
+        assert_eq!(p(&["--preset=webm", "x"]), Launch::Preset { id: "webm".into(), files: vec!["x".into()] });
+        assert_eq!(p(&["--preset"]), Launch::Preset { id: String::new(), files: vec![] });
+    }
+
+    #[test]
+    fn quick_batches_keep_errors_visible() {
+        let (dir, app, _) = setup("quick");
+        app.quick("inconnu", vec!["x.png".into()]);
+        let b = app.take_quick();
+        assert_eq!(b.len(), 1);
+        assert!(b[0].error.as_deref().unwrap().contains("inconnu"), "{:?}", b[0].error);
+        assert!(app.take_quick().is_empty());
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);
     }

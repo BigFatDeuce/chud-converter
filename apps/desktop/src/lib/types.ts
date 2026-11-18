@@ -164,3 +164,47 @@ export type UiEvent =
       durationMs: number;
     }
   | { kind: "failed"; id: number; code: string; message: string };
+
+/** Sorte de fichier visée par un préréglage : une catégorie, ou `folder` pour un dossier. */
+export type PresetKind = Category | "folder";
+
+export interface PresetView {
+  id: string;
+  name: string;
+  target: string;
+  /** Rempli par le cœur ; ignoré à l'enregistrement. */
+  targetName: string;
+  appliesTo: string[];
+  options: Record<string, OptionValue>;
+  outputDir: string | null;
+  nameTemplate: string | null;
+  conflict: Conflict;
+  keepDate: boolean;
+  enabled: boolean;
+  /** Fait partie des préréglages fournis. */
+  builtin: boolean;
+}
+
+export interface PresetsView {
+  file: string;
+  presets: PresetView[];
+  error: string | null;
+}
+
+export interface Ignored {
+  path: string;
+  reason: string;
+}
+
+export interface RunPreset {
+  preset: PresetView;
+  submitted: Submitted[];
+  ignored: Ignored[];
+}
+
+/** Lot lancé par le menu contextuel (`--preset`). */
+export interface QuickBatch {
+  files: string[];
+  run: RunPreset | null;
+  error: string | null;
+}

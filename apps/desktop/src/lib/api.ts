@@ -10,9 +10,16 @@ import type {
   FileTargets,
   PlanRequest,
   PlanView,
+  PresetView,
+  PresetsView,
+  QuickBatch,
+  RunPreset,
   Submitted,
   UiEvent,
 } from "./types";
+
+/** Fenêtre où tourne l'interface : principale, ou petite fenêtre du menu contextuel. */
+export type WindowKind = "main" | "quick";
 
 export interface Api {
   /** Vrai seulement pour l'imitation de développement. */
@@ -32,6 +39,22 @@ export interface Api {
   pickFolder(title: string): Promise<string | null>;
   reveal(path: string): Promise<void>;
   openUrl(url: string): Promise<void>;
+
+  presets(): Promise<PresetsView>;
+  savePresets(presets: PresetView[]): Promise<PresetsView>;
+  /** Rétablit les préréglages fournis ; l'ancien fichier est gardé (`backup`). */
+  resetPresets(): Promise<{ view: PresetsView; backup: string | null }>;
+  presetsFor(paths: string[]): Promise<PresetView[]>;
+  runPreset(id: string, files: string[]): Promise<RunPreset>;
+
+  windowKind(): Promise<WindowKind>;
+  takeQuick(): Promise<QuickBatch[]>;
+  /** Prévient quand un lot du menu contextuel attend d'être affiché. */
+  onQuick(cb: () => void): Promise<() => void>;
+  /** Fichiers transmis par une autre instance (« Ouvrir avec » pendant que l'appli tourne). */
+  onOpenFiles(cb: (paths: string[]) => void): Promise<() => void>;
+  showMain(): Promise<void>;
+  closeWindow(): Promise<void>;
 }
 
 function tauriApi(): Api {
@@ -80,6 +103,29 @@ function tauriApi(): Api {
     async openUrl(url) {
       const { openUrl } = await import("@tauri-apps/plugin-opener");
       await openUrl(url);
+    },
+    presets: () => call("presets"),
+    savePresets: (presets) => call("save_presets", { presets }),
+    resetPresets: () => call("reset_presets"),
+    presetsFor: (paths) => call("presets_for", { paths }),
+    runPreset: (id, files) => call("run_preset", { id, files }),
+    async windowKind() {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      return getCurrentWindow().label === "quick" ? "quick" : "main";
+    },
+    takeQuick: () => call("take_quick"),
+    async onQuick(cb) {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen("quick", () => cb());
+    },
+    async onOpenFiles(cb) {
+      const { listen } = await import("@tauri-apps/api/event");
+      return listen<string[]>("open-files", (e) => cb(e.payload));
+    },
+    showMain: () => call("show_main"),
+    async closeWindow() {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().close();
     },
   };
 }

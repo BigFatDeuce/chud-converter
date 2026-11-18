@@ -5,6 +5,7 @@
 
   const items: { view: View; label: string; icon: IconName }[] = [
     { view: "convert", label: "Convertir", icon: "convert" },
+    { view: "presets", label: "Préréglages", icon: "preset" },
     { view: "engines", label: "Moteurs", icon: "engine" },
     { view: "about", label: "À propos", icon: "info" },
   ];

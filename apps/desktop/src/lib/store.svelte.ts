@@ -12,11 +12,14 @@ import type {
   FileInfo,
   FileTargets,
   OptionValue,
+  PresetView,
+  QuickBatch,
+  Submitted,
   UiEvent,
   Verification,
 } from "./types";
 
-export type View = "convert" | "engines" | "about";
+export type View = "convert" | "presets" | "engines" | "about";
 
 export interface FileEntry {
   info: FileInfo;
@@ -84,6 +87,21 @@ function commonTargets(entries: FileEntry[]): CommonTarget[] {
   return [...map.values()];
 }
 
+/** Identifiant lisible et unique tiré d'un nom (« MP4 léger » → « mp4-leger »). */
+export function presetId(name: string, taken: string[]): string {
+  const base =
+    name
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 34) || "prereglage";
+  let id = base;
+  for (let n = 2; taken.includes(id); n++) id = `${base}-${n}`;
+  return id;
+}
+
 const SETTINGS_KEY = "chud.convert.settings";
 
 interface Saved {
@@ -118,6 +136,12 @@ class Store {
   keepDate = $state(false);
   dropHover = $state(false);
 
+  presets = $state<PresetView[]>([]);
+  presetsFile = $state<string | null>(null);
+  presetsError = $state<string | null>(null);
+  /** Lots du menu contextuel (fenêtre rapide) : erreurs et fichiers ignorés y restent visibles. */
+  quick = $state<QuickBatch[]>([]);
+
   engines = $state<EngineView[] | null>(null);
   enginesLoading = $state(false);
   enginesError = $state<string | null>(null);
@@ -128,6 +152,19 @@ class Store {
   common = $derived(commonTargets(this.checked.filter((f) => !f.targetsError)));
   targetInfo = $derived(this.common.find((t) => t.format === this.target) ?? null);
   active = $derived(this.jobs.filter((j) => j.status === "waiting" || j.status === "running").length);
+  /** Sortes des fichiers cochés, au sens des préréglages (catégorie, ou « folder »). */
+  checkedKinds = $derived([...new Set(this.checked.map((f) => (f.info.isDir ? "folder" : (f.info.category ?? "?"))))]);
+  /** Préréglages applicables à toute la sélection, et réalisables avec les moteurs présents. */
+  suggested = $derived(
+    this.presets.filter(
+      (p) =>
+        p.enabled &&
+        this.checkedKinds.length > 0 &&
+        this.checkedKinds.every((k) => p.appliesTo.includes(k)) &&
+        this.common.some((t) => t.format === p.target) &&
+        !(Object.keys(p.options).length === 0 && this.checked.every((f) => f.info.format === p.target)),
+    ),
+  );
 
   #buffered = new Map<number, UiEvent[]>();
   #noticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -150,9 +187,29 @@ class Store {
       },
       (over) => (this.dropHover = over),
     );
+    await a.onOpenFiles((paths) => {
+      this.view = "convert";
+      void this.addPaths(paths);
+    });
     void this.loadEngines(false);
+    void this.loadPresets();
     const initial = await a.initialPaths();
     if (initial.length) await this.addPaths(initial);
+  }
+
+  /** Fenêtre rapide : seulement la file des conversions lancées par le menu contextuel. */
+  async initQuick() {
+    const a = await api;
+    this.fake = a.fake;
+    await a.onQueue((e) => this.#onEvent(e));
+    const take = async () => {
+      for (const b of await a.takeQuick()) {
+        this.quick = [...this.quick, b];
+        if (b.run) this.#addJobs(b.run.submitted, b.run.preset.target, b.run.preset.targetName);
+      }
+    };
+    await a.onQuick(() => void take());
+    await take();
   }
 
   saveSettings() {
@@ -302,12 +359,20 @@ class Store {
         conflict: this.conflict,
         keepDate: this.keepDate,
       });
+      this.#addJobs(submitted, target.format, target.name);
+    } catch (e) {
+      this.say(errorText(e));
+    }
+  }
+
+  #addJobs(submitted: Submitted[], target: string, targetName: string) {
+    {
       const created: Job[] = submitted.map((s) => ({
         id: s.id,
         path: s.path,
         name: baseName(s.path),
-        target: target.format,
-        targetName: target.name,
+        target,
+        targetName,
         status: "waiting",
         fraction: null,
         speed: null,
@@ -329,8 +394,6 @@ class Store {
         this.#buffered.delete(s.id);
         for (const e of evs ?? []) this.#apply(e);
       }
-    } catch (e) {
-      this.say(errorText(e));
     }
   }
 
@@ -397,6 +460,82 @@ class Store {
         j.error = e.message;
         break;
     }
+  }
+
+  // ---------------------------------------------------------------- préréglages
+
+  async loadPresets() {
+    const a = await api;
+    try {
+      const v = await a.presets();
+      this.presets = v.presets;
+      this.presetsFile = v.file;
+      this.presetsError = v.error;
+    } catch (e) {
+      this.presetsError = errorText(e);
+    }
+  }
+
+  /** Enregistre la liste complète ; en cas de refus, la liste affichée revient à l'état du disque. */
+  async savePresets(list: PresetView[]): Promise<boolean> {
+    const a = await api;
+    try {
+      const v = await a.savePresets(list);
+      this.presets = v.presets;
+      this.presetsError = v.error;
+      return true;
+    } catch (e) {
+      this.say(errorText(e));
+      await this.loadPresets();
+      return false;
+    }
+  }
+
+  async resetPresets() {
+    const a = await api;
+    try {
+      const r = await a.resetPresets();
+      this.presets = r.view.presets;
+      this.presetsError = r.view.error;
+      this.say(r.backup ? `Préréglages rétablis. L'ancien fichier est gardé : ${r.backup}` : "Préréglages rétablis.");
+    } catch (e) {
+      this.say(errorText(e));
+    }
+  }
+
+  /** Remplit le panneau avec un préréglage : rien n'est converti avant « Convertir ». */
+  applyPreset(p: PresetView) {
+    if (!this.common.some((t) => t.format === p.target)) return;
+    this.target = p.target;
+    this.optionValues = { ...p.options };
+    this.conflict = p.conflict;
+    this.keepDate = p.keepDate;
+    this.outputDir = p.outputDir;
+    this.say(`Préréglage « ${p.name} » appliqué : vérifiez le rapport puis convertissez.`);
+  }
+
+  /** Le choix actuel (format, options, destination) devient un préréglage. */
+  async saveAsPreset(name: string): Promise<boolean> {
+    const t = this.targetInfo;
+    const clean = name.trim();
+    if (!t || !clean) return false;
+    const p: PresetView = {
+      id: presetId(clean, this.presets.map((x) => x.id)),
+      name: clean,
+      target: t.format,
+      targetName: t.name,
+      appliesTo: this.checkedKinds.filter((k) => k !== "?"),
+      options: { ...this.optionValues },
+      outputDir: this.outputDir,
+      nameTemplate: null,
+      conflict: this.conflict,
+      keepDate: this.keepDate,
+      enabled: true,
+      builtin: false,
+    };
+    const ok = await this.savePresets([p, ...this.presets]);
+    if (ok) this.say(`Préréglage « ${clean} » enregistré.`);
+    return ok;
   }
 
   // ---------------------------------------------------------------- moteurs

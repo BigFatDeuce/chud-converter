@@ -17,9 +17,12 @@ chud-jobs.workspace = true
 chud-enginemgr.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tauri = { version = "2.12", features = [] }
+# custom-protocol : l'interface intégrée au programme est servie par le programme lui-même
+# (sans cette option, la fenêtre chercherait le serveur de développement sur localhost).
+tauri = { version = "2.12", features = ["custom-protocol"] }
 tauri-plugin-dialog = "2.8"
 tauri-plugin-opener = "2.7"
+tauri-plugin-single-instance = "2"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
