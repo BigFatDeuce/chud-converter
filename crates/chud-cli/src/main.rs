@@ -128,7 +128,7 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum EngineAction {
-    /// Télécharge et installe un moteur (FFmpeg, 7-Zip) dans le dossier de Chud Converter :
+    /// Télécharge et installe un moteur (FFmpeg, 7-Zip, Pandoc, LibreOffice…) dans le dossier de Chud Converter :
     /// source officielle, taille et empreinte SHA-256 vérifiées, essai avant activation.
     /// Une installation du système n'est jamais modifiée.
     Install {
@@ -227,7 +227,7 @@ fn localized_command() -> clap::Command {
         .mut_subcommand("engines", |c| {
             c.about("Detects the installed engines (FFmpeg, 7-Zip, LibreOffice…), or installs the missing ones.")
                 .mut_subcommand("install", |c| {
-                    c.about("Downloads and installs an engine (FFmpeg, 7-Zip) into Chud Converter's folder: official source, size and SHA-256 checked, tried before being activated. A system install is never changed.")
+                    c.about("Downloads and installs an engine (FFmpeg, 7-Zip, Pandoc, LibreOffice…) into Chud Converter's folder: official source, size and SHA-256 checked, tried before being activated. On Linux, engines without a portable build come from the distribution packages (authorization asked). A system install is never changed.")
                         .mut_arg("alongside", help("Engine already installed on the system: install Chud Converter's copy anyway, alongside it (used first; the system one is not touched)."))
                 })
                 .mut_subcommand("uninstall", |c| {
@@ -295,7 +295,23 @@ fn engine_action(action: EngineAction, json: bool) -> Result<i32> {
                 }
                 return Ok(0);
             }
-            let Some(src) = m.install_source() else {
+            let system = chud_enginemgr::system::route(&m).map(|(_, r)| r);
+            if let (None, Some(r)) = (m.install_source(), &system)
+                && !json
+            {
+                out!(
+                    "{}",
+                    trf!(
+                        "Installation de {} par le gestionnaire de paquets du système ({}) : {}. Le mot de passe administrateur va être demandé ; le paquet appartiendra ensuite à votre distribution.",
+                        "Installing {} with the system package manager ({}): {}. The administrator password will be asked; the package will then belong to your distribution.",
+                        m.name,
+                        r.manager,
+                        r.packages.join(" ")
+                    )
+                );
+            }
+            let src = m.install_source();
+            if src.is_none() && system.is_none() {
                 bail!(
                     "{}",
                     trf!(
@@ -305,24 +321,35 @@ fn engine_action(action: EngineAction, json: bool) -> Result<i32> {
                         status.hint.as_ref().map(|h| trf!(" Commande suggérée : {h}", " Suggested command: {h}")).unwrap_or_default()
                     )
                 );
-            };
-            if status.origin == Some(chud_core::EngineOrigin::Managed) && status.version.as_deref() == Some(src.version.as_str()) {
-                out!("{}", trf!("{} {} est déjà installé.", "{} {} is already installed.", m.name, src.version));
-                return Ok(0);
             }
-            if !json {
-                out!(
-                    "{}",
-                    trf!(
-                        "Installation de {} {} — {} ({:.0} Mo depuis {})",
-                        "Installing {} {} — {} ({:.0} MB from {})",
-                        m.name,
-                        src.version,
-                        src.publisher_l(),
-                        src.total_size() as f64 / 1e6,
-                        src.page
-                    )
-                );
+            if let Some(src) = src {
+                if status.origin == Some(chud_core::EngineOrigin::Managed) && status.version.as_deref() == Some(src.version.as_str()) {
+                    out!("{}", trf!("{} {} est déjà installé.", "{} {} is already installed.", m.name, src.version));
+                    return Ok(0);
+                }
+                if !json {
+                    out!(
+                        "{}",
+                        trf!(
+                            "Installation de {} {} — {} ({:.0} Mo depuis {})",
+                            "Installing {} {} — {} ({:.0} MB from {})",
+                            m.name,
+                            src.version,
+                            src.publisher_l(),
+                            src.total_size() as f64 / 1e6,
+                            src.page
+                        )
+                    );
+                    if src.needs_runtime() {
+                        out!(
+                            "{}",
+                            tr!(
+                                "Le runtime Visual C++ de Microsoft manque : il sera installé aussi (Windows demandera une autorisation).",
+                                "The Microsoft Visual C++ runtime is missing: it will be installed too (Windows will ask for permission)."
+                            )
+                        );
+                    }
+                }
             }
             let cancel = AtomicBool::new(false);
             let mut last = String::new();
@@ -342,6 +369,10 @@ fn engine_action(action: EngineAction, json: bool) -> Result<i32> {
                     }
                     chud_enginemgr::InstallProgress::Extracting { .. } => tr!("extraction…", "extracting…").into(),
                     chud_enginemgr::InstallProgress::Checking => tr!("essai du moteur…", "trying the engine…").into(),
+                    chud_enginemgr::InstallProgress::Runtime => {
+                        tr!("installation du runtime Visual C++ de Microsoft…", "installing the Microsoft Visual C++ runtime…").into()
+                    }
+                    chud_enginemgr::InstallProgress::System { line } => line,
                 };
                 if line != last {
                     eprintln!("  {line}");

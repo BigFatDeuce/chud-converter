@@ -3,6 +3,7 @@
   import Icon from "./Icon.svelte";
   import { store } from "../store.svelte";
   import { categoryLabel, formatSize } from "../format";
+  import { offerSize } from "../engineText";
   import { missingEngineFor } from "../machines";
 
   const usable = $derived(store.files.filter((f) => f.info.format && !f.info.error));
@@ -73,7 +74,7 @@
                   {#if need?.installable}
                     <button class="link-inline strong" data-offer={need.id} onclick={() => store.offerEngine(need.id)}>
                       <Icon name="download" size={12} />
-                      {L(`installer ${need.name} (${formatSize(need.installable.size)})`, `install ${need.name} (${formatSize(need.installable.size)})`)}
+                      {L(`installer ${need.name} (${offerSize(need.installable)})`, `install ${need.name} (${offerSize(need.installable)})`)}
                     </button>
                   {:else}
                     <button class="link-inline" onclick={() => (store.view = "engines")}>{L("voir les moteurs", "see the engines")}</button>

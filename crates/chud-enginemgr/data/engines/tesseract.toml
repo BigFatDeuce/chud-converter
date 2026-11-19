@@ -1,6 +1,6 @@
 id = "tesseract"
 name = "Tesseract OCR"
-adapter = "none"
+adapter = "tesseract"
 homepage = "https://github.com/tesseract-ocr/tesseract"
 license = "Apache-2.0"
 description = "Reconnaissance de texte (OCR) dans les images et les PDF numérisés."
@@ -19,3 +19,33 @@ known_paths_macos = ['/opt/homebrew/bin/tesseract']
 windows = "winget install UB-Mannheim.TesseractOCR"
 linux = "sudo apt install tesseract-ocr tesseract-ocr-fra"
 macos = "brew install tesseract tesseract-lang"
+
+# Installation depuis l'application : Windows, version de l'université de Mannheim (celle que
+# recommande le projet Tesseract), installeur ouvert par 7-Zip (jamais exécuté) ; empreinte
+# calculée sur la publication GitHub (aucune n'est publiée). Langue française ajoutée depuis
+# tesseract-ocr/tessdata_fast (l'anglais est inclus). Linux : paquets du système.
+
+[[install]]
+platform = "windows-x86_64"
+version = "5.4.0.20240606"
+method = "nsis"
+publisher = "Université de Mannheim (version Windows recommandée par le projet Tesseract)"
+publisher_en = "University of Mannheim (Windows build recommended by the Tesseract project)"
+page = "https://github.com/UB-Mannheim/tesseract/releases/tag/v5.4.0.20240606"
+files = [
+  { url = "https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe", sha256 = "e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc", size = 600064 },
+  { url = "https://github.com/ip7z/7zip/releases/download/26.06/7z2606-x64.exe", sha256 = "9b697f65ecc2d9b0152f5ee96d72dde522a7827690349d9307935dacf40f42ec", size = 1659704 },
+  { url = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe", sha256 = "c885fff6998e0608ba4bb8ab51436e1c6775c2bafc2559a19b423e18678b60c9", size = 50175248 },
+]
+remove = ["tesseract-uninstall.exe"]
+extras = [
+  { url = "https://github.com/tesseract-ocr/tessdata_fast/raw/4.1.0/fra.traineddata", sha256 = "ced037562e8c80c13122dece28dd477d399af80911a28791a66a63ac1e3445ca", size = 1130365, dest = "tessdata/fra.traineddata" },
+]
+
+# Linux sans paquet portable officiel : gestionnaire de paquets du système (mot de passe demandé
+# par la fenêtre du système ; le paquet appartient ensuite à la distribution).
+[packages]
+apt = ["tesseract-ocr", "tesseract-ocr-fra", "tesseract-ocr-eng"]
+dnf = ["tesseract", "tesseract-langpack-fra"]
+pacman = ["tesseract", "tesseract-data-fra", "tesseract-data-eng"]
+zypper = ["tesseract-ocr", "tesseract-ocr-traineddata-french"]

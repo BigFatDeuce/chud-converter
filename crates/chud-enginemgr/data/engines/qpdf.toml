@@ -1,6 +1,6 @@
 id = "qpdf"
 name = "qpdf"
-adapter = "none"
+adapter = "qpdf"
 homepage = "https://qpdf.sourceforge.io"
 license = "Apache-2.0"
 description = "PDF : fusion, découpe, réparation, linéarisation, chiffrement."
@@ -19,3 +19,39 @@ known_paths_macos = ['/opt/homebrew/bin/qpdf']
 windows = "winget install QPDF.QPDF"
 linux = "sudo apt install qpdf"
 macos = "brew install qpdf"
+
+# Installation depuis l'application : publication officielle (qpdf/qpdf). La version Windows
+# embarque son runtime Visual C++.
+
+[[install]]
+platform = "windows-x86_64"
+version = "12.4.2"
+method = "zip"
+publisher = "Jay Berkenbilt, auteur de qpdf (publication officielle)"
+publisher_en = "Jay Berkenbilt, author of qpdf (official release)"
+page = "https://github.com/qpdf/qpdf/releases/tag/v12.4.2"
+files = [
+  { url = "https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2-msvc64.zip", sha256 = "db87077e683630c1217e0e8f9a20a9749d952ab676e881c3689187763a5de25d", size = 28183147 },
+]
+
+[[install]]
+platform = "linux-x86_64"
+version = "12.4.2"
+method = "zip"
+publisher = "Jay Berkenbilt, auteur de qpdf (publication officielle)"
+publisher_en = "Jay Berkenbilt, author of qpdf (official release)"
+page = "https://github.com/qpdf/qpdf/releases/tag/v12.4.2"
+files = [
+  { url = "https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2-bin-linux-x86_64.zip", sha256 = "db367d897829f22c4198ce1094143c9d467bd6ee7dfabc44ba6f02056b24f8b1", size = 4040257 },
+]
+
+[[install]]
+platform = "linux-aarch64"
+version = "12.4.2"
+method = "zip"
+publisher = "Jay Berkenbilt, auteur de qpdf (publication officielle)"
+publisher_en = "Jay Berkenbilt, author of qpdf (official release)"
+page = "https://github.com/qpdf/qpdf/releases/tag/v12.4.2"
+files = [
+  { url = "https://github.com/qpdf/qpdf/releases/download/v12.4.2/qpdf-12.4.2-bin-linux-aarch64.zip", sha256 = "8fd9d009eb0838398180a603f2cf76531e5c68a4ecc8847598e0a1ccb1d3b600", size = 3872113 },
+]

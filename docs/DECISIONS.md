@@ -280,9 +280,9 @@ indépendant (ADR-007) reste prévu pour suivre les moteurs entre deux versions 
   ans, et non dans « latest » qui change chaque jour. johnvansickle.com écarté : adresse
   mouvante, version ancienne. L'archive .tar.xz (≈ 540 Mo décompressée) est extraite en flux
   vers le disque, avec progression, plafond de 2 Gio, liens et chemins sortants refusés.
-- Les moteurs connus que Chud Converter ne sait pas encore utiliser (Pandoc, LibreOffice…) sont
-  rangés à part, « Bientôt pris en charge », sans bouton d'installation : rien ne s'en
-  servirait encore.
+- Les moteurs connus que Chud Converter ne sait pas encore utiliser sont rangés à part,
+  « Bientôt pris en charge », sans bouton d'installation : rien ne s'en servirait encore
+  (depuis la 0.2.0, ADR-023, il n'y en a plus).
 - Premier démarrage (2026-11-18 : « mets un message au premier démarrage pour indiquer qu'il
   faut les télécharger, […] 1 par 1 ou tous d'un seul coup ») : s'il manque des moteurs, un
   accueil les présente (usage, taille, version, source, licence) avec un bouton par moteur et
@@ -296,6 +296,55 @@ indépendant (ADR-007) reste prévu pour suivre les moteurs entre deux versions 
   plateforme proposée (Windows, Linux x86_64, Linux ARM64) chaque semaine et à chaque
   changement de source : une adresse retirée ou une empreinte modifiée est repérée avant les
   utilisateurs.
+
+## ADR-023 — Les onze autres moteurs : adaptateurs et installation
+
+**Contexte.** 2026-11-19 : « fais TOUT » — Pandoc, LibreOffice, Calibre, ImageMagick, libvips,
+qpdf, Ghostscript, Tesseract, ExifTool, MediaInfo et MKVToolNix doivent être réellement utilisés
+et s'installer depuis l'application, sans terminal à ouvrir ni commande à copier.
+
+**Décision.**
+
+- **Un adaptateur par moteur** (`crates/chud-engines/src/<id>.rs`), sur un socle commun
+  (`tool.rs`) : chaque conversion travaille dans un dossier de travail unique où l'entrée est
+  liée ou copiée sous un nom simple (`input.ext`). Aucun nom de fichier de l'utilisateur n'est
+  donc jamais lu par un outil comme un motif (`[0]` d'ImageMagick, `%d` de Ghostscript, `:`
+  des préfixes de format). Arguments séparés, jamais de ligne de shell.
+- **Vérification propre à chaque moteur**, jamais « le processus a rendu 0 » : relecture par
+  Pandoc en texte brut, contrôle des archives OOXML/ODF membre par membre, en-tête MOBI,
+  `qpdf --check` et nombre de pages, rendu Ghostscript sans sortie, décodage de l'image,
+  `vipsheader`/`vips avg`, `mkvmerge -J` avec comparaison du nombre de pistes. Un OCR sans texte
+  reconnu est un échec, pas un fichier vide « réussi ».
+- **MediaInfo et ExifTool ne convertissent rien** : ils enrichissent l'analyse du fichier
+  (`Engine::enriches_probe`). Le moteur principal analyse d'abord, puis leurs lignes et leurs
+  caractéristiques (HDR, EXIF, XMP, IPTC, ICC) s'ajoutent ; s'il échoue, il n'y a pas d'analyse.
+- **Coûts** : à fidélité égale, le moteur spécialisé gagne (qpdf pour PDF→PDF, libvips puis
+  ImageMagick pour les images, LibreOffice avant Pandoc pour la bureautique, Tesseract en
+  dernier car la reconnaissance est incertaine).
+- **Installation Windows sans droits administrateur**, depuis les publications officielles,
+  empreintes figées dans les manifestes :
+  - zip (Pandoc, qpdf, libvips, ExifTool, MediaInfo, MKVToolNix) ;
+  - archive 7z ouverte par `7zr` (ImageMagick) ;
+  - installeur NSIS **jamais exécuté**, ouvert comme une archive par 7-Zip (Ghostscript,
+    Tesseract ; la langue française de Tesseract est ajoutée, vérifiée par son empreinte) ;
+  - paquet MSI déplié en installation administrative (`msiexec /a`, sans rien inscrire dans le
+    système) : LibreOffice (≈ 380 Mo, son runtime Visual C++ est recopié depuis le paquet) et
+    Calibre (≈ 290 Mo).
+  - ImageMagick et Ghostscript ont besoin du runtime Visual C++ de Microsoft : s'il manque, la
+    confirmation le dit, puis le paquet officiel (adresse et empreinte figées) est installé ;
+    Windows demande alors l'autorisation (UAC). Refus : l'installation s'arrête proprement.
+- **Linux** : version portable officielle quand elle existe (Pandoc, qpdf, ImageMagick,
+  Calibre, FFmpeg, 7-Zip). Sinon, **paquets de la distribution** (apt, dnf, pacman, zypper,
+  noms validés) : l'application lance elle-même `pkexec`, qui affiche la demande de mot de passe
+  du système ; sans pkexec, un terminal s'ouvre tout seul avec la commande déjà lancée (rien à
+  copier). La confirmation dit que le gestionnaire de paquets du système est utilisé. Un paquet
+  du système reste au système : l'application ne le retire ni ne le met à jour.
+- Plafonds d'extraction relevés à 4 Gio et 80 000 entrées (LibreOffice) ; liens d'archives
+  recopiés seulement s'ils restent dans l'archive.
+
+**Conséquences.** Tous les moteurs connus sont utilisables : la rubrique « Bientôt pris en
+charge » disparaît. La CI Linux installe tous les outils et lance les tests réels des
+adaptateurs (`CHUD_REQUIRE_TOOLS`) ; le flux hebdomadaire installe chaque source gérée.
 
 ## ADR-021 — Publication et mise à jour de l'application
 **Statut : Acceptée** (précise ADR-015)

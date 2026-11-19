@@ -708,19 +708,21 @@ pub fn run_batch(
     results.into_inner().unwrap_or_else(|e| e.into_inner()).into_iter().map(|r| r.unwrap_or(Err(JobError::Cancelled))).collect()
 }
 
-/// Taille lisible en français (« 13,3 Mo »).
+/// Taille lisible dans la langue courante (« 13,3 Mo », « 13.3 MB »).
 fn human_size(n: u64) -> String {
-    const UNITS: [&str; 4] = ["Ko", "Mo", "Go", "To"];
+    let en = chud_core::i18n::lang() == chud_core::i18n::Lang::En;
+    let units: [&str; 4] = if en { ["KB", "MB", "GB", "TB"] } else { ["Ko", "Mo", "Go", "To"] };
     if n < 1024 {
-        return format!("{n} o");
+        return if en { format!("{n} B") } else { format!("{n} o") };
     }
     let mut v = n as f64 / 1024.0;
     let mut i = 0;
-    while v >= 1024.0 && i < UNITS.len() - 1 {
+    while v >= 1024.0 && i < units.len() - 1 {
         v /= 1024.0;
         i += 1;
     }
-    format!("{:.1} {}", v, UNITS[i]).replace('.', ",")
+    let s = format!("{:.1} {}", v, units[i]);
+    if en { s } else { s.replace('.', ",") }
 }
 
 #[cfg(test)]
@@ -729,6 +731,10 @@ mod tests {
     fn human_sizes_in_french() {
         assert_eq!(super::human_size(512), "512 o");
         assert_eq!(super::human_size(13_311_089), "12,7 Mo");
+        chud_core::i18n::with_lang(chud_core::i18n::Lang::En, || {
+            assert_eq!(super::human_size(512), "512 B");
+            assert_eq!(super::human_size(13_311_089), "12.7 MB");
+        });
     }
 
     use super::*;

@@ -22,6 +22,9 @@ use thiserror::Error;
 pub struct ProcessSpec {
     pub program: PathBuf,
     pub args: Vec<OsString>,
+    /// Arguments transmis tels quels, sans guillemets ajoutés (Windows : pour `msiexec`, qui
+    /// analyse lui-même `PROPRIÉTÉ="valeur"`). Jamais construits à partir de données utilisateur.
+    pub raw_args: Vec<OsString>,
     pub cwd: Option<PathBuf>,
     pub env: Vec<(OsString, OsString)>,
     pub timeout: Option<Duration>,
@@ -38,6 +41,7 @@ impl ProcessSpec {
         Self {
             program: program.into(),
             args: Vec::new(),
+            raw_args: Vec::new(),
             cwd: None,
             env: Vec::new(),
             timeout: None,
@@ -58,6 +62,11 @@ impl ProcessSpec {
         S: Into<OsString>,
     {
         self.args.extend(args.into_iter().map(Into::into));
+        self
+    }
+
+    pub fn raw_arg(mut self, a: impl Into<OsString>) -> Self {
+        self.raw_args.push(a.into());
         self
     }
 
@@ -174,6 +183,15 @@ pub fn run(
     }
     let mut cmd = Command::new(&spec.program);
     cmd.args(&spec.args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    for a in &spec.raw_args {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.raw_arg(a);
+        }
+        #[cfg(not(windows))]
+        cmd.arg(a);
+    }
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);
     }

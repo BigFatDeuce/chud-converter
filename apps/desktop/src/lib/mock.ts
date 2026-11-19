@@ -80,6 +80,7 @@ const FAKE: Record<string, { info: FileInfo; targets: TargetView[] }> = {
   },
 };
 
+const linux = typeof location !== "undefined" && location.search.includes("linux");
 const ENGINES: EngineView[] = [
   {
     id: "ffmpeg",
@@ -95,7 +96,7 @@ const ENGINES: EngineView[] = [
     hint: null,
     supported: true,
     categories: ["video", "audio", "subtitle", "image"],
-    installable: { version: "9.0.2", size: 114768076, publisher: "gyan.dev (fictif)", license: "GPL-3.0-or-later", page: "https://example.org" },
+    installable: { version: "9.0.2", size: 114768076, publisher: "gyan.dev (fictif)", license: "GPL-3.0-or-later", page: "https://example.org", runtime: false, system: null },
     previous: null,
     installing: false,
   },
@@ -113,28 +114,48 @@ const ENGINES: EngineView[] = [
     hint: "winget install 7zip.7zip",
     supported: true,
     categories: ["archive"],
-    installable: { version: "26.06", size: 2259768, publisher: "Igor Pavlov (fictif)", license: "LGPL-2.1-or-later (+ restriction unRAR)", page: "https://example.org" },
+    installable: { version: "26.06", size: 2259768, publisher: "Igor Pavlov (fictif)", license: "LGPL-2.1-or-later (+ restriction unRAR)", page: "https://example.org", runtime: false, system: null },
     previous: null,
     installing: false,
   },
-  {
-    id: "pandoc",
-    name: "Pandoc",
-    state: "missing",
-    problem: null,
-    version: null,
-    path: null,
-    origin: null,
-    license: "GPL-2.0-or-later",
-    homepage: "https://pandoc.org",
-    description: "Documents (données fictives)",
-    hint: "winget install JohnMacFarlane.Pandoc",
-    supported: false,
-    categories: ["document"],
-    installable: null,
-    previous: null,
-    installing: false,
-  },
+  ...(
+    [
+      ["pandoc", "Pandoc", ["document", "ebook"], "Documents texte : Markdown, HTML, DOCX, ODT, EPUB, LaTeX… (données fictives)", "GPL-2.0-or-later", "3.14", 43614099, false, null],
+      ["libreoffice", "LibreOffice", ["document", "spreadsheet", "presentation", "pdf"], "Bureautique : DOCX, XLSX, PPTX, ODT, PDF… (données fictives)", "MPL-2.0", "26.8.3.1", 376311808, false, ["libreoffice-core", "libreoffice-writer"]],
+      ["calibre", "Calibre (ebook-convert)", ["ebook"], "Livres numériques : EPUB, MOBI, AZW3, FB2… (données fictives)", "GPL-3.0-or-later", "9.18.0", 291291136, false, null],
+      ["imagemagick", "ImageMagick", ["image"], "Images : plus de 200 formats. (données fictives)", "ImageMagick", "7.1.2-36", 12806032, true, null],
+      ["libvips", "libvips", ["image"], "Images très grandes, HEIC, AVIF, JPEG XL. (données fictives)", "LGPL-2.1-or-later", "8.18.7", 19734071, false, ["libvips-tools"]],
+      ["qpdf", "qpdf", ["pdf"], "PDF : réparation, linéarisation, pages. (données fictives)", "Apache-2.0", "12.4.2", 28183147, false, null],
+      ["ghostscript", "Ghostscript", ["pdf"], "PDF et PostScript : rendu en images. (données fictives)", "AGPL-3.0-or-later", "10.08.0", 67353088, true, ["ghostscript"]],
+      ["tesseract", "Tesseract OCR", ["image", "pdf"], "Reconnaissance de texte (OCR). (données fictives)", "Apache-2.0", "5.4.0.20240606", 53565317, false, ["tesseract-ocr", "tesseract-ocr-fra"]],
+      ["exiftool", "ExifTool", ["image", "video", "audio", "pdf"], "Lecture des métadonnées. (données fictives)", "Artistic-1.0-Perl OR GPL-1.0-or-later", "13.64", 11217963, false, ["libimage-exiftool-perl"]],
+      ["mediainfo", "MediaInfo", ["video", "audio"], "Analyse détaillée audio et vidéo. (données fictives)", "BSD-2-Clause", "26.10", 4186111, false, ["mediainfo"]],
+      ["mkvtoolnix", "MKVToolNix", ["video"], "Matroska sans ré-encodage. (données fictives)", "GPL-2.0-or-later", "103.0", 103859301, false, ["mkvtoolnix"]],
+    ] as const
+  ).map(
+    ([id, name, categories, description, license, version, size, runtime, pkgs]): EngineView => ({
+      id,
+      name,
+      state: "missing",
+      problem: null,
+      version: null,
+      path: null,
+      origin: null,
+      license,
+      homepage: "https://example.org",
+      description,
+      hint: null,
+      supported: true,
+      categories: [...categories],
+      // « ?linux » dans l'adresse : paquets du système quand il n'y a pas de version portable.
+      installable:
+        linux && pkgs
+          ? { version: "celle de votre distribution", size: 0, publisher: "votre distribution Linux (apt)", license, page: "https://example.org", runtime: false, system: { manager: "apt", packages: [...pkgs] } }
+          : { version, size, publisher: "publication officielle (fictif)", license, page: "https://example.org", runtime: runtime && !linux, system: null },
+      previous: null,
+      installing: false,
+    }),
+  ),
 ];
 
 const preset = (id: string, name: string, target: string, targetName: string, appliesTo: string[], options = {}): PresetView => ({
@@ -221,7 +242,13 @@ export function mockApi(): Api {
       if (e.state === "ready" && e.origin === "system" && !alongside) throw "déjà prêt (fictif)";
       const total = e.installable!.size;
       installCancel = false;
-      for (let i = 1; i <= 20; i++) {
+      if (e.installable!.system) {
+        for (const line of ["demande d'autorisation (apt)…", "Lecture des listes de paquets…", "Dépaquetage…", "Paramétrage…"]) {
+          for (const cb of installListeners) cb(id, { phase: "system", line });
+          await delay(null, 500);
+        }
+      }
+      for (let i = 1; i <= (e.installable!.system ? 0 : 20); i++) {
         await delay(null, 120);
         if (installCancel) throw "installation annulée : rien n'a été installé (fictif)";
         for (const cb of installListeners) cb(id, { phase: "downloading", received: (total * i) / 20, total });

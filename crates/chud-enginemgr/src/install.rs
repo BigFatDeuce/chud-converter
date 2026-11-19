@@ -26,10 +26,10 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-/// Taille totale extraite maximale (FFmpeg « essentials » fait environ 300 Mo une fois extrait).
-const MAX_EXTRACTED: u64 = 2 * 1024 * 1024 * 1024;
+/// Taille totale extraite maximale (LibreOffice et Calibre font environ 1 Go une fois extraits).
+const MAX_EXTRACTED: u64 = 4 * 1024 * 1024 * 1024;
 /// Nombre maximal d'éléments dans une archive.
-const MAX_ENTRIES: usize = 20_000;
+const MAX_ENTRIES: usize = 80_000;
 
 /// Comment le paquet téléchargé devient un dossier.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -39,9 +39,34 @@ pub enum InstallMethod {
     Zip,
     /// Une archive `.tar.xz` (7-Zip pour Linux).
     TarXz,
+    /// Une archive `.tar.gz` (Pandoc pour Linux).
+    TarGz,
     /// L'installeur auto-extractible de 7-Zip, ouvert par `7zr` (deux fichiers : `7zr`, puis l'installeur).
     /// L'installeur lui-même n'est jamais lancé.
     SevenzipSfx,
+    /// Une archive `.7z`, ouverte par `7zr` (deux fichiers : `7zr`, puis l'archive). Windows.
+    Sevenzip,
+    /// Un installeur NSIS ouvert comme une archive par 7-Zip, jamais exécuté (trois fichiers :
+    /// `7zr`, l'installeur de 7-Zip qui fournit `7z` complet, puis l'installeur NSIS). Windows.
+    Nsis,
+    /// Un paquet Windows Installer extrait par `msiexec /a` (installation « administrative » :
+    /// copie des fichiers dans le dossier de Chud Converter, rien n'est enregistré sur le
+    /// système, aucun droit administrateur). Windows.
+    Msi,
+}
+
+impl InstallMethod {
+    fn file_count(self) -> usize {
+        match self {
+            InstallMethod::Zip | InstallMethod::TarXz | InstallMethod::TarGz | InstallMethod::Msi => 1,
+            InstallMethod::SevenzipSfx | InstallMethod::Sevenzip => 2,
+            InstallMethod::Nsis => 3,
+        }
+    }
+
+    fn windows_only(self) -> bool {
+        matches!(self, InstallMethod::SevenzipSfx | InstallMethod::Sevenzip | InstallMethod::Nsis | InstallMethod::Msi)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -50,6 +75,41 @@ pub struct Download {
     pub url: String,
     pub sha256: String,
     pub size: u64,
+}
+
+/// Fichier de données ajouté après extraction (ex. langues de Tesseract), vérifié comme les autres.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct Extra {
+    pub url: String,
+    pub sha256: String,
+    pub size: u64,
+    /// Chemin relatif, dans le dossier de la version.
+    pub dest: String,
+}
+
+impl Extra {
+    fn download(&self) -> Download {
+        Download { url: self.url.clone(), sha256: self.sha256.clone(), size: self.size }
+    }
+}
+
+fn check_download(f: &Download) -> Result<(), String> {
+    if !f.url.starts_with("https://") {
+        return Err(trf!("adresse non HTTPS : {}", "non-HTTPS address: {}", f.url));
+    }
+    if f.sha256.len() != 64 || !f.sha256.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+        return Err(trf!("empreinte SHA-256 invalide pour {}", "invalid SHA-256 for {}", f.url));
+    }
+    if f.size == 0 {
+        return Err(trf!("taille manquante pour {}", "missing size for {}", f.url));
+    }
+    Ok(())
+}
+
+/// Nom de fichier simple (sans dossier ni caractère réservé).
+fn plain_name(n: &str) -> bool {
+    !n.is_empty() && n != "." && n != ".." && !n.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
 }
 
 /// Source d'installation d'un moteur pour une plateforme (section `[[install]]` du manifeste).
@@ -70,6 +130,23 @@ pub struct InstallSource {
     /// Page de la publication, pour vérifier par soi-même.
     pub page: String,
     pub files: Vec<Download>,
+    /// Fichiers de données ajoutés après extraction.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extras: Vec<Extra>,
+    /// Renommages après extraction : `[nom trouvé dans l'arborescence, nouveau nom]`
+    /// (ExifTool pour Windows s'appelle `exiftool(-k).exe` dans son archive).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub renames: Vec<[String; 2]>,
+    /// Fichiers recopiés d'un dossier vers un autre après extraction : `[source, destination]`
+    /// (LibreOffice range son runtime Visual C++ dans `System64`, à côté de `program` il suffit).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub copies: Vec<[String; 2]>,
+    /// Éléments retirés à la racine après extraction (installeurs embarqués, désinstalleurs…).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub remove: Vec<String>,
+    /// Le moteur a besoin du runtime Visual C++ de Microsoft (Windows) : installé s'il manque.
+    #[serde(default)]
+    pub vcruntime: bool,
 }
 
 impl InstallSource {
@@ -80,8 +157,16 @@ impl InstallSource {
         }
     }
 
+    /// Taille à télécharger, runtime Visual C++ compris s'il manque.
     pub fn total_size(&self) -> u64 {
-        self.files.iter().map(|f| f.size).sum()
+        self.files.iter().map(|f| f.size).sum::<u64>()
+            + self.extras.iter().map(|f| f.size).sum::<u64>()
+            + if self.needs_runtime() { vc_redist().size } else { 0 }
+    }
+
+    /// Le runtime Visual C++ sera installé avec ce moteur (il manque sur ce système).
+    pub fn needs_runtime(&self) -> bool {
+        self.vcruntime && cfg!(windows) && !vcruntime_present()
     }
 
     /// Contrôles faits au chargement du manifeste.
@@ -89,23 +174,37 @@ impl InstallSource {
         if !safe_version(&self.version) {
             return Err(trf!("version d'installation invalide : {}", "invalid install version: {}", self.version));
         }
-        let expected = match self.method {
-            InstallMethod::Zip | InstallMethod::TarXz => 1,
-            InstallMethod::SevenzipSfx => 2,
-        };
+        let expected = self.method.file_count();
         if self.files.len() != expected {
             return Err(trf!("{} fichier(s) attendu(s) pour cette méthode", "{} file(s) expected for this method", expected));
         }
+        if self.method.windows_only() && !self.platform.starts_with("windows-") {
+            return Err(tr!("cette méthode d'installation n'existe que sous Windows", "this install method only exists on Windows").into());
+        }
+        if self.vcruntime && !self.platform.starts_with("windows-") {
+            return Err(tr!("le runtime Visual C++ ne concerne que Windows", "the Visual C++ runtime only concerns Windows").into());
+        }
         for f in &self.files {
-            if !f.url.starts_with("https://") {
-                return Err(trf!("adresse non HTTPS : {}", "non-HTTPS address: {}", f.url));
+            check_download(f)?;
+        }
+        for e in &self.extras {
+            check_download(&e.download())?;
+            if safe_relative(Path::new(&e.dest)).is_none() || !e.dest.split(['/', '\\']).all(plain_name) {
+                return Err(trf!("destination refusée : {}", "destination refused: {}", e.dest));
             }
-            if f.sha256.len() != 64 || !f.sha256.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
-                return Err(trf!("empreinte SHA-256 invalide pour {}", "invalid SHA-256 for {}", f.url));
+        }
+        for [from, to] in &self.renames {
+            if !plain_name(from) || !plain_name(to) {
+                return Err(trf!("renommage refusé : {} → {}", "rename refused: {} → {}", from, to));
             }
-            if f.size == 0 {
-                return Err(trf!("taille manquante pour {}", "missing size for {}", f.url));
+        }
+        for pair in &self.copies {
+            if !pair.iter().all(|d| safe_relative(Path::new(d)).is_some() && d.split(['/', '\\']).all(plain_name)) {
+                return Err(trf!("copie refusée : {} → {}", "copy refused: {} → {}", pair[0], pair[1]));
             }
+        }
+        if !self.remove.iter().all(|n| plain_name(n)) {
+            return Err(tr!("élément à retirer invalide", "invalid item to remove").into());
         }
         if !self.page.starts_with("https://") {
             return Err(tr!("la page de publication doit être en HTTPS", "the release page must use HTTPS").into());
@@ -145,7 +244,13 @@ pub enum InstallProgress {
         done: u64,
         total: u64,
     },
+    /// Installation du runtime Visual C++ de Microsoft (Windows peut demander une autorisation).
+    Runtime,
     Checking,
+    /// Gestionnaire de paquets du système : dernière ligne affichée.
+    System {
+        line: String,
+    },
 }
 
 #[derive(Debug)]
@@ -253,6 +358,10 @@ pub fn check_allowed(status: &crate::EngineStatus, alongside: bool) -> Result<()
     let path = status.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
     match status.origin {
         Some(EngineOrigin::Managed) => Ok(()),
+        // Rien de portable à installer à côté (voie « paquets du système ») : il est déjà là.
+        _ if status.installable.is_none() => {
+            Err(trf!("{} est déjà installé par le système ({})", "{} is already installed by the system ({})", status.name, path))
+        }
         Some(EngineOrigin::Custom) => Err(trf!(
             "{} utilise le chemin que vous avez choisi ({}) : une copie installée par Chud Converter ne serait pas utilisée",
             "{} uses the path you chose ({}): a copy installed by Chud Converter would not be used",
@@ -276,6 +385,9 @@ pub fn install(
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(InstallProgress),
 ) -> Result<Installed, InstallError> {
+    if m.install_source().is_none() && crate::system::route(m).is_some() {
+        return crate::system::install(paths, m, cancel, progress);
+    }
     let src = m.install_source().ok_or_else(|| {
         InstallError::Failed(trf!(
             "{} ne peut pas être installé automatiquement sur cette plateforme ({})",
@@ -295,18 +407,32 @@ pub fn install(
     };
     cleanup();
     let result = (|| {
-        let files = download_all(src, &downloads, cancel, progress)?;
+        let runtime = src.needs_runtime();
+        let got = download_all(src, runtime, &downloads, cancel, progress)?;
+        let files = &got.files;
         progress(InstallProgress::Extracting { done: 0, total: 0 });
         std::fs::create_dir_all(&partial).map_err(|e| io_err(tr!("création du dossier de version", "creating the version folder"), e))?;
         let mut report = |done: u64, total: u64| progress(InstallProgress::Extracting { done, total });
         match src.method {
             InstallMethod::Zip => extract_zip(&files[0], &partial, cancel, &mut report)?,
-            InstallMethod::TarXz => extract_tar_xz(&files[0], &partial, cancel, &mut report)?,
-            InstallMethod::SevenzipSfx => extract_with_7zr(&files[0], &files[1], &partial)?,
+            InstallMethod::TarXz => extract_tar(&files[0], Compression::Xz, &partial, cancel, &mut report)?,
+            InstallMethod::TarGz => extract_tar(&files[0], Compression::Gz, &partial, cancel, &mut report)?,
+            InstallMethod::SevenzipSfx | InstallMethod::Sevenzip => extract_with_7zr(&files[0], &files[1], &partial)?,
+            InstallMethod::Nsis => extract_nsis(&files[0], &files[1], &files[2], &downloads, &partial)?,
+            InstallMethod::Msi => extract_msi_short(&files[0], &partial)?,
         }
-        check_tree(&partial)?;
         if cancel.load(Ordering::Relaxed) {
             return Err(InstallError::Cancelled);
+        }
+        finish_tree(src, &partial, &got.extras)?;
+        let deepest = check_tree(&partial)?;
+        check_path_length(&versions.join(&src.version), deepest, &m.name)?;
+        if cancel.load(Ordering::Relaxed) {
+            return Err(InstallError::Cancelled);
+        }
+        if let Some(redist) = &got.runtime {
+            progress(InstallProgress::Runtime);
+            install_vcruntime(redist)?;
         }
         progress(InstallProgress::Checking);
         let exe = check_executables(m, &partial)?;
@@ -316,12 +442,20 @@ pub fn install(
     result
 }
 
+/// Fichiers téléchargés et vérifiés, rangés par rôle.
+struct Downloaded {
+    files: Vec<PathBuf>,
+    extras: Vec<(PathBuf, String)>,
+    runtime: Option<PathBuf>,
+}
+
 fn download_all(
     src: &InstallSource,
+    runtime: bool,
     dir: &Path,
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(InstallProgress),
-) -> Result<Vec<PathBuf>, InstallError> {
+) -> Result<Downloaded, InstallError> {
     std::fs::create_dir_all(dir).map_err(|e| io_err(tr!("création du dossier de téléchargement", "creating the download folder"), e))?;
     // Pile TLS : rustls avec « ring » (comme la mise à jour). Déjà installée par ailleurs : sans effet.
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -341,18 +475,26 @@ fn download_all(
         }))
         .build()
         .map_err(|e| InstallError::Failed(trf!("client HTTPS : {}", "HTTPS client: {}", e)))?;
-    let total = src.total_size();
+    let mut list: Vec<Download> = src.files.clone();
+    list.extend(src.extras.iter().map(Extra::download));
+    if runtime {
+        list.push(vc_redist());
+    }
+    let total: u64 = list.iter().map(|f| f.size).sum();
     let mut received_before = 0;
-    let mut out = Vec::new();
-    for (i, f) in src.files.iter().enumerate() {
-        let name = f.url.rsplit('/').next().filter(|n| !n.is_empty() && !n.contains(['\\', ':'])).unwrap_or("download");
+    let mut paths = Vec::new();
+    for (i, f) in list.iter().enumerate() {
+        let name = f.url.rsplit('/').next().map(|n| n.split('?').next().unwrap_or(n)).filter(|n| plain_name(n)).unwrap_or("download");
         let path = dir.join(format!("{i}-{name}"));
         download(&client, f, &path, cancel, &mut |n| progress(InstallProgress::Downloading { received: received_before + n, total }))?;
         received_before += f.size;
-        out.push(path);
+        paths.push(path);
     }
     progress(InstallProgress::Verifying);
-    Ok(out)
+    let mut rest = paths.split_off(src.files.len());
+    let runtime = if runtime { rest.pop() } else { None };
+    let extras = rest.into_iter().zip(src.extras.iter().map(|e| e.dest.clone())).collect();
+    Ok(Downloaded { files: paths, extras, runtime })
 }
 
 /// Télécharge un fichier en calculant son empreinte au fil de l'eau ; refuse tout écart.
@@ -442,6 +584,14 @@ impl Budget {
         self.entries += 1;
         if self.entries > MAX_ENTRIES {
             return Err(tr!("archive refusée : trop de fichiers", "archive refused: too many files").to_owned().into());
+        }
+        Ok(())
+    }
+
+    fn add(&mut self, n: u64) -> Result<(), InstallError> {
+        self.bytes += n;
+        if self.bytes > MAX_EXTRACTED {
+            return Err(tr!("archive refusée : contenu trop volumineux", "archive refused: content too large").to_owned().into());
         }
         Ok(())
     }
@@ -555,7 +705,13 @@ impl Write for Bounded<'_> {
 
 /// Avancement : la décompression compte pour les neuf dixièmes (c'est le plus long), l'écriture
 /// des fichiers pour le reste.
-fn extract_tar_xz(archive: &Path, dest: &Path, cancel: &AtomicBool, report: Report) -> Result<(), InstallError> {
+#[derive(Clone, Copy)]
+enum Compression {
+    Xz,
+    Gz,
+}
+
+fn extract_tar(archive: &Path, comp: Compression, dest: &Path, cancel: &AtomicBool, report: Report) -> Result<(), InstallError> {
     const SCALE: u64 = 1000;
     let f = std::fs::File::open(archive).map_err(|e| io_err(tr!("ouverture de l'archive", "opening the archive"), e))?;
     let xz_size = f.metadata().map(|m| m.len()).unwrap_or(0).max(1);
@@ -572,17 +728,22 @@ fn extract_tar_xz(archive: &Path, dest: &Path, cancel: &AtomicBool, report: Repo
         }
     };
     let counting = Counting { inner: f, n: 0, total: xz_size, report: &mut on_read };
-    let mut xz = lzma_rust2::XzReader::new(std::io::BufReader::new(counting), true);
-    let r = std::io::copy(&mut xz, &mut sink).and_then(|_| sink.flush());
+    let input = std::io::BufReader::new(counting);
+    let r = match comp {
+        Compression::Xz => std::io::copy(&mut lzma_rust2::XzReader::new(input, true), &mut sink),
+        Compression::Gz => std::io::copy(&mut flate2::read::MultiGzDecoder::new(input), &mut sink),
+    }
+    .and_then(|_| sink.flush());
     let tar_size = sink.written.max(1);
     drop(sink);
     if cancel.load(Ordering::Relaxed) {
         return Err(InstallError::Cancelled);
     }
-    r.map_err(|e| InstallError::Failed(trf!("archive XZ illisible : {}", "unreadable XZ archive: {}", e)))?;
+    r.map_err(|e| InstallError::Failed(trf!("archive compressée illisible : {}", "unreadable compressed archive: {}", e)))?;
     let tar_file = std::fs::File::open(&tar_path).map_err(|e| io_err(tr!("extraction", "extraction"), e))?;
     let mut tar = tar::Archive::new(std::io::BufReader::new(tar_file));
     let mut budget = Budget::new();
+    let mut links: Vec<(PathBuf, PathBuf)> = Vec::new();
     let entries = tar.entries().map_err(|e| InstallError::Failed(trf!("archive TAR illisible : {}", "unreadable TAR archive: {}", e)))?;
     for entry in entries {
         if cancel.load(Ordering::Relaxed) {
@@ -597,7 +758,7 @@ fn extract_tar_xz(archive: &Path, dest: &Path, cancel: &AtomicBool, report: Repo
             }
             return Err(InstallError::Failed(trf!("chemin refusé dans l'archive : {}", "path refused in the archive: {}", raw.display())));
         };
-        let target = dest.join(rel);
+        let target = dest.join(&rel);
         match entry.header().entry_type() {
             tar::EntryType::Directory => std::fs::create_dir_all(&target).map_err(|e| io_err(tr!("extraction", "extraction"), e))?,
             tar::EntryType::Regular | tar::EntryType::Continuous => {
@@ -616,7 +777,28 @@ fn extract_tar_xz(archive: &Path, dest: &Path, cancel: &AtomicBool, report: Repo
                 let _ = mode;
             }
             // En-têtes étendus (noms longs) : déjà appliqués par la bibliothèque.
-            tar::EntryType::XGlobalHeader | tar::EntryType::XHeader | tar::EntryType::GNULongName => {}
+            tar::EntryType::XGlobalHeader | tar::EntryType::XHeader | tar::EntryType::GNULongName | tar::EntryType::GNULongLink => {}
+            // Liens (Pandoc, Calibre pour Linux en contiennent) : traités à la fin, quand leur
+            // cible est extraite. Un lien qui sort de l'archive est refusé.
+            tar::EntryType::Symlink | tar::EntryType::Link => {
+                let link = entry.link_name().ok().flatten().map(|l| l.into_owned());
+                let base = if entry.header().entry_type() == tar::EntryType::Link {
+                    PathBuf::new()
+                } else {
+                    rel.parent().map(Path::to_path_buf).unwrap_or_default()
+                };
+                let resolved = link.as_deref().and_then(|l| safe_relative(&base.join(l)));
+                match resolved {
+                    Some(r) => links.push((r, target)),
+                    None => {
+                        return Err(InstallError::Failed(trf!(
+                            "lien refusé dans l'archive : {}",
+                            "link refused in the archive: {}",
+                            raw.display()
+                        )));
+                    }
+                }
+            }
             other => {
                 return Err(InstallError::Failed(trf!(
                     "élément refusé dans l'archive ({:?}) : {}",
@@ -626,6 +808,24 @@ fn extract_tar_xz(archive: &Path, dest: &Path, cancel: &AtomicBool, report: Repo
                 )));
             }
         }
+    }
+    // Liens recopiés (plusieurs passes : un lien peut viser un autre lien). Un lien vers un
+    // dossier ou vers rien n'est pas recopié ; les essais d'après installation diront s'il manquait.
+    for _ in 0..4 {
+        let mut left = Vec::new();
+        for (src, target) in links {
+            let src_path = dest.join(&src);
+            if src_path.is_file() {
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| io_err(tr!("extraction", "extraction"), e))?;
+                }
+                let n = std::fs::copy(&src_path, &target).map_err(|e| io_err(tr!("extraction", "extraction"), e))?;
+                budget.add(n)?;
+            } else {
+                left.push((src, target));
+            }
+        }
+        links = left;
     }
     // Les en-têtes du tar comptent dans sa taille : la fin est annoncée explicitement.
     report(SCALE, SCALE);
@@ -651,10 +851,227 @@ fn extract_with_7zr(extractor: &Path, archive: &Path, dest: &Path) -> Result<(),
     Ok(())
 }
 
+/// Installeur NSIS : `7zr` ouvre l'installeur de 7-Zip pour obtenir `7z` complet (qui sait lire
+/// le format NSIS), puis `7z` ouvre l'installeur du moteur. Aucun des deux n'est exécuté.
+fn extract_nsis(sevenzr: &Path, sevenzip_installer: &Path, target: &Path, work: &Path, dest: &Path) -> Result<(), InstallError> {
+    let tools = work.join("7z");
+    std::fs::create_dir_all(&tools).map_err(|e| io_err(tr!("préparation de 7-Zip", "preparing 7-Zip"), e))?;
+    extract_with_7zr(sevenzr, sevenzip_installer, &tools)?;
+    let sz = find_exe(&tools, "7z").ok_or_else(|| {
+        InstallError::Failed(tr!("7z introuvable dans l'installeur de 7-Zip", "7z not found in the 7-Zip installer").into())
+    })?;
+    let mut out_arg = std::ffi::OsString::from("-o");
+    out_arg.push(dest.as_os_str());
+    let spec =
+        ProcessSpec::new(&sz).args(["x", "-y", "-bso0", "-bsp0", "-snl-"]).arg(out_arg).arg(target).timeout(Some(Duration::from_secs(900)));
+    let out = chud_process::run_capture(&spec, 64 * 1024).map_err(|e| InstallError::Failed(trf!("7z : {}", "7z: {}", e)))?;
+    if !out.success() {
+        return Err(InstallError::Failed(trf!(
+            "l'ouverture de l'installeur a échoué : {}",
+            "opening the installer failed: {}",
+            out.stderr_tail.lines().last().unwrap_or("").trim()
+        )));
+    }
+    // Dossiers techniques de NSIS, jamais utiles au moteur.
+    for name in ["$PLUGINSDIR", "$TEMP", "$_OUTDIR"] {
+        let _ = std::fs::remove_dir_all(dest.join(name));
+    }
+    Ok(())
+}
+
+/// `msiexec /a` : copie les fichiers du paquet dans `dest` sans rien enregistrer sur le système.
+/// `msiexec` ne sait pas écrire au-delà de 260 caractères (erreur 1320, code 1603) et certains
+/// paquets ont des chemins internes très longs (Calibre : plus de 120 caractères). Le paquet est
+/// donc déplié dans un dossier temporaire court, puis déplacé dans `dest` par Chud Converter, qui
+/// gère les chemins longs.
+fn extract_msi_short(msi: &Path, dest: &Path) -> Result<(), InstallError> {
+    let short = std::env::temp_dir().join(format!("chud-msi-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&short);
+    std::fs::create_dir_all(&short).map_err(|e| io_err(tr!("création du dossier temporaire", "creating the temporary folder"), e))?;
+    let r = extract_msi(msi, &short).and_then(|()| move_children(&short, dest));
+    let _ = std::fs::remove_dir_all(&short);
+    r
+}
+
+/// Déplace le contenu de `from` dans `to` (copie si les deux ne sont pas sur le même disque).
+fn move_children(from: &Path, to: &Path) -> Result<(), InstallError> {
+    let what = tr!("déplacement des fichiers extraits", "moving the extracted files");
+    let rd = std::fs::read_dir(from).map_err(|e| io_err(what, e))?;
+    for e in rd.flatten() {
+        let target = to.join(e.file_name());
+        if std::fs::rename(e.path(), &target).is_err() {
+            copy_all(&e.path(), &target).map_err(|e| io_err(what, e))?;
+        }
+    }
+    Ok(())
+}
+
+fn copy_all(from: &Path, to: &Path) -> std::io::Result<()> {
+    let meta = std::fs::symlink_metadata(from)?;
+    if meta.file_type().is_symlink() {
+        return Err(std::io::Error::other(format!("lien refusé : {}", from.display())));
+    }
+    if meta.is_dir() {
+        std::fs::create_dir_all(to)?;
+        for e in std::fs::read_dir(from)? {
+            let e = e?;
+            copy_all(&e.path(), &to.join(e.file_name()))?;
+        }
+        Ok(())
+    } else {
+        std::fs::copy(from, to).map(|_| ())
+    }
+}
+
+fn extract_msi(msi: &Path, dest: &Path) -> Result<(), InstallError> {
+    if !cfg!(windows) {
+        return Err(tr!("paquet MSI : Windows seulement", "MSI package: Windows only").to_owned().into());
+    }
+    let root = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+    let msiexec = root.join("System32").join("msiexec.exe");
+    // `msiexec` lit lui-même `TARGETDIR="…"` : les chemins viennent de Chud Converter (jamais de
+    // l'utilisateur) et un chemin Windows ne peut pas contenir de guillemet.
+    let quoted = |p: &Path| -> Result<std::ffi::OsString, InstallError> {
+        let s = p.to_str().ok_or_else(|| InstallError::Failed(tr!("chemin non pris en charge", "unsupported path").into()))?;
+        if s.contains('"') {
+            return Err(tr!("chemin non pris en charge", "unsupported path").to_owned().into());
+        }
+        Ok(format!("\"{s}\"").into())
+    };
+    let mut target = std::ffi::OsString::from("TARGETDIR=");
+    target.push(quoted(dest)?);
+    let spec = ProcessSpec::new(&msiexec)
+        .raw_arg("/a")
+        .raw_arg(quoted(msi)?)
+        .raw_arg("/qn")
+        .raw_arg(target)
+        .timeout(Some(Duration::from_secs(1800)));
+    let out = chud_process::run_capture(&spec, 64 * 1024).map_err(|e| InstallError::Failed(trf!("msiexec : {}", "msiexec: {}", e)))?;
+    match out.code {
+        Some(0) => {}
+        Some(1618) => {
+            return Err(tr!(
+                "une autre installation Windows est en cours : réessayez quand elle sera terminée",
+                "another Windows installation is in progress: try again when it is finished"
+            )
+            .to_owned()
+            .into());
+        }
+        code => return Err(InstallError::Failed(trf!("msiexec a échoué (code {:?})", "msiexec failed (code {:?})", code))),
+    }
+    // L'installation administrative recopie le paquet lui-même : inutile ensuite.
+    if let Ok(rd) = std::fs::read_dir(dest) {
+        for e in rd.flatten() {
+            if e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("msi")) {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Après extraction : éléments inutiles retirés, renommages, fichiers de données ajoutés.
+fn finish_tree(src: &InstallSource, dir: &Path, extras: &[(PathBuf, String)]) -> Result<(), InstallError> {
+    for [from, to] in &src.copies {
+        let (from, to) = (dir.join(from), dir.join(to));
+        let rd = std::fs::read_dir(&from).map_err(|e| io_err(tr!("copie des bibliothèques", "copying the libraries"), e))?;
+        for e in rd.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_file())) {
+            let target = to.join(e.file_name());
+            if !target.exists() {
+                std::fs::copy(e.path(), &target).map_err(|e| io_err(tr!("copie des bibliothèques", "copying the libraries"), e))?;
+            }
+        }
+    }
+    for name in &src.remove {
+        let p = dir.join(name);
+        let _ = if p.is_dir() { std::fs::remove_dir_all(&p) } else { std::fs::remove_file(&p) };
+    }
+    for [from, to] in &src.renames {
+        let found = find_file(dir, from).ok_or_else(|| {
+            InstallError::Failed(trf!("{} introuvable dans le paquet téléchargé", "{} not found in the downloaded package", from))
+        })?;
+        std::fs::rename(&found, found.with_file_name(to)).map_err(|e| io_err(tr!("renommage", "renaming"), e))?;
+    }
+    for (file, rel) in extras {
+        let target = dir.join(safe_relative(Path::new(rel)).ok_or_else(|| InstallError::Failed(rel.clone()))?);
+        if let Some(parent) = target.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| io_err(tr!("ajout des données", "adding the data"), e))?;
+        }
+        std::fs::copy(file, &target).map_err(|e| io_err(tr!("ajout des données", "adding the data"), e))?;
+    }
+    Ok(())
+}
+
+/// Premier fichier portant ce nom, jusqu'à quatre niveaux de profondeur.
+fn find_file(base: &Path, name: &str) -> Option<PathBuf> {
+    let mut stack = vec![(base.to_path_buf(), 0)];
+    while let Some((d, depth)) = stack.pop() {
+        let candidate = d.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        if depth < 4
+            && let Ok(rd) = std::fs::read_dir(&d)
+        {
+            stack.extend(rd.flatten().filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false)).map(|e| (e.path(), depth + 1)));
+        }
+    }
+    None
+}
+
+/// Redistribuable Visual C++ 2015-2022 (x64) de Microsoft : adresse versionnée, empreinte figée
+/// (l'adresse contient elle-même l'empreinte publiée par Microsoft).
+pub fn vc_redist() -> Download {
+    Download {
+        url: "https://download.visualstudio.microsoft.com/download/pr/e9604e21-4b79-4096-a4b3-1b63d4b55b4d/CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B/VC_redist.x64.exe".into(),
+        sha256: "cc0ff0eb1dc3f5188ae6300faef32bf5beeba4bdd6e8e445a9184072096b713b".into(),
+        size: 25_635_768,
+    }
+}
+
+/// Runtime Visual C++ présent sur le système (les DLL dont dépendent les moteurs compilés
+/// avec Visual Studio).
+pub fn vcruntime_present() -> bool {
+    if !cfg!(windows) {
+        return true;
+    }
+    let Some(root) = std::env::var_os("SystemRoot") else { return false };
+    let sys = PathBuf::from(root).join("System32");
+    ["vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll", "vcomp140.dll"].iter().all(|d| sys.join(d).is_file())
+}
+
+/// Lance l'installeur de Microsoft (vérifié). Windows affiche sa propre demande d'autorisation.
+fn install_vcruntime(redist: &Path) -> Result<(), InstallError> {
+    let exe = redist.with_file_name("VC_redist.x64.exe");
+    std::fs::rename(redist, &exe).map_err(|e| io_err(tr!("préparation du runtime", "preparing the runtime"), e))?;
+    let spec = ProcessSpec::new(&exe).args(["/install", "/quiet", "/norestart"]).timeout(Some(Duration::from_secs(900)));
+    let out = chud_process::run_capture(&spec, 64 * 1024)
+        .map_err(|e| InstallError::Failed(trf!("runtime Visual C++ : {}", "Visual C++ runtime: {}", e)))?;
+    match out.code {
+        // 1638 : une version plus récente est déjà là ; 3010 : redémarrage conseillé, mais les
+        // fichiers sont en place.
+        Some(0 | 1638 | 3010) => Ok(()),
+        Some(1602) => Err(tr!(
+            "installation du runtime Visual C++ refusée dans la fenêtre de Windows : le moteur ne peut pas fonctionner sans lui",
+            "Visual C++ runtime installation declined in the Windows prompt: the engine cannot work without it"
+        )
+        .to_owned()
+        .into()),
+        code => Err(InstallError::Failed(trf!(
+            "l'installation du runtime Visual C++ a échoué (code {:?})",
+            "the Visual C++ runtime installation failed (code {:?})",
+            code
+        ))),
+    }
+}
+
 /// Après extraction : aucun lien, taille raisonnable.
-fn check_tree(dir: &Path) -> Result<(), InstallError> {
+/// Renvoie aussi la longueur (en caractères UTF-16, comme Windows les compte) du plus long chemin
+/// relatif à `dir`.
+fn check_tree(dir: &Path) -> Result<usize, InstallError> {
     let mut stack = vec![dir.to_path_buf()];
     let mut budget = Budget::new();
+    let mut deepest = 0;
     while let Some(d) = stack.pop() {
         let rd = std::fs::read_dir(&d).map_err(|e| io_err(tr!("lecture du dossier extrait", "reading the extracted folder"), e))?;
         for e in rd.flatten() {
@@ -663,6 +1080,9 @@ fn check_tree(dir: &Path) -> Result<(), InstallError> {
                 .map_err(|e| io_err(tr!("lecture du dossier extrait", "reading the extracted folder"), e))?;
             if meta.file_type().is_symlink() {
                 return Err(InstallError::Failed(trf!("lien refusé : {}", "link refused: {}", e.path().display())));
+            }
+            if let Ok(rel) = e.path().strip_prefix(dir) {
+                deepest = deepest.max(rel.as_os_str().to_string_lossy().encode_utf16().count());
             }
             if meta.is_dir() {
                 stack.push(e.path());
@@ -674,11 +1094,27 @@ fn check_tree(dir: &Path) -> Result<(), InstallError> {
             }
         }
     }
+    Ok(deepest)
+}
+
+/// Longueur maximale d'un chemin pour la plupart des programmes Windows (MAX_PATH, 260 avec le
+/// zéro final). Un moteur installé plus profond ne trouverait pas ses propres fichiers.
+const WINDOWS_MAX_PATH: usize = 259;
+
+/// Refuse clairement une installation dont certains fichiers dépasseraient cette limite.
+fn check_path_length(final_dir: &Path, deepest: usize, name: &str) -> Result<(), InstallError> {
+    let base = final_dir.as_os_str().to_string_lossy().encode_utf16().count();
+    if cfg!(windows) && base + 1 + deepest > WINDOWS_MAX_PATH {
+        return Err(InstallError::Failed(trf!(
+            "{name} contient des chemins de {deepest} caractères, et Windows limite un chemin complet à 260 : le dossier de Chud Converter ({base} caractères) est trop profond. Placez-le dans un dossier plus court (par exemple C:\\Chud Converter) puis réessayez",
+            "{name} contains paths of {deepest} characters, and Windows limits a full path to 260: Chud Converter's folder ({base} characters) is too deep. Move it to a shorter folder (for example C:\\Chud Converter) and try again"
+        )));
+    }
     Ok(())
 }
 
 /// Essai réel : l'exécutable principal répond avec sa version, les compagnons se lancent.
-fn check_executables(m: &Manifest, dir: &Path) -> Result<PathBuf, InstallError> {
+pub(crate) fn check_executables(m: &Manifest, dir: &Path) -> Result<PathBuf, InstallError> {
     let exes = m.platform_executables();
     let primary =
         exes.iter().take(if m.executables.len() == 1 { exes.len() } else { 1 }).find_map(|e| find_exe(dir, e)).ok_or_else(|| {
@@ -713,6 +1149,22 @@ fn read_current(root: &Path) -> Option<String> {
     safe_version(&v).then_some(v)
 }
 
+/// Sous Windows, l'antivirus examine les fichiers tout juste extraits et les garde ouverts un
+/// instant : renommer leur dossier échoue alors (« accès refusé »). On réessaie quelques
+/// secondes avant d'abandonner.
+fn rename_retrying(from: &Path, to: &Path) -> std::io::Result<()> {
+    let mut tries = 0;
+    loop {
+        match std::fs::rename(from, to) {
+            Err(e) if cfg!(windows) && e.kind() == std::io::ErrorKind::PermissionDenied && tries < 40 => {
+                tries += 1;
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            r => return r,
+        }
+    }
+}
+
 fn activate(src: &InstallSource, root: &Path, partial: &Path, exe_in_partial: &Path) -> Result<Installed, InstallError> {
     let versions = root.join("versions");
     let final_dir = versions.join(&src.version);
@@ -731,7 +1183,7 @@ fn activate(src: &InstallSource, root: &Path, partial: &Path, exe_in_partial: &P
         })?;
         let _ = std::fs::remove_dir_all(&aside);
     }
-    std::fs::rename(partial, &final_dir).map_err(|e| io_err(tr!("activation de la version", "activating the version"), e))?;
+    rename_retrying(partial, &final_dir).map_err(|e| io_err(tr!("activation de la version", "activating the version"), e))?;
     let rel = exe_in_partial.strip_prefix(partial).unwrap_or(exe_in_partial).to_path_buf();
     let previous = old.filter(|o| *o != src.version && versions.join(o).is_dir());
     let rec = InstallRecord {
@@ -818,6 +1270,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn too_deep_for_windows_is_refused_clearly() {
+        let short = Path::new(r"C:\Users\a\AppData\Local\Chud Converter\engines\calibre\versions\9.18.0");
+        assert!(check_path_length(short, 125, "Calibre").is_ok());
+        let deep = PathBuf::from(format!(r"C:\{}\versions\9.18.0", "x".repeat(150)));
+        assert_eq!(check_path_length(&deep, 125, "Calibre").is_err(), cfg!(windows));
+    }
+
+    #[test]
     fn versions_and_paths_are_checked() {
         assert!(safe_version("9.0.2"));
         assert!(safe_version("26.06"));
@@ -899,7 +1359,7 @@ mod tests {
         std::fs::write(&archive, xz(&tar.into_inner().unwrap(), true)).unwrap();
         let dest = dir.join("out");
         std::fs::create_dir_all(&dest).unwrap();
-        extract_tar_xz(&archive, &dest, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
+        extract_tar(&archive, Compression::Xz, &dest, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
         assert_eq!(std::fs::read(dest.join("7zz")).unwrap(), body);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -914,7 +1374,7 @@ mod tests {
         let dest = dir.join("out");
         std::fs::create_dir_all(&dest).unwrap();
         let mut seen = Vec::new();
-        extract_tar_xz(&ok, &dest, &AtomicBool::new(false), &mut |d, t| seen.push((d, t))).unwrap();
+        extract_tar(&ok, Compression::Xz, &dest, &AtomicBool::new(false), &mut |d, t| seen.push((d, t))).unwrap();
         assert_eq!(seen.last(), Some(&(1000, 1000)), "avancement jusqu'au bout : {seen:?}");
         assert!(seen.windows(2).all(|w| w[0].0 <= w[1].0), "avancement croissant");
         assert_eq!(std::fs::read(dest.join("pkg/bin/tool")).unwrap(), b"#!/bin/sh\n");
@@ -935,10 +1395,10 @@ mod tests {
         std::fs::write(&bad, xz(&raw, false)).unwrap();
         let dest2 = dir.join("out2");
         std::fs::create_dir_all(&dest2).unwrap();
-        assert!(extract_tar_xz(&bad, &dest2, &AtomicBool::new(false), &mut |_, _| {}).is_err());
+        assert!(extract_tar(&bad, Compression::Xz, &dest2, &AtomicBool::new(false), &mut |_, _| {}).is_err());
         assert!(!dir.join("evil").exists());
         // Annulation pendant la décompression.
-        assert!(matches!(extract_tar_xz(&ok, &dest2, &AtomicBool::new(true), &mut |_, _| {}), Err(InstallError::Cancelled)));
+        assert!(matches!(extract_tar(&ok, Compression::Xz, &dest2, &AtomicBool::new(true), &mut |_, _| {}), Err(InstallError::Cancelled)));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -951,8 +1411,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dest);
         std::fs::create_dir_all(&dest).unwrap();
         let t = std::time::Instant::now();
-        extract_tar_xz(Path::new(&p), &dest, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
-        check_tree(&dest).unwrap();
+        extract_tar(Path::new(&p), Compression::Xz, &dest, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
+        assert!(check_tree(&dest).unwrap() > 0);
         eprintln!("extraction : {:.1} s", t.elapsed().as_secs_f64());
         assert!(find_exe(&dest, "ffmpeg").or_else(|| find_exe(&dest, "7zz")).is_some() || cfg!(windows));
         let _ = std::fs::remove_dir_all(&dest);
@@ -987,7 +1447,15 @@ mod tests {
             hint: None,
             supported: true,
             categories: vec!["video".into()],
-            installable: None,
+            installable: Some(crate::InstallOffer {
+                version: "9".into(),
+                size: 1,
+                publisher: String::new(),
+                license: String::new(),
+                page: String::new(),
+                runtime: false,
+                system: None,
+            }),
             previous: None,
         };
         assert!(check_allowed(&st(EngineState::Missing, None), false).is_ok());
@@ -996,13 +1464,18 @@ mod tests {
         assert!(check_allowed(&st(EngineState::Ready, Some(EngineOrigin::System)), false).is_err(), "jamais sans demande");
         assert!(check_allowed(&st(EngineState::Ready, Some(EngineOrigin::System)), true).is_ok(), "à côté, sur demande");
         assert!(check_allowed(&st(EngineState::Ready, Some(EngineOrigin::Custom)), true).is_err(), "le chemin choisi passe avant");
+        // Voie « paquets du système » : rien de portable à mettre à côté.
+        let mut sys = st(EngineState::Ready, Some(EngineOrigin::System));
+        sys.installable = None;
+        assert!(check_allowed(&sys, true).is_err());
     }
 
     #[test]
     fn install_without_source_says_so() {
         let dir = std::env::temp_dir().join(format!("chud-install-none-{}", std::process::id()));
         let paths = AppPaths::at(&dir);
-        let pandoc = crate::builtin_manifests().into_iter().find(|m| m.id == "pandoc").unwrap();
+        let mut pandoc = crate::builtin_manifests().into_iter().find(|m| m.id == "pandoc").unwrap();
+        pandoc.install.clear();
         let err = install(&paths, &pandoc, &AtomicBool::new(false), &mut |_| {}).unwrap_err();
         assert!(matches!(err, InstallError::Failed(_)));
         let _ = std::fs::remove_dir_all(&dir);

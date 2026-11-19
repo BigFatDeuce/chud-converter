@@ -1,6 +1,6 @@
 id = "imagemagick"
 name = "ImageMagick"
-adapter = "none"
+adapter = "imagemagick"
 homepage = "https://imagemagick.org"
 license = "ImageMagick (compatible Apache-2.0)"
 license_en = "ImageMagick (Apache-2.0 compatible)"
@@ -21,3 +21,41 @@ known_paths_macos = ['/opt/homebrew/bin/magick']
 windows = "winget install ImageMagick.ImageMagick"
 linux = "sudo apt install imagemagick"
 macos = "brew install imagemagick"
+
+# Installation depuis l'application : versions portables officielles (ImageMagick/ImageMagick).
+# Windows : l'archive .7z est ouverte par 7zr ; magick.exe utilise le runtime Visual C++ (OpenMP).
+
+[[install]]
+platform = "windows-x86_64"
+version = "7.1.2-36"
+method = "sevenzip"
+publisher = "ImageMagick Studio LLC (publication officielle, version portable)"
+publisher_en = "ImageMagick Studio LLC (official release, portable build)"
+page = "https://github.com/ImageMagick/ImageMagick/releases/tag/7.1.2-36"
+files = [
+  { url = "https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe", sha256 = "e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc", size = 600064 },
+  { url = "https://github.com/ImageMagick/ImageMagick/releases/download/7.1.2-36/ImageMagick-7.1.2-36-portable-Q16-HDRI-x64.7z", sha256 = "e7c705840e2d989eb9fdbd5c2ac87c5b7a9f95b97daee1a1e6e66aa152548ae5", size = 12205968 },
+]
+vcruntime = true
+
+[[install]]
+platform = "linux-x86_64"
+version = "7.1.2-36"
+method = "tar-xz"
+publisher = "ImageMagick Studio LLC (publication officielle, version portable)"
+publisher_en = "ImageMagick Studio LLC (official release, portable build)"
+page = "https://github.com/ImageMagick/ImageMagick/releases/tag/7.1.2-36"
+files = [
+  { url = "https://github.com/ImageMagick/ImageMagick/releases/download/7.1.2-36/ImageMagick-7.1.2-36-portable-Q16-HDRI-linux-x64.tar.xz", sha256 = "72c8dd0268f824f621e1628737b79d8e80bc63a5d46a69950dabb13c5de80c91", size = 12869884 },
+]
+
+[[install]]
+platform = "linux-aarch64"
+version = "7.1.2-36"
+method = "tar-xz"
+publisher = "ImageMagick Studio LLC (publication officielle, version portable)"
+publisher_en = "ImageMagick Studio LLC (official release, portable build)"
+page = "https://github.com/ImageMagick/ImageMagick/releases/tag/7.1.2-36"
+files = [
+  { url = "https://github.com/ImageMagick/ImageMagick/releases/download/7.1.2-36/ImageMagick-7.1.2-36-portable-Q16-HDRI-linux-arm64.tar.xz", sha256 = "456146795540708e3fe67af4847f3aeb23c614593572f8d65a50b9bb663ee2db", size = 11705736 },
+]

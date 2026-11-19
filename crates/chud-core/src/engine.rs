@@ -303,6 +303,13 @@ pub trait Engine: Send + Sync {
         None
     }
 
+    /// Moteur d'analyse (MediaInfo, ExifTool) : sa sonde **complète** celle du moteur principal
+    /// (résumé, caractéristiques qu'il sait établir) au lieu de la remplacer. Ses
+    /// caractéristiques ne sont qu'ajoutées : elles ne prouvent jamais l'absence des autres.
+    fn enriches_probe(&self) -> bool {
+        false
+    }
+
     /// Impossibilité qui tient au **contenu** de la source et vaut pour tout chemin vers `target`,
     /// détours compris (ex. des données dont la racine est une liste ne deviennent jamais du TOML,
     /// quel que soit le format intermédiaire). `info` est la sonde de la source.

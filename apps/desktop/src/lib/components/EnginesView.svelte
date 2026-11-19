@@ -7,6 +7,7 @@
   import { api, errorText } from "../api";
   import { formatSize } from "../format";
   import { engineActions, installsAlongside, type EngineOp } from "../machines";
+  import { offerSize, offerSystemNotes } from "../engineText";
   import type { EngineState, EngineView, InstallProgress } from "../types";
 
   const stateText: Record<EngineState, string> = {
@@ -41,6 +42,10 @@
         return L("Vérification de l'empreinte SHA-256…", "Checking the SHA-256 fingerprint…");
       case "extracting":
         return p.total ? L(`Extraction : ${Math.round((p.done * 100) / p.total)} %`, `Extracting: ${Math.round((p.done * 100) / p.total)}%`) : L("Extraction…", "Extracting…");
+      case "runtime":
+        return L("Installation du runtime Visual C++ de Microsoft (acceptez la demande de Windows)…", "Installing the Microsoft Visual C++ runtime (accept the Windows prompt)…");
+      case "system":
+        return p.line;
       case "checking":
         return L(`Essai de ${e.name}…`, `Trying ${e.name}…`);
     }
@@ -94,7 +99,7 @@
     <div>
       <h1>{L("Moteurs", "Engines")}</h1>
       <p class="muted">
-        {L("Chud Converter s'appuie sur des logiciels reconnus. Il détecte ceux déjà présents sur votre ordinateur et ne les modifie jamais ; FFmpeg et 7-Zip peuvent aussi être installés ici en un clic, depuis leur source officielle, vérifiés avant d'être utilisés.", "Chud Converter relies on well-known software. It detects the ones already on your computer and never changes them; FFmpeg and 7-Zip can also be installed here in one click, from their official source, checked before being used.")}
+        {L("Chud Converter s'appuie sur des logiciels reconnus. Il détecte ceux déjà présents sur votre ordinateur et ne les modifie jamais ; chacun peut aussi être installé ici en un clic, depuis sa source officielle, et essayé avant d'être utilisé.", "Chud Converter relies on well-known software. It detects the ones already on your computer and never changes them; each one can also be installed here in one click, from its official source, and tried before being used.")}
       </p>
     </div>
     <button class="btn" onclick={() => store.loadEngines(true)} disabled={store.enginesLoad.state === "loading"}>
@@ -152,10 +157,16 @@
                       )}
                     </li>
                   {/if}
-                  <li>{L(`Téléchargement de ${formatSize(offer.size)} depuis : ${offer.publisher}.`, `Downloads ${formatSize(offer.size)} from: ${offer.publisher}.`)}</li>
-                  <li>{L(`Licence : ${offer.license}.`, `License: ${offer.license}.`)}</li>
-                  <li>{L("Fichier refusé si son empreinte SHA-256 diffère de celle attendue ; moteur essayé avant d'être utilisé.", "The file is refused if its SHA-256 differs from the expected one; the engine is tried before being used.")}</li>
-                  <li>{L("Installé dans le dossier de Chud Converter : rien n'est modifié sur le système, retrait en un clic.", "Installed in Chud Converter's folder: nothing is changed on the system, removable in one click.")}</li>
+                  {#if offer.system}
+                    {#each offerSystemNotes(offer) as n (n)}<li>{n}</li>{/each}
+                    <li>{L(`Licence : ${offer.license}. Moteur essayé avant d'être utilisé.`, `License: ${offer.license}. The engine is tried before being used.`)}</li>
+                  {:else}
+                    <li>{L(`Téléchargement de ${formatSize(offer.size)} depuis : ${offer.publisher}.`, `Downloads ${formatSize(offer.size)} from: ${offer.publisher}.`)}</li>
+                    <li>{L(`Licence : ${offer.license}.`, `License: ${offer.license}.`)}</li>
+                    <li>{L("Fichier refusé si son empreinte SHA-256 diffère de celle attendue ; moteur essayé avant d'être utilisé.", "The file is refused if its SHA-256 differs from the expected one; the engine is tried before being used.")}</li>
+                    <li>{L("Installé dans le dossier de Chud Converter, retrait en un clic.", "Installed in Chud Converter's folder, removable in one click.")}</li>
+                    {#each offerSystemNotes(offer) as n (n)}<li class="strong">{n}</li>{/each}
+                  {/if}
                 </ul>
                 <button class="link small" onclick={() => open(offer.page)}>{L("Voir la publication d'origine", "See the original release")} <Icon name="external" size={12} /></button>
               {:else if op.action === "uninstall"}
@@ -190,7 +201,7 @@
               {:else}
                 <progress aria-label={L(`${e.name} : opération en cours`, `${e.name}: operation in progress`)}></progress>
               {/if}
-              {#if op.action === "install"}
+              {#if op.action === "install" && !offer?.system}
                 <button class="btn ghost small small-btn" onclick={() => store.cancelEngine(e.id)} disabled={op.cancelling}>{L("Annuler l'installation", "Cancel the installation")}</button>
               {/if}
             </div>
@@ -217,7 +228,7 @@
                     <Icon name="download" size={14} />
                     {e.origin === "managed"
                       ? L(`Mettre à jour vers ${offer.version}`, `Update to ${offer.version}`)
-                      : L(`Installer (${formatSize(offer.size)})`, `Install (${formatSize(offer.size)})`)}
+                      : L(`Installer (${offerSize(offer)})`, `Install (${offerSize(offer)})`)}
                   </button>
                 {/if}
               {/if}

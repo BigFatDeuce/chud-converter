@@ -5,7 +5,7 @@
   import Icon from "./Icon.svelte";
   import { store } from "../store.svelte";
   import { categoryLabel, formatSize } from "../format";
-  import { engineFraction, engineStatus } from "../engineText";
+  import { engineFraction, engineStatus, offerSize, offerSystemNotes } from "../engineText";
   import type { Category, EngineView } from "../types";
 
   // La liste est figée à l'ouverture : un moteur installé reste affiché, marqué « prêt ».
@@ -13,6 +13,8 @@
   const list = $derived(ids.map((id) => store.engines?.find((e) => e.id === id)).filter((e): e is EngineView => !!e));
   const pending = $derived(list.filter((e) => e.state !== "ready"));
   const total = $derived(pending.reduce((n, e) => n + (e.installable?.size ?? 0), 0));
+  // Paquets du système ou runtime de Microsoft : le système est touché, il faut le dire.
+  const touchesSystem = $derived(pending.some((e) => e.installable?.system || e.installable?.runtime));
   const busy = $derived(list.some((e) => store.engineOps[e.id]?.state === "running") || store.bulkInstall?.state === "running");
 
   function uses(e: EngineView): string {
@@ -59,12 +61,15 @@
             {:else if offer}
               <button class="btn small" onclick={() => store.installNow(e.id)} disabled={busy}>
                 <Icon name="download" size={13} />
-                {L(`Installer (${formatSize(offer.size)})`, `Install (${formatSize(offer.size)})`)}
+                {L(`Installer (${offerSize(offer)})`, `Install (${offerSize(offer)})`)}
               </button>
             {/if}
           </div>
           {#if offer}
             <span class="faint small">{L(`Version ${offer.version}, ${offer.publisher}, licence ${offer.license}.`, `Version ${offer.version}, ${offer.publisher}, ${offer.license} license.`)}</span>
+            {#if e.state !== "ready"}
+              {#each offerSystemNotes(offer) as n (n)}<span class="small note">{n}</span>{/each}
+            {/if}
           {/if}
           {#if op?.state === "running"}
             {#if f !== null}<progress max="1" value={f} aria-label={`${e.name} : ${engineStatus(e, op)}`}></progress>{:else}<progress aria-label={`${e.name} : ${engineStatus(e, op)}`}></progress>{/if}
@@ -76,15 +81,15 @@
     </ul>
     <p class="small muted">
       {L(
-        "Téléchargés depuis leur publication officielle, refusés si leur empreinte SHA-256 diffère de celle attendue, essayés avant d'être utilisés, rangés dans le dossier de Chud Converter : rien n'est modifié sur le système. Vous les retrouvez dans l'écran Moteurs.",
-        "Downloaded from their official release, refused if their SHA-256 differs from the expected one, tried before being used, kept in Chud Converter's folder: nothing is changed on the system. You will find them in the Engines screen.",
+        `Téléchargés depuis leur publication officielle, refusés si leur empreinte SHA-256 diffère de celle attendue, essayés avant d'être utilisés, rangés dans le dossier de Chud Converter${touchesSystem ? " (sauf ce qui est indiqué ci-dessus)" : " : rien n'est modifié sur le système"}. Vous les retrouvez dans l'écran Moteurs.`,
+        `Downloaded from their official release, refused if their SHA-256 differs from the expected one, tried before being used, kept in Chud Converter's folder${touchesSystem ? " (except what is stated above)" : ": nothing is changed on the system"}. You will find them in the Engines screen.`,
       )}
     </p>
     <div class="actions">
       {#if pending.length > 1}
         <button class="btn primary" onclick={() => store.installAllNow(pending.map((e) => e.id))} disabled={busy}>
           <Icon name="download" size={14} />
-          {L(`Tout installer (${formatSize(total)})`, `Install all (${formatSize(total)})`)}
+          {total ? L(`Tout installer (${formatSize(total)})`, `Install all (${formatSize(total)})`) : L("Tout installer", "Install all")}
         </button>
       {/if}
       <button class="btn {pending.length ? 'ghost' : 'primary'}" onclick={() => store.closeWelcome()}>
@@ -180,5 +185,9 @@
 
   .bad {
     color: var(--lossy);
+  }
+
+  .note {
+    color: var(--text);
   }
 </style>

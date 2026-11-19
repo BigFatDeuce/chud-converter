@@ -1,6 +1,6 @@
 id = "mediainfo"
 name = "MediaInfo"
-adapter = "none"
+adapter = "mediainfo"
 homepage = "https://mediaarea.net/MediaInfo"
 license = "BSD-2-Clause"
 description = "Analyse technique détaillée des fichiers audio et vidéo."
@@ -19,3 +19,25 @@ known_paths_macos = ['/opt/homebrew/bin/mediainfo']
 windows = "winget install MediaArea.MediaInfo"
 linux = "sudo apt install mediainfo"
 macos = "brew install media-info"
+
+# Installation depuis l'application : Windows, version officielle de MediaArea ; Linux, paquets
+# du système.
+
+[[install]]
+platform = "windows-x86_64"
+version = "26.10"
+method = "zip"
+publisher = "MediaArea, éditeur de MediaInfo (publication officielle)"
+publisher_en = "MediaArea, publisher of MediaInfo (official release)"
+page = "https://mediaarea.net/en/MediaInfo/Download/Windows"
+files = [
+  { url = "https://mediaarea.net/download/binary/mediainfo/26.10/MediaInfo_CLI_26.10_Windows_x64.zip", sha256 = "4cc94bd272903914c04f4f9a9f53a6c94b5ea6c6454cf738d29fa182c41e8a29", size = 4186111 },
+]
+
+# Linux sans paquet portable officiel : gestionnaire de paquets du système (mot de passe demandé
+# par la fenêtre du système ; le paquet appartient ensuite à la distribution).
+[packages]
+apt = ["mediainfo"]
+dnf = ["mediainfo"]
+pacman = ["mediainfo"]
+zypper = ["mediainfo"]

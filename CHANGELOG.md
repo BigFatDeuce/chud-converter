@@ -4,6 +4,57 @@ All notable changes to Chud Converter. Versions follow [Semantic Versioning](htt
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-11-19
+
+Every engine, from the app: Pandoc, LibreOffice, Calibre, ImageMagick, libvips, qpdf,
+Ghostscript, Tesseract, ExifTool, MediaInfo and MKVToolNix are now really used, and each one
+installs in one click — no terminal, nothing to copy.
+
+### Added
+- **Documents** with Pandoc (Markdown, HTML, DOCX, ODT, RTF, LaTeX, reStructuredText, Org,
+  AsciiDoc, Typst, EPUB, Jupyter, FB2, plain text) and **office files** with LibreOffice
+  (DOCX/DOC/ODT/RTF, XLSX/XLS/ODS/CSV, PPTX/PPT/ODP, to PDF and between each other).
+- **E-books** with Calibre (EPUB, MOBI, AZW3, FB2, PDF, TXT…). DRM-protected books are refused
+  with a clear message.
+- **Images** with libvips (very large images, HEIC, AVIF, JPEG XL) and ImageMagick (more than
+  200 formats, PSD, RAW camera files…).
+- **PDF** with qpdf (repair, linearize for the web, compress, extract pages, losslessly) and
+  Ghostscript (PDF, PostScript, EPS, AI to PNG/JPEG/TIFF at the chosen resolution; PostScript
+  to PDF).
+- **Text recognition (OCR)** with Tesseract: image to text or searchable PDF, in the installed
+  languages (French and English by default). Always marked as approximate.
+- **Lossless MKV** with MKVToolNix: every track, chapter and attachment copied without
+  re-encoding; a track MKV cannot hold is reported, not silently dropped.
+- **Richer file analysis** with MediaInfo (HDR, Dolby Vision, bitrates, track languages) and
+  ExifTool (EXIF, XMP, IPTC, ICC profile), shown in the file details.
+- **Install from the app on Windows without admin rights**: official portable builds, archives
+  and installers opened as archives (never run), MSI packages unfolded without touching the
+  system. ImageMagick and Ghostscript need Microsoft's Visual C++ runtime: when it is missing,
+  the confirmation says so and Windows asks for permission once.
+- **Linux**: engines without a portable build install from the distribution's packages (apt,
+  dnf, pacman, zypper). The app asks the system for the password itself (pkexec), or opens a
+  terminal with the command already running. The confirmation says the system package manager
+  is used; those packages stay the system's.
+
+### Changed
+- The "Coming soon" engine section is gone: every known engine is supported.
+- Each conversion now verifies its result with the engine's own checks (re-reading the
+  document, decoding the image, checking every page or track), never just the exit code.
+- File names with `[`, `%` or `:` are never interpreted by an engine: tools only ever see a
+  simple name in a private work folder.
+
+### Fixed
+- In English, sizes in reports were written the French way ("10,7 Ko"); they now read "10.7 KB".
+- Installing an engine could fail with "access denied" when Windows' antivirus was still
+  scanning the new files: the app now waits a few seconds and tries again.
+- An engine whose files would exceed Windows' 260-character path limit is refused with a clear
+  explanation (move the app to a shorter folder), instead of failing halfway.
+
+### Internal
+- Linux CI installs every engine (ImageMagick 7 from its official portable build, checked by
+  SHA-256) and runs the real adapter tests with `CHUD_REQUIRE_TOOLS=1`.
+- `engine-sources.yml` now installs the thirteen engines on Windows, Linux x64 and ARM64.
+
 ## [0.1.2] — 2026-11-18
 
 Engines without the terminal: FFmpeg and 7-Zip now install from the app, verified, on Windows

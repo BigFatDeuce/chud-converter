@@ -1,6 +1,6 @@
 id = "ghostscript"
 name = "Ghostscript"
-adapter = "none"
+adapter = "ghostscript"
 homepage = "https://www.ghostscript.com"
 license = "AGPL-3.0-or-later"
 description = "PDF et PostScript : rendu, PDF/A, compression."
@@ -20,3 +20,29 @@ known_paths_macos = ['/opt/homebrew/bin/gs']
 windows = "winget install ArtifexSoftware.GhostScript"
 linux = "sudo apt install ghostscript"
 macos = "brew install ghostscript"
+
+# Installation depuis l'application : Windows, installeur officiel d'Artifex ouvert comme une
+# archive par 7-Zip (jamais exécuté) ; il dépend du runtime Visual C++. Linux : paquets du système.
+
+[[install]]
+platform = "windows-x86_64"
+version = "10.08.0"
+method = "nsis"
+publisher = "Artifex Software, éditeur de Ghostscript (publication officielle)"
+publisher_en = "Artifex Software, publisher of Ghostscript (official release)"
+page = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/tag/gs10080"
+files = [
+  { url = "https://github.com/ip7z/7zip/releases/download/26.06/7zr.exe", sha256 = "e80db2dad715a6c5adabe292d31ed54e11f4e9b99ca349827b50573b175891bc", size = 600064 },
+  { url = "https://github.com/ip7z/7zip/releases/download/26.06/7z2606-x64.exe", sha256 = "9b697f65ecc2d9b0152f5ee96d72dde522a7827690349d9307935dacf40f42ec", size = 1659704 },
+  { url = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10080/gs10080w64.exe", sha256 = "52a91b8bf09298788d7a57b9206127026c23eacd75405f0a131e26dc381dce50", size = 65093120 },
+]
+remove = ["uninstgs.exe.nsis", "vcredist_x64.exe"]
+vcruntime = true
+
+# Linux sans paquet portable officiel : gestionnaire de paquets du système (mot de passe demandé
+# par la fenêtre du système ; le paquet appartient ensuite à la distribution).
+[packages]
+apt = ["ghostscript"]
+dnf = ["ghostscript"]
+pacman = ["ghostscript"]
+zypper = ["ghostscript"]

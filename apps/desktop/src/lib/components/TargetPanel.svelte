@@ -5,7 +5,8 @@
   import OptionsForm from "./OptionsForm.svelte";
   import { store, type CommonTarget } from "../store.svelte";
   import { api, errorText } from "../api";
-  import { categoryLabel, categoryOrder, fidelityLabel, formatSize } from "../format";
+  import { categoryLabel, categoryOrder, fidelityLabel } from "../format";
+  import { offerSize } from "../engineText";
   import { analysisTargets, missingEngineFor } from "../machines";
   import type { Category, Conflict, EngineView, PlanView, PresetView } from "../types";
 
@@ -141,7 +142,7 @@
           {#each needs as e (e.id)}
             <button class="btn primary" onclick={() => store.offerEngine(e.id)}>
               <Icon name="download" size={14} />
-              {L(`Installer ${e.name}`, `Install ${e.name}`)}{e.installable ? ` (${formatSize(e.installable.size)})` : ""}
+              {L(`Installer ${e.name}`, `Install ${e.name}`)}{e.installable ? ` (${offerSize(e.installable)})` : ""}
             </button>
           {/each}
           {#if needs.length > 1}

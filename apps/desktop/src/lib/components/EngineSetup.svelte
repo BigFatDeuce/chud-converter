@@ -6,7 +6,7 @@
   import Icon from "./Icon.svelte";
   import { store } from "../store.svelte";
   import { categoryLabel, formatSize } from "../format";
-  import { engineFraction, engineStatus } from "../engineText";
+  import { engineFraction, engineStatus, offerSize, offerSystemNotes } from "../engineText";
   import type { Category, EngineView } from "../types";
 
   let { place }: { place: "convert" | "engines" } = $props();
@@ -22,6 +22,7 @@
       [...new Set(list.flatMap((e) => e.categories))].filter((c) => c !== "image").map((c) => categoryLabel(c as Category).toLowerCase()),
     ),
   );
+  const touchesSystem = $derived(list.some((e) => e.installable?.system || e.installable?.runtime));
   const failed = $derived(list.filter((e) => store.engineOps[e.id]?.state === "failed"));
   // Pendant l'accueil du premier démarrage, c'est lui qui présente les moteurs.
   const visible = $derived(!store.welcomeOpen && (!!bulk || (list.length > 0 && (place === "engines" || !store.setupDismissed))));
@@ -39,7 +40,7 @@
           <span class="muted small">{L(`Nécessaires pour : ${kinds}. Tout s'installe d'ici, sans terminal.`, `Needed for: ${kinds}. Everything installs from here, no terminal needed.`)}</span>
         </div>
         <button class="btn primary" onclick={() => store.askInstallAll()}>
-          {L(`Tout installer (${formatSize(total)})`, `Install all (${formatSize(total)})`)}
+          {total ? L(`Tout installer (${formatSize(total)})`, `Install all (${formatSize(total)})`) : L("Tout installer", "Install all")}
         </button>
         {#if place === "convert"}
           <button class="icon-btn" title={L("Plus tard", "Later")} aria-label={L("Masquer jusqu'au prochain démarrage", "Hide until next start")} onclick={() => (store.setupDismissed = true)}>
@@ -52,7 +53,7 @@
           <span class="faint small">{L("Ou un seul :", "Or just one:")}</span>
           {#each list as e (e.id)}
             <button class="btn ghost small" onclick={() => store.offerEngine(e.id)}>
-              {e.name}{e.installable ? ` (${formatSize(e.installable.size)})` : ""}
+              {e.name}{e.installable ? ` (${offerSize(e.installable)})` : ""}
             </button>
           {/each}
         </div>
@@ -73,11 +74,12 @@
               {#if bulk.state === "running"}
                 <span class="small" class:ok={e.state === "ready" && !op} class:bad={op?.state === "failed"}>{status(e)}</span>
               {:else if offer}
-                <span class="small muted">{formatSize(offer.size)}</span>
+                <span class="small muted">{offerSize(offer)}</span>
               {/if}
             </div>
             {#if bulk.state === "confirming" && offer}
               <span class="small muted">{e.description} {L(`Source : ${offer.publisher}. Licence : ${offer.license}.`, `Source: ${offer.publisher}. License: ${offer.license}.`)}</span>
+              {#each offerSystemNotes(offer) as n (n)}<span class="small">{n}</span>{/each}
             {/if}
             {#if op?.state === "running"}
               {@const f = engineFraction(op)}
@@ -91,8 +93,8 @@
       {#if bulk.state === "confirming"}
         <p class="small muted">
           {L(
-            `${formatSize(total)} au total, depuis les publications officielles. Chaque fichier est refusé si son empreinte SHA-256 diffère de celle attendue, et chaque moteur est essayé avant d'être utilisé. Tout va dans le dossier de Chud Converter : rien n'est modifié sur le système, retrait en un clic dans Moteurs.`,
-            `${formatSize(total)} in total, from the official releases. Each file is refused if its SHA-256 differs from the expected one, and each engine is tried before being used. Everything goes into Chud Converter's folder: nothing is changed on the system, removable in one click in Engines.`,
+            `${formatSize(total)} au total, depuis les publications officielles. Chaque fichier est refusé si son empreinte SHA-256 diffère de celle attendue, et chaque moteur est essayé avant d'être utilisé. ${touchesSystem ? "Le reste va dans le dossier de Chud Converter, retrait en un clic dans Moteurs." : "Tout va dans le dossier de Chud Converter : rien n'est modifié sur le système, retrait en un clic dans Moteurs."}`,
+            `${formatSize(total)} in total, from the official releases. Each file is refused if its SHA-256 differs from the expected one, and each engine is tried before being used. ${touchesSystem ? "The rest goes into Chud Converter's folder, removable in one click in Engines." : "Everything goes into Chud Converter's folder: nothing is changed on the system, removable in one click in Engines."}`,
           )}
         </p>
         <div class="actions">

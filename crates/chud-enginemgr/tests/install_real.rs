@@ -1,4 +1,4 @@
-//! Installation réelle depuis Internet (FFmpeg ~115 Mo, 7-Zip ~2 Mo) dans un dossier temporaire.
+//! Installation réelle depuis Internet (de 2 Mo pour 7-Zip à 380 Mo pour LibreOffice) dans un dossier temporaire.
 //! Ignorés par défaut ; à lancer à la main : `cargo test -p chud-enginemgr --test install_real -- --ignored`.
 
 use chud_core::EngineOrigin;
@@ -19,6 +19,11 @@ fn install_and_check(id: &str) {
     let mgr = EngineManager::new(paths.clone()).unwrap();
     let m = mgr.manifests().iter().find(|m| m.id == id).unwrap().clone();
     if m.install_source().is_none() {
+        if chud_enginemgr::system::route(&m).is_some() {
+            // Paquets du système : couverts par la CI qui les installe elle-même (apt).
+            eprintln!("{id} : paquets du système sur cette plateforme");
+            return;
+        }
         // En CI, chaque plateforme proposée doit avoir sa source : une absence est une erreur.
         assert!(std::env::var_os("CHUD_REQUIRE_SOURCE").is_none(), "{id} : pas de source pour {}", install::current_platform());
         eprintln!("{id} : pas de source pour cette plateforme");
@@ -31,12 +36,15 @@ fn install_and_check(id: &str) {
             InstallProgress::Verifying => "verifying",
             InstallProgress::Extracting { .. } => "extracting",
             InstallProgress::Checking => "checking",
+            InstallProgress::Runtime => "runtime",
+            InstallProgress::System { .. } => "system",
         };
         if phases.last() != Some(&name) {
             phases.push(name);
         }
     })
     .unwrap_or_else(|e| panic!("{id} : {e}"));
+    phases.retain(|p| *p != "runtime");
     assert_eq!(phases, ["downloading", "verifying", "extracting", "checking"]);
     assert!(done.path.is_file(), "{}", done.path.display());
     assert!(!paths.engines_dir().join(id).join("downloads").exists(), "téléchargements retirés");
@@ -70,6 +78,72 @@ fn installs_7zip() {
 #[ignore = "réseau, 115 Mo"]
 fn installs_ffmpeg() {
     install_and_check("ffmpeg");
+}
+
+#[test]
+#[ignore = "réseau, 45 Mo"]
+fn installs_pandoc() {
+    install_and_check("pandoc");
+}
+
+#[test]
+#[ignore = "réseau, 30 Mo"]
+fn installs_qpdf() {
+    install_and_check("qpdf");
+}
+
+#[test]
+#[ignore = "réseau, 15 Mo"]
+fn installs_imagemagick() {
+    install_and_check("imagemagick");
+}
+
+#[test]
+#[ignore = "réseau, 20 Mo"]
+fn installs_libvips() {
+    install_and_check("libvips");
+}
+
+#[test]
+#[ignore = "réseau, 65 Mo"]
+fn installs_ghostscript() {
+    install_and_check("ghostscript");
+}
+
+#[test]
+#[ignore = "réseau, 55 Mo"]
+fn installs_tesseract() {
+    install_and_check("tesseract");
+}
+
+#[test]
+#[ignore = "réseau, 11 Mo"]
+fn installs_exiftool() {
+    install_and_check("exiftool");
+}
+
+#[test]
+#[ignore = "réseau, 4 Mo"]
+fn installs_mediainfo() {
+    install_and_check("mediainfo");
+}
+
+#[test]
+#[ignore = "réseau, 105 Mo"]
+fn installs_mkvtoolnix() {
+    install_and_check("mkvtoolnix");
+}
+
+#[test]
+#[ignore = "réseau, 380 Mo"]
+fn installs_libreoffice() {
+    install_and_check("libreoffice");
+}
+
+#[test]
+#[ignore = "réseau, 290 Mo"]
+fn installs_calibre() {
+    install_and_check("calibre");
 }
 
 #[test]

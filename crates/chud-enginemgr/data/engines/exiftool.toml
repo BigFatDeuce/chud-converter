@@ -1,6 +1,6 @@
 id = "exiftool"
 name = "ExifTool"
-adapter = "none"
+adapter = "exiftool"
 homepage = "https://exiftool.org"
 license = "Artistic-1.0-Perl OR GPL-1.0-or-later"
 description = "Lecture, copie et nettoyage des métadonnées."
@@ -19,3 +19,27 @@ known_paths_macos = ['/opt/homebrew/bin/exiftool']
 windows = "winget install OliverBetz.ExifTool"
 linux = "sudo apt install libimage-exiftool-perl"
 macos = "brew install exiftool"
+
+# Installation depuis l'application : Windows, version officielle de Phil Harvey (exiftool.org,
+# empreinte publiée dans checksums.txt), Perl inclus ; « exiftool(-k).exe » est renommé pour ne
+# pas attendre une touche. Linux : paquets du système.
+
+[[install]]
+platform = "windows-x86_64"
+version = "13.64"
+method = "zip"
+publisher = "Phil Harvey, auteur d'ExifTool (publication officielle)"
+publisher_en = "Phil Harvey, author of ExifTool (official release)"
+page = "https://exiftool.org"
+files = [
+  { url = "https://downloads.sourceforge.net/project/exiftool/exiftool-13.64_64.zip", sha256 = "72c29c44d1e860eebcaefa71692d979af9858fe9a6d7d791a5e7f1dac77804af", size = 11217963 },
+]
+renames = [["exiftool(-k).exe", "exiftool.exe"]]
+
+# Linux sans paquet portable officiel : gestionnaire de paquets du système (mot de passe demandé
+# par la fenêtre du système ; le paquet appartient ensuite à la distribution).
+[packages]
+apt = ["libimage-exiftool-perl"]
+dnf = ["perl-image-exiftool"]
+pacman = ["perl-image-exiftool"]
+zypper = ["exiftool"]

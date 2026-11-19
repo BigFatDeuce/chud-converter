@@ -10,6 +10,7 @@
 | Node.js | ≥ 20, testé avec 22 et 26 | pour l'application de bureau uniquement |
 | Linux, application de bureau | WebKitGTK 4.1 | Debian/Ubuntu : `sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev` |
 | FFmpeg, 7-Zip | facultatifs | nécessaires aux tests réels vidéo/audio et archives (ignorés sinon) |
+| Pandoc, LibreOffice, Calibre, qpdf, Ghostscript, Tesseract, ImageMagick, libvips, MKVToolNix, MediaInfo, ExifTool | facultatifs | tests réels des adaptateurs (`chud-engines/tests/tools_real.rs`), trouvés dans le `PATH` ou par `CHUD_TOOL_<ID>` (chemin de l'exécutable) ; `CHUD_REQUIRE_TOOLS=1` transforme un outil absent en échec (CI Linux) |
 
 Si `cargo` n'est pas dans le `PATH` après l'installation de rustup (cas observé sur ce poste) :
 

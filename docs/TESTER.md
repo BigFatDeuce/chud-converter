@@ -11,9 +11,9 @@ Les fichiers du dossier `Exemples` sont générés pour l'occasion : vous pouvez
 les abîmer, les supprimer sans crainte. Testez aussi avec vos propres fichiers : l'original
 n'est jamais modifié.
 
-Prérequis : Windows 10 ou 11 (WebView2, déjà présent sur Windows 11). FFmpeg et 7-Zip sont
-nécessaires pour la vidéo, l'audio et les archives : s'ils manquent, l'application les installe
-elle-même (écran **Moteurs**, tests 17a–17k), sans terminal. Les images et les données
+Prérequis : Windows 10 ou 11 (WebView2, déjà présent sur Windows 11). Les moteurs (FFmpeg,
+7-Zip, Pandoc, LibreOffice, Calibre…) s'installent depuis l'application elle-même (écran
+**Moteurs**, tests 17a–17n et 40–58), sans terminal. Les images courantes et les données
 fonctionnent sans eux.
 
 ## Lancer
@@ -55,7 +55,7 @@ fonctionnent sans eux.
 | 16e | `Exemples\pas-une-video.mp4` | Aucun format proposé : « ce fichier ne peut pas être analysé… » ; jamais une liste de conversions vouées à l'échec |
 | 16f | Une conversion qui échoue | Le libellé distingue « Vérification échouée, aucun fichier conservé », « Source illisible ou endommagée » et « Échec de la conversion », avec la cause exacte dessous |
 
-## Moteurs installés depuis l'application (nouveau)
+## Moteurs installés depuis l'application
 
 Le paquet portable range tout dans son dossier `data\` : les moteurs installés ici n'apparaissent
 que dans cette copie. Si FFmpeg ou 7-Zip est déjà installé sur votre PC, sa carte est « Prêt » et
@@ -69,7 +69,6 @@ de tester l'installation sans rien toucher à votre installation (tests 17h–17
 | 17c | Pendant le téléchargement de FFmpeg (115 Mo) : **Annuler l'installation** | Message « Installation … annulée : rien n'a été installé » ; la carte redevient « Non installé » |
 | 17d | Après 17b, glisser une vidéo dans **Convertir** | Les formats vidéo/audio sont proposés sans relancer l'application ; la sélection et le format choisi sont gardés |
 | 17e | Moteur installé → **Retirer** | Confirmation, puis la carte redevient « Non installé » ; le dossier `data\engines\<moteur>` ne contient plus de version |
-| 17f | Bas de l'écran **Moteurs** : section **Bientôt pris en charge** | Pandoc, LibreOffice, etc. en liste compacte, avec « Trouvé sur votre ordinateur » pour ceux présents et un lien « Site officiel » ; **aucune commande, aucun bouton d'installation** |
 | 17h | Moteur déjà installé sur votre PC → **Installer aussi la version … de Chud Converter** | La confirmation dit que votre version actuelle n'est pas modifiée et que celle de Chud Converter sera utilisée en priorité ; après installation, origine « installé par Chud Converter » |
 | 17i | Puis **Retirer** | La carte redevient « Prêt », origine « installé sur le système », avec le chemin d'origine (rien n'a été modifié) |
 | 17g | En ligne de commande : `chud engines`, puis `chud engines install 7zip` | La liste indique `chud engines install …` pour les moteurs installables ; l'installation affiche ses étapes |
@@ -78,6 +77,34 @@ de tester l'installation sans rien toucher à votre installation (tests 17h–17
 | 17n | Cocher seulement un fichier qui demande un moteur absent | Panneau de droite : « Pour convertir « … », il faut FFmpeg. » avec **Installer FFmpeg (… Mo)** |
 | 17l | Seulement s'il manque FFmpeg ou 7-Zip sur votre PC : écran **Convertir** | Un bandeau « Moteurs manquants : … » avec **Tout installer (… Mo)** ; la confirmation liste chaque moteur (taille, source, licence) ; après **Télécharger et installer**, chaque moteur s'installe à son tour, avec **Arrêter** ; le bandeau disparaît quand tout est prêt. La croix le masque jusqu'au prochain démarrage |
 | 17k | Pendant l'installation de FFmpeg | Après la vérification, « Extraction : … % » avec une barre qui avance |
+
+## Tous les moteurs (nouveau, 0.2.0)
+
+Les onze autres moteurs s'installent maintenant depuis l'écran **Moteurs**, comme FFmpeg : un
+bouton **Installer (… Mo)** chacun, ou **Tout installer**. Rien à taper. LibreOffice (≈ 380 Mo)
+et Calibre (≈ 290 Mo) sont les plus longs.
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 40 | Écran **Moteurs** | Treize moteurs, tous avec un bouton d'installation ou l'état « Prêt » ; plus de section « Bientôt pris en charge » |
+| 41 | Installer **ImageMagick** ou **Ghostscript** sur un PC sans le runtime Visual C++ | La confirmation l'annonce (« le runtime Visual C++ de Microsoft sera installé ») ; Windows demande l'autorisation **une fois** ; un refus arrête proprement, rien n'est laissé à moitié |
+| 42 | **Tout installer**, puis fermer et rouvrir l'application | Tous « Prêt », origine « installé par Chud Converter » ; tout est rangé dans `data\engines\` |
+| 43 | `Exemples\notes.md` en **DOCX**, puis le DOCX en **PDF** | DOCX par Pandoc (titres, gras, tableau) ; PDF par LibreOffice ; rapport « vérifié » avec ce qui a été relu |
+| 44 | `notes.md` en **HTML**, **ODT**, **EPUB** | Le HTML s'ouvre seul dans le navigateur (images intégrées) ; l'EPUB s'ouvre dans une liseuse |
+| 45 | `Exemples\tableau.csv` en **XLSX**, puis le XLSX en **ODS** et en **PDF** | Tableau avec les accents justes (« Payé ») |
+| 46 | `Exemples\livre.epub` en **MOBI**, **AZW3**, **FB2**, **PDF** | Calibre convertit ; deux chapitres et le sommaire gardés |
+| 47 | `Exemples\document.pdf` (3 pages) en **PDF** : options **Linéariser** et **Pages** = `2-3` | qpdf, « Sans perte » ; le résultat a 2 pages, vérifié par `qpdf --check` |
+| 48 | Pages = `5-9` sur ce PDF de 3 pages | Refus clair avant de convertir (pages hors du document), jamais un fichier vide |
+| 49 | `document.pdf` en **PNG** avec **Résolution** = 300 et **Page** = 2 | Ghostscript ; une image nette de la page 2 |
+| 50 | L'image PNG du test 49 en **TXT** (puis en **PDF**) | Tesseract : « Deuxieme page du document » reconnu ; remarque « relisez-le, des erreurs sont possibles » ; le PDF a un texte sélectionnable |
+| 51 | Une image sans texte (`photo.png`) en **TXT** | **Échec** « aucun texte reconnu », pas un fichier vide réussi |
+| 52 | `Exemples\photo.png` en **AVIF**, **HEIC** et **JPEG XL** | libvips ; décodé et vérifié |
+| 53 | `photo.png` en **PSD**, puis le PSD en **PNG** | ImageMagick ; aller-retour correct |
+| 54 | `Exemples\film-long.mp4` en **MKV** | Sans réencodage (« Sans perte ») ; le rapport donne le nombre de pistes recopiées |
+| 55 | Sélectionner `vacances.mkv`, ouvrir le détail du fichier | Lignes « MediaInfo » en plus : conteneur, débit total, pistes audio et leur langue |
+| 56 | Détail d'une photo de votre appareil (JPEG) | Lignes ExifTool : appareil, objectif, date, profil de couleur ; « EXIF » parmi les caractéristiques conservées ou perdues |
+| 57 | Copier `notes.md` sous le nom `essai [1] %d.md`, le convertir en DOCX | Réussit : les `[ ]` et `%d` du nom ne sont jamais interprétés par un moteur |
+| 58 | Ligne de commande : `chud.exe engines`, puis `chud.exe engines install qpdf` | Tous les moteurs listés comme installables ; installation avec ses étapes |
 
 ## Écrans qui défilent (corrigé)
 

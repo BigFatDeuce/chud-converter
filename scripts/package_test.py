@@ -3,7 +3,8 @@
 
 - compile l'interface (npm) puis `chud-converter` et `chud` en version release ;
 - crée le fichier `portable` : réglages et cache restent dans `data/` à côté des programmes ;
-- génère des fichiers d'exemple réels avec FFmpeg (s'il est installé) ;
+- génère des fichiers d'exemple réels avec FFmpeg (s'il est installé), et des documents
+  (Markdown, CSV, PDF, EPUB) sans aucun outil ;
 - copie le guide de test docs/TESTER.md.
 
 Toutes les commandes sont lancées avec des arguments séparés, jamais via un shell.
@@ -121,7 +122,95 @@ def samples(dest: Path) -> list[str]:
     (folder / "lisez-moi.txt").write_text("Un fichier texte.\n", encoding="utf-8")
     (folder / "sous-dossier" / "notes é 文件.txt").write_text("Nom avec accents et caractères chinois.\n", encoding="utf-8")
     made.append("Dossier à compresser/")
+    documents(dest, made)
     return made
+
+
+def simple_pdf(pages: list[str]) -> bytes:
+    """PDF minimal et valide (Helvetica, une ligne de texte par page), sans dépendance."""
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>", "", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    kids = []
+    for text in pages:
+        page_id, content_id = len(objs) + 1, len(objs) + 2
+        kids.append(f"{page_id} 0 R")
+        safe = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        stream = f"BT /F1 28 Tf 72 700 Td ({safe}) Tj ET"
+        objs.append(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            f"/Resources << /Font << /F1 3 0 R >> >> /Contents {content_id} 0 R >>"
+        )
+        objs.append(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
+    objs[1] = f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(pages)} >>"
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for n, body in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{n} 0 obj\n{body}\nendobj\n".encode("ascii")
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    for o in offsets:
+        out += f"{o:010d} 00000 n \n".encode()
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    return bytes(out)
+
+
+def simple_epub(path: Path) -> None:
+    """Petit EPUB 3 valide : deux chapitres et un sommaire."""
+    import zipfile
+
+    chapter = (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="fr"><head><title>{t}</title></head>\n'
+        "<body><h1>{t}</h1><p>{p}</p></body></html>"
+    )
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr(zipfile.ZipInfo("mimetype"), "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        z.writestr(
+            "META-INF/container.xml",
+            '<?xml version="1.0"?>\n'
+            '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+            '<rootfiles><rootfile full-path="OEBPS/livre.opf" media-type="application/oebps-package+xml"/>'
+            "</rootfiles></container>",
+        )
+        z.writestr(
+            "OEBPS/livre.opf",
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">\n'
+            '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
+            '<dc:identifier id="id">urn:uuid:6f1c2a4e-0b7d-4c8e-9a51-2d3e4f5a6b7c</dc:identifier>\n'
+            "<dc:title>Le petit livre d'essai</dc:title><dc:creator>Chud</dc:creator><dc:language>fr</dc:language>\n"
+            '<meta property="dcterms:modified">2026-11-19T00:00:00Z</meta></metadata>\n'
+            '<manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>\n'
+            '<item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>\n'
+            '<item id="c2" href="c2.xhtml" media-type="application/xhtml+xml"/></manifest>\n'
+            '<spine><itemref idref="c1"/><itemref idref="c2"/></spine></package>',
+        )
+        z.writestr(
+            "OEBPS/nav.xhtml",
+            '<?xml version="1.0" encoding="utf-8"?>\n'
+            '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">'
+            "<head><title>Sommaire</title></head><body><nav epub:type=\"toc\"><ol>"
+            '<li><a href="c1.xhtml">Premier chapitre</a></li><li><a href="c2.xhtml">Second chapitre</a></li>'
+            "</ol></nav></body></html>",
+        )
+        z.writestr("OEBPS/c1.xhtml", chapter.format(t="Premier chapitre", p="L'été arrive, les élèves partent en vacances."))
+        z.writestr("OEBPS/c2.xhtml", chapter.format(t="Second chapitre", p="Ils reviennent à la rentrée, bronzés et reposés."))
+
+
+def documents(dest: Path, made: list[str]) -> None:
+    """Exemples pour Pandoc, LibreOffice, Calibre, qpdf, Ghostscript et Tesseract, sans aucun outil."""
+    (dest / "notes.md").write_text(
+        "# Notes de réunion\n\nOrdre du jour :\n\n1. **Budget** de l'été\n2. *Calendrier*\n\n"
+        "| Poste | Montant |\n|---|---|\n| Matériel | 1 200 € |\n| Voyage | 800 € |\n\n"
+        "> Prochaine réunion : jeudi.\n",
+        encoding="utf-8",
+    )
+    (dest / "tableau.csv").write_text("Poste,Montant,Payé\nMatériel,1200,oui\nVoyage,800,non\nRepas,350,oui\n", encoding="utf-8")
+    (dest / "document.pdf").write_bytes(
+        simple_pdf(["Chud Converter : page 1", "Deuxieme page du document", "Troisieme et derniere page"])
+    )
+    simple_epub(dest / "livre.epub")
+    made += ["notes.md", "tableau.csv", "document.pdf", "livre.epub"]
 
 
 def main() -> None:

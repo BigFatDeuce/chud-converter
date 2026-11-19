@@ -33,7 +33,7 @@ Your originals are never touched.
 </p>
 
 > [!NOTE]
-> **Version 0.1 — alpha.** [Download](https://github.com/BigFatDeuce/chud-converter/releases/latest). The conversion engine, the desktop app (Tauri 2 + Svelte 5) and the
+> **Version 0.2 — alpha.** [Download](https://github.com/BigFatDeuce/chud-converter/releases/latest). The conversion engine, the desktop app (Tauri 2 + Svelte 5) and the
 > `chud` command line work and are tested on real files. The app is tested on Windows and built
 > on Linux by the CI. Presets and the File Explorer right-click menu work on Windows. The whole program
 > speaks **English and French**.
@@ -47,7 +47,7 @@ Your originals are never touched.
 | **Careful** | The original is never modified. Work happens in a separate folder; the final file only appears once complete and verified. A name already taken becomes `file (1).ext`. |
 | **Local** | Everything happens on your machine. No file, no file name is ever sent over the Internet. No telemetry. |
 | **Safe** | Command lines are never built from your file names. Booby-trapped archives are refused. External engines are confined, time-limited and cleanly stopped on cancel. |
-| **Transparent** | FFmpeg, 7-Zip and the other engines are detected, never silently replaced; their version, origin and license are shown. |
+| **Transparent** | FFmpeg, LibreOffice, Pandoc and the other engines are detected, never silently replaced; their version, origin and license are shown. |
 | **Bilingual** | English and French everywhere: app, fidelity reports, errors, command line, right-click menu. It follows the system language until you pick one. |
 
 ## Screenshots
@@ -67,7 +67,7 @@ selected, only the formats they all support are offered, with the worst fidelity
 The app also offers options generated from each engine (codec, quality, size, subtitles…),
 the destination (next to the original or another folder), what to do when the file already
 exists, a queue you can add to while it runs, per-file cancellation, and an **Engines** page
-showing what is installed. FFmpeg and 7-Zip install from there in one click (no terminal, no
+showing what is installed. Every engine installs from there in one click (no terminal, no
 command to copy), and a file that cannot be converted yet offers the engine it needs.
 
 ### Command line
@@ -86,10 +86,16 @@ styled ASS subtitles, so the conversion is *not* called lossless:
 
 <p align="center"><img src="docs/screenshots/cli-detect.svg" width="820" alt="Terminal: chud detect finds that faux.jpg is actually a PNG and that export.txt looks like CSV"></p>
 
-**Engines found on your machine**, with their version and location; `chud engines install
-ffmpeg|7zip` installs the missing ones, verified the same way as in the app:
+**Documents, e-books and PDF**, each result checked by its own engine: the DOCX is read back
+by Pandoc, the AZW3 header is checked, and a page range that does not exist is refused before
+anything runs:
 
-<p align="center"><img src="docs/screenshots/cli-engines.svg" width="820" alt="Terminal: chud engines lists FFmpeg and 7-Zip as ready, MKVToolNix as detected, and install commands for the others"></p>
+<p align="center"><img src="docs/screenshots/cli-documents.svg" width="820" alt="Terminal: chud converts notes.md to DOCX with Pandoc (verified by reading it back), livre.epub to AZW3 with Calibre (header checked), and refuses pages 5-9 of a 3-page PDF with a clear message"></p>
+
+**Engines**, with their version, location and origin; `chud engines install <engine>`
+installs a missing one, verified the same way as in the app:
+
+<p align="center"><img src="docs/screenshots/cli-engines.svg" width="820" alt="Terminal: chud engines lists the thirteen engines as ready, the system ones and those installed by Chud Converter"></p>
 
 ## What works today
 
@@ -102,15 +108,24 @@ ffmpeg|7zip` installs the missing ones, verified the same way as in the app:
 | **Images** | native (Rust) | PNG, JPEG, WebP, GIF, BMP, TIFF, ICO, TGA, QOI, PNM, HDR, EXR, DDS; EXIF orientation, limits against malicious images |
 | **Archives** | 7-Zip | ZIP, 7z, TAR, TGZ/TXZ/TZST, RAR (read), ISO, CAB, CBZ/CBR…; folder → archive, archive → folder, archive → archive |
 | **Data** | native (Rust) | JSON ⇄ YAML ⇄ TOML ⇄ CSV ⇄ TSV ⇄ NDJSON |
+| **Images, more** | libvips, ImageMagick | very large images, AVIF, JPEG XL, JPEG 2000 (libvips); PSD, camera RAW, more than 200 formats (ImageMagick); HEIC read |
+| **Documents** | Pandoc | Markdown, HTML, DOCX, ODT, RTF, LaTeX, reStructuredText, Org, AsciiDoc, Typst, EPUB, Jupyter, FB2, plain text; checked by reading the result back |
+| **Office** | LibreOffice | DOCX/DOC/ODT/RTF, XLSX/XLS/ODS/CSV, PPTX/PPT/ODP, between each other and to PDF |
+| **E-books** | Calibre | EPUB, MOBI, AZW3, FB2, PDF, TXT…; DRM-protected books refused with a clear message |
+| **PDF** | qpdf, Ghostscript | lossless repair, web linearization, compression, page extraction (qpdf); pages to PNG/JPEG/TIFF at a chosen resolution, PostScript/EPS/AI to PDF (Ghostscript) |
+| **OCR** | Tesseract | image to text or searchable PDF, in the installed languages (French and English by default); always marked approximate |
+| **Lossless MKV** | MKVToolNix | every track, chapter and attachment into MKV without re-encoding; a dropped track is reported |
+| **Analysis** | MediaInfo, ExifTool | HDR, Dolby Vision, bitrates, track languages; EXIF, XMP, IPTC, ICC profile, camera and date, in the file details |
 
 The automated tests run on real files generated at each run, on Windows and Linux. They cover
 MKV → MP4 lossless (checked by decoding), WebM, MP3, GIF, frame extraction, Windows-1252 SRT →
 VTT, trimming, WAV → FLAC → ALAC bit-identical, ZIP / 7z / TGZ round trips, malicious archives,
-name conflicts, cancellation and truncated files. The rest of the table is supported but not
-yet covered by a dedicated test.
+name conflicts, cancellation and truncated files. On Linux, the CI installs every other engine
+and runs each adapter on real files with booby-trapped names (`é [1] %d`). The rest of the table
+is supported but not yet covered by a dedicated test.
 
-`chud formats` lists the **195 known formats**. With FFmpeg and 7-Zip installed, `chud matrix`
-shows **1,706 direct conversions**, and the planner chains them when needed.
+`chud formats` lists the **195 known formats**. With every engine installed, `chud matrix`
+shows **2,998 direct conversions**, and the planner chains them when needed.
 
 Archive extraction refuses paths that escape the target folder (`../`, absolute paths), links,
 case-only duplicates and decompression bombs.
@@ -187,19 +202,36 @@ The programs are `target/release/chud` and `target/release/chud-converter` (`.ex
 ### External engines (optional)
 
 Images and data work with nothing else installed. For the rest, open **Engines** in the app
-and click **Install**: the engine is downloaded from its official release, refused if its
-SHA-256 differs from the one pinned in the signed app, tried, and kept in the app's own folder.
-System installs are detected and never changed; removing or rolling back is one click.
+and click **Install** (or **Install all**): the engine is downloaded from its official release,
+refused if its SHA-256 differs from the one pinned in the signed app, tried, and kept in the
+app's own folder, without administrator rights. Installers are never run: they are opened as
+archives. System installs are detected and never changed; removing or rolling back is one click.
 
-| Engine | Adds | Installable from the app on | Source |
+| Engine | Adds | Windows x64 | Linux |
 |---|---|---|---|
-| FFmpeg | video, audio, subtitles, animations | Windows x64, Linux x64 and ARM64 | gyan.dev (Windows), BtbN (Linux) |
-| 7-Zip | archives | Windows x64, Linux x64 and ARM64 | Igor Pavlov's official release |
+| FFmpeg | video, audio, subtitles, animations | gyan.dev build | BtbN build (x64, ARM64) |
+| 7-Zip | archives | official release | official release (x64, ARM64) |
+| Pandoc | documents | official release | official release (x64, ARM64) |
+| LibreOffice | office files | official MSI, unfolded (≈ 380 MB) | distribution packages |
+| Calibre | e-books | official MSI, unfolded (≈ 290 MB) | official release (x64, ARM64) |
+| ImageMagick | images | official portable build ¹ | official portable build (x64, ARM64) |
+| libvips | images | official build | distribution packages |
+| qpdf | PDF | official release | official release (x64, ARM64) |
+| Ghostscript | PDF, PostScript | official installer, opened as an archive ¹ | distribution packages |
+| Tesseract | OCR | UB Mannheim build + French language | distribution packages |
+| MKVToolNix | lossless MKV | official portable build | distribution packages |
+| MediaInfo | audio/video analysis | official CLI | distribution packages |
+| ExifTool | metadata | official Windows build | distribution packages |
+
+¹ Needs Microsoft's Visual C++ runtime: when it is missing, the confirmation says so, and
+Windows asks for permission once to install Microsoft's official package.
+
+**Linux, distribution packages:** when there is no portable build, the app installs the
+distribution's package itself (apt, dnf, pacman or zypper). The system asks for your password
+in its own window (or a terminal opens with the command already running): nothing to type or
+copy. Those packages belong to the system, which keeps them up to date.
 
 Already installed with your package manager? It is used as is.
-
-MKVToolNix, Pandoc, LibreOffice, Calibre, ImageMagick, libvips, qpdf, Ghostscript, Tesseract,
-ExifTool and MediaInfo are already detected; support for them is coming release by release.
 
 ## Usage
 
@@ -225,7 +257,7 @@ language is used: French on a French system, English otherwise.
 
 | Command | Purpose |
 |---|---|
-| `chud engines` | engines found, versions, install commands |
+| `chud engines` · `engines install <engine>` | engines found and their versions; installs a missing one |
 | `chud detect <files>` | real format of each file, misleading extensions flagged |
 | `chud targets <file>` | possible output formats for this file, with expected fidelity |
 | `chud plan <file> --to <format>` | plan, fidelity report and options, without writing anything |
@@ -270,9 +302,9 @@ managed engines then stay in a `data` folder beside it — nothing in your user 
 - [x] Presets, quick-convert window, right-click menu in Windows File Explorer
 - [ ] Right-click menu on Linux: Dolphin, Nemo, Nautilus written but not yet tried on a real desktop; Thunar to do
 - [x] English and French, switchable in the settings
-- [x] Verified installation of engines from the app (FFmpeg, 7-Zip), checked weekly on every platform
+- [x] Verified installation of every engine from the app, checked weekly on every platform
 - [ ] Engine updates between app releases (signed index)
-- [ ] PDF, documents, e-books (qpdf, LibreOffice, Pandoc, Calibre), OCR
+- [x] PDF, documents, e-books, OCR, more images, media analysis (Pandoc, LibreOffice, Calibre, qpdf, Ghostscript, Tesseract, libvips, ImageMagick, MKVToolNix, MediaInfo, ExifTool)
 - [ ] Universal inspector, duplicate finder, automatic optimization
 - [ ] Visual workflows, watch folders, history, plugins
 - [x] Windows and Linux installers, signed in-app updates
@@ -312,7 +344,7 @@ never in a public issue.
 Chud Converter is free software, released under the
 [GNU General Public License, version 3 or later](LICENSE).
 
-External engines (FFmpeg, 7-Zip…) are not shipped with it: you install them, and they keep
+External engines (FFmpeg, LibreOffice…) are not shipped with it: you install them, and they keep
 their own licenses, listed in [LICENSES](docs/LICENSES.md).
 
 <div align="center">

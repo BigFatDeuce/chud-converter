@@ -1,6 +1,6 @@
 id = "mkvtoolnix"
 name = "MKVToolNix"
-adapter = "none"
+adapter = "mkvtoolnix"
 homepage = "https://mkvtoolnix.download"
 license = "GPL-2.0-or-later"
 description = "Matroska : assemblage, découpe, pistes, chapitres, pièces jointes."
@@ -19,3 +19,25 @@ known_paths_macos = ['/opt/homebrew/bin/mkvmerge']
 windows = "winget install MoritzBunkus.MKVToolNix"
 linux = "sudo apt install mkvtoolnix"
 macos = "brew install mkvtoolnix"
+
+# Installation depuis l'application : Windows, version portable officielle de Moritz Bunkus ;
+# Linux, paquets du système.
+
+[[install]]
+platform = "windows-x86_64"
+version = "103.0"
+method = "zip"
+publisher = "Moritz Bunkus, auteur de MKVToolNix (publication officielle)"
+publisher_en = "Moritz Bunkus, author of MKVToolNix (official release)"
+page = "https://mkvtoolnix.download/downloads.html#windows"
+files = [
+  { url = "https://mkvtoolnix.download/windows/releases/103.0/mkvtoolnix-64-bit-103.0.zip", sha256 = "c860a10c707cb1ee587d1464f6171842f2ada3bb6f031dfff55fec75542f0417", size = 103859301 },
+]
+
+# Linux sans paquet portable officiel : gestionnaire de paquets du système (mot de passe demandé
+# par la fenêtre du système ; le paquet appartient ensuite à la distribution).
+[packages]
+apt = ["mkvtoolnix"]
+dnf = ["mkvtoolnix"]
+pacman = ["mkvtoolnix-cli"]
+zypper = ["mkvtoolnix"]

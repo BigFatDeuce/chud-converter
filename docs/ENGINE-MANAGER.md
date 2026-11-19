@@ -64,21 +64,49 @@ Le chemin absolu résolu est conservé ; l'exécution ne refait jamais de recher
     install.json                origine, URL, SHA-256, date, taille, licence
 ```
 
-**Implémenté (0.1.2, ADR-022)** pour FFmpeg et 7-Zip, sous Windows x86_64, Linux x86_64 et
-Linux ARM64 : écran Moteurs
-→ « Installer », ou `chud engines install ffmpeg|7zip`. La source (adresse HTTPS, taille,
-SHA-256) est écrite dans la section `[[install]]` du manifeste, intégré au programme signé :
+**Implémenté** pour les treize moteurs (0.1.2 pour FFmpeg et 7-Zip, ADR-022 ; 0.2.0 pour les
+onze autres, ADR-023) : écran Moteurs → « Installer » ou « Tout installer », ou
+`chud engines install <moteur>`. La source (adresse HTTPS, taille, SHA-256) est écrite dans la
+section `[[install]]` du manifeste, intégré au programme signé :
 
 ```toml
 [[install]]
 platform = "windows-x86_64"
 version = "9.0.2"
-method = "zip"                 # zip | tar-xz | sevenzip-sfx (installeur 7-Zip ouvert par 7zr, jamais exécuté)
+method = "zip"                 # voir le tableau des méthodes ci-dessous
 publisher = "Gyan Doshi (gyan.dev), compilation recommandée par ffmpeg.org"
 license = "GPL-3.0-or-later"
 page = "https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2"
 files = [{ url = "https://…/ffmpeg-9.0.2-essentials_build.zip", sha256 = "60f4…", size = 114768076 }]
 ```
+
+| Méthode | Fichiers | Usage |
+|---|---|---|
+| `zip`, `tar-xz`, `tar-gz` | l'archive | publications portables (Pandoc, qpdf, libvips, ExifTool, MediaInfo, MKVToolNix, FFmpeg, ImageMagick et Calibre sous Linux) |
+| `sevenzip` | `7zr.exe` + archive `.7z` | ImageMagick (Windows) |
+| `sevenzip-sfx` | `7zr.exe` + installeur 7-Zip | 7-Zip (Windows) : l'installeur est ouvert comme une archive |
+| `nsis` | `7zr.exe` + installeur 7-Zip + installeur NSIS | Ghostscript, Tesseract (Windows) : `7zr` sort le 7-Zip complet, qui ouvre l'installeur NSIS ; **aucun installeur n'est exécuté** |
+| `msi` | le paquet `.msi` | LibreOffice, Calibre (Windows) : installation administrative (`msiexec /a`), qui déplie les fichiers sans rien inscrire dans le système, dans un dossier temporaire court puis déplacée (msiexec est limité à 260 caractères) |
+
+Champs complémentaires d'une source :
+- `extras` : fichiers de données ajoutés, chacun vérifié par son empreinte (langue française de
+  Tesseract, `tessdata/fra.traineddata`) ;
+- `copies`, `remove`, `renames` : bibliothèques recopiées (runtime de LibreOffice), fichiers
+  inutiles retirés (désinstalleurs), exécutable renommé (`exiftool(-k).exe`) ;
+- `vcruntime = true` : le programme a besoin du runtime Visual C++ de Microsoft. S'il manque
+  (System32), la confirmation l'annonce et le paquet officiel de Microsoft (adresse et empreinte
+  figées) est installé ; Windows demande alors l'autorisation. Refus : arrêt propre.
+
+Plafonds : 4 Gio extraits, 80 000 entrées. Un moteur dont un fichier dépasserait 260 caractères
+une fois installé est refusé avec un message qui explique comment raccourcir le dossier.
+
+**Linux, paquets de la distribution.** Un manifeste sans source pour la plateforme peut donner
+ses paquets (`[packages]` : `apt`, `dnf`, `pacman`, `zypper`, noms validés). L'application
+détecte le gestionnaire, puis lance `pkexec /bin/sh -c '<commande fixe>' sh <paquets…>` : la
+fenêtre d'autorisation du système demande le mot de passe. Sans `pkexec` (ou s'il ne peut pas
+afficher sa fenêtre), un terminal s'ouvre avec la même commande en `sudo`, déjà lancée. Le
+succès n'est jamais supposé : le moteur doit être retrouvé ensuite. Le paquet appartient au
+système, qui le met à jour ; l'application ne le retire pas.
 
 Machine à états (`chud_enginemgr::install`), sans retour silencieux :
 `téléchargement → vérification → extraction → essai → activation`. Tout échec ou annulation
@@ -155,10 +183,13 @@ deux systèmes, deux écrans, deux réglages (ADR-015).
 |---|---|
 | Manifestes, détection (Custom/Managed/connus/PATH), sonde de version | ✅ implémenté et testé |
 | Sonde de capacités FFmpeg / 7-Zip | ✅ implémenté et testé |
+| Adaptateurs des onze autres moteurs, analyse enrichie (MediaInfo, ExifTool) | ✅ 0.2.0 (`crates/chud-engines/src/*.rs`, tests réels `tools_real.rs`, tous les outils installés en CI Linux) |
+| Installation des treize moteurs (zip, 7z, tar, NSIS, MSI, runtime Visual C++) | ✅ 0.2.0 (installation réelle des 13 essayée sous Windows ; chaque source installée chaque semaine en CI) |
+| Paquets de la distribution sous Linux (`pkexec` ou terminal) | ✅ 0.2.0 code et tests unitaires ; ⏳ pas encore essayé sur un vrai bureau Linux |
 | Désactivation d'un moteur | ✅ (registre) |
 | Téléchargement, vérification SHA-256, extraction contrôlée, essai, installation versionnée (FFmpeg et 7-Zip : Windows x86_64, Linux x86_64 et ARM64) | ✅ 0.1.2 (`install.rs` ; installations réelles `install_real.rs` chaque semaine en CI, `engine-sources.yml`) |
 | Retrait, retour à la version précédente, mise à jour vers la version du manifeste | ✅ 0.1.2 (écran Moteurs, `chud engines uninstall|rollback`) |
 | FFmpeg pour Linux | ✅ 0.1.2 (BtbN, publication de fin de mois, .tar.xz extrait en flux) |
-| Aucune commande à copier dans l'application ; moteurs pas encore utilisés rangés à part ; moteur manquant proposé depuis la liste des fichiers | ✅ 0.1.2 |
+| Aucune commande à copier dans l'application ; moteur manquant proposé depuis la liste des fichiers | ✅ 0.1.2 |
 | macOS, Windows ARM64 | ⏳ pas de source vérifiée : lien vers le site officiel seulement |
 | Index signé (versions entre deux versions de l'application), canaux, épinglage, conversion de test | ⏳ |

@@ -16,20 +16,25 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [x] Exécution de processus durcie (confinement, délais, annulation)
 - [x] Tâches : staging, vérification, finalisation atomique, conflits de noms, pool, événements
 - [x] Moteurs : image natif, données natif (JSON/YAML/TOML/CSV/TSV/NDJSON), FFmpeg, 7-Zip
+- [x] Adaptateurs Pandoc, LibreOffice, Calibre, ImageMagick, libvips, qpdf, Ghostscript, Tesseract, MKVToolNix ; analyse enrichie par MediaInfo et ExifTool ; chacun vérifie son résultat à sa façon (ADR-023) — 0.2.0
 - [x] Détection des moteurs installés (gérés, emplacements connus, PATH) et sonde de capacités
 - [x] CLI `chud` : `formats`, `engines`, `detect`, `targets`, `plan`, `convert`, `matrix`, sortie JSON, motifs `*.ext` sous Windows
-- [x] Tests unitaires et d'intégration sur fichiers réels générés (127 tests, dont une matrice permanente de 840 conversions réelles vérifiées ; conflits, annulation, fichier tronqué, attaques d'archives, file d'attente, application, préréglages, menu clic droit, langues)
+- [x] Tests unitaires et d'intégration sur fichiers réels générés (158 tests Rust, dont 8 tests réels des onze nouveaux adaptateurs avec des noms piégés `é [1] %d` ; dont une matrice permanente de 840 conversions réelles vérifiées ; conflits, annulation, fichier tronqué, attaques d'archives, file d'attente, application, préréglages, menu clic droit, langues)
 - [ ] Lecture testée automatiquement pour ARJ, LZH, RAR/CBR, ISO, DMG, VHD, SquashFS, RPM et LZMA : confiée à 7-Zip (test d'intégrité et contrôle de l'index à chaque conversion), mais aucun exemple n'est encore générable localement pour la matrice
 - [x] Qualité : `clippy` sans avertissement, `rustfmt`, documentation utilisateur (README, BUILDING)
 
 ### 2b. Gestionnaire de moteurs complet
 - [x] Téléchargement en flux + SHA-256 + extraction contrôlée + installation versionnée (FFmpeg et 7-Zip : Windows x64, Linux x64 et ARM64 ; installation réelle vérifiée chaque semaine en CI) — 0.1.2
+- [x] Les treize moteurs installables depuis l'application, sans droits administrateur sous Windows : zip, 7z, tar.gz/tar.xz, installeurs NSIS ouverts comme archives, MSI dépliés (`msiexec /a`), fichiers de données ajoutés (langue française de Tesseract), runtime Visual C++ officiel si besoin ; chemins trop longs pour Windows refusés clairement — 0.2.0 (installation réelle des 13 essayée sous Windows)
+- [x] Linux sans version portable : paquets de la distribution (apt, dnf, pacman, zypper) par `pkexec`, ou un terminal ouvert avec la commande déjà lancée — 0.2.0 (code et tests unitaires)
+- [ ] Linux : installation par `pkexec` essayée sur un vrai bureau (GNOME, KDE)
 - [x] Désinstallation (essayée en vrai), retour à la version précédente (testé sur installations simulées : une seule version publiée par moteur pour l'instant) — 0.1.2
 - [ ] Épinglage, canaux
 - [ ] Index signé (format, outil de génération en CI, clé)
 - [x] Manifestes de détection : FFmpeg, 7-Zip, Pandoc, LibreOffice, Calibre, ImageMagick, libvips, qpdf, Ghostscript, Tesseract, ExifTool, MediaInfo, MKVToolNix
-- [ ] Sources de téléchargement vérifiées dans les manifestes (+ Typst, DuckDB)
-- [ ] Adaptateurs pour les moteurs seulement détectés (MKVToolNix, Pandoc, LibreOffice, qpdf…)
+- [x] Sources de téléchargement vérifiées dans les manifestes pour les treize moteurs — 0.2.0
+- [ ] Typst, DuckDB
+- [x] Adaptateurs pour tous les moteurs détectés — 0.2.0
 
 ### 2c. Interface (Tauri 2 + Svelte 5, ADR-002)
 - [x] Application de bureau : glisser-déposer, ajout de fichiers ou de dossiers, fichiers passés au lancement, format réel et extension trompeuse affichés

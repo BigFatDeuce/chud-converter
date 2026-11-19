@@ -1155,6 +1155,8 @@ category = "ebook"
 extensions = ["azw3", "azw", "kf8"]
 mime = ["application/vnd.amazon.mobi8-ebook"]
 compression = "none"
+# Même conteneur que MOBI (en-tête BOOKMOBI) : seule l'extension les distingue.
+based_on = ["mobi"]
 features = ["rich_text", "styles", "images", "tables", "metadata", "cover_art", "fonts_embedded", "toc"]
 
 [[format]]

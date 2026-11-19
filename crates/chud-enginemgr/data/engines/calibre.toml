@@ -1,6 +1,6 @@
 id = "calibre"
 name = "Calibre (ebook-convert)"
-adapter = "none"
+adapter = "calibre"
 homepage = "https://calibre-ebook.com"
 license = "GPL-3.0-or-later"
 description = "Livres numériques : EPUB, MOBI, AZW3, FB2…"
@@ -19,3 +19,39 @@ known_paths_macos = ['/Applications/calibre.app/Contents/MacOS/ebook-convert']
 windows = "winget install calibre.calibre"
 linux = "sudo apt install calibre"
 macos = "brew install --cask calibre"
+
+# Installation depuis l'application : publication officielle (kovidgoyal/calibre). Windows : paquet
+# MSI extrait par « msiexec /a » (rien n'est enregistré sur le système) ; Linux : archive autonome.
+
+[[install]]
+platform = "windows-x86_64"
+version = "9.18.0"
+method = "msi"
+publisher = "Kovid Goyal, auteur de Calibre (publication officielle)"
+publisher_en = "Kovid Goyal, author of Calibre (official release)"
+page = "https://github.com/kovidgoyal/calibre/releases/tag/v9.18.0"
+files = [
+  { url = "https://github.com/kovidgoyal/calibre/releases/download/v9.18.0/calibre-64bit-9.18.0.msi", sha256 = "05c0f2223866f8082e05b2d4bc9c57b31a833de8355a1191fd79c260c2636d38", size = 291291136 },
+]
+
+[[install]]
+platform = "linux-x86_64"
+version = "9.18.0"
+method = "tar-xz"
+publisher = "Kovid Goyal, auteur de Calibre (publication officielle)"
+publisher_en = "Kovid Goyal, author of Calibre (official release)"
+page = "https://github.com/kovidgoyal/calibre/releases/tag/v9.18.0"
+files = [
+  { url = "https://github.com/kovidgoyal/calibre/releases/download/v9.18.0/calibre-9.18.0-x86_64.txz", sha256 = "da638166fb3dd204be77cf0f871a40d803536b3e5948969c5233b8e4f1e1dbe6", size = 240948148 },
+]
+
+[[install]]
+platform = "linux-aarch64"
+version = "9.18.0"
+method = "tar-xz"
+publisher = "Kovid Goyal, auteur de Calibre (publication officielle)"
+publisher_en = "Kovid Goyal, author of Calibre (official release)"
+page = "https://github.com/kovidgoyal/calibre/releases/tag/v9.18.0"
+files = [
+  { url = "https://github.com/kovidgoyal/calibre/releases/download/v9.18.0/calibre-9.18.0-arm64.txz", sha256 = "7f29f1786dcfc5b6f3b6d29b245998a6701501169fbd4c853f17c35d3a635e91", size = 227149592 },
+]

@@ -13,8 +13,10 @@
 //! voir `docs/ENGINE-MANAGER.md`.
 
 pub mod install;
+pub mod system;
 
 use chud_core::{Engine, EngineId, EngineOrigin, FormatCatalog, Registry};
+use chud_engines as engines;
 use chud_engines::ffmpeg::Ffmpeg;
 use chud_engines::sevenzip::SevenZip;
 use chud_process::ProcessSpec;
@@ -73,7 +75,7 @@ pub struct Detect {
 pub struct Manifest {
     pub id: String,
     pub name: String,
-    /// Adaptateur de `chud-engines` (« ffmpeg », « 7zip ») ou « none » (détecté, pas encore intégré).
+    /// Adaptateur de `chud-engines` (« ffmpeg », « pandoc »…) ou « none » (détecté, pas encore intégré).
     pub adapter: String,
     pub homepage: String,
     pub license: String,
@@ -98,6 +100,9 @@ pub struct Manifest {
     /// Paquets installables depuis l'application, par plateforme (adresse, taille, SHA-256 figés).
     #[serde(default)]
     pub install: Vec<InstallSource>,
+    /// Paquets du système (Linux), quand aucun paquet portable n'existe pour la plateforme.
+    #[serde(default, skip_serializing_if = "system::Packages::is_empty")]
+    pub packages: system::Packages,
 }
 
 impl Manifest {
@@ -110,6 +115,7 @@ impl Manifest {
         for src in &m.install {
             src.validate().map_err(|e| ManagerError::Manifest(m.id.clone(), e))?;
         }
+        m.packages.validate().map_err(|e| ManagerError::Manifest(m.id.clone(), e))?;
         Ok(m)
     }
 
@@ -374,17 +380,36 @@ pub struct InstallOffer {
     pub license: String,
     /// Page de la publication.
     pub page: String,
+    /// Le runtime Visual C++ de Microsoft manque et sera installé avec (Windows demandera une
+    /// autorisation).
+    pub runtime: bool,
+    /// Installation par le gestionnaire de paquets du système (Linux) : le mot de passe
+    /// administrateur sera demandé, et le paquet appartiendra au système.
+    pub system: Option<system::SystemRoute>,
 }
 
 impl InstallOffer {
     fn from_manifest(m: &Manifest) -> Option<Self> {
-        let s = m.install_source()?;
+        if let Some(s) = m.install_source() {
+            return Some(InstallOffer {
+                version: s.version.clone(),
+                size: s.total_size(),
+                publisher: s.publisher_l().to_owned(),
+                license: s.license.clone().unwrap_or_else(|| m.license_l().to_owned()),
+                page: s.page.clone(),
+                runtime: s.needs_runtime(),
+                system: None,
+            });
+        }
+        let (_, route) = system::route(m)?;
         Some(InstallOffer {
-            version: s.version.clone(),
-            size: s.total_size(),
-            publisher: s.publisher_l().to_owned(),
-            license: s.license.clone().unwrap_or_else(|| m.license_l().to_owned()),
-            page: s.page.clone(),
+            version: chud_core::tr!("celle de votre distribution", "your distribution's").into(),
+            size: 0,
+            publisher: chud_core::trf!("votre distribution Linux ({})", "your Linux distribution ({})", route.manager),
+            license: m.license_l().to_owned(),
+            page: m.homepage.clone(),
+            runtime: false,
+            system: Some(route),
         })
     }
 }
@@ -472,7 +497,7 @@ fn in_path(name: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-/// Exécutable géré : `<engines>/<id>/versions/<current>/…` (recherche sur 3 niveaux).
+/// Exécutable géré : `<engines>/<id>/versions/<current>/…` (recherche sur 4 niveaux).
 fn managed(paths: &AppPaths, id: &str, exe: &str) -> Option<(PathBuf, String)> {
     let root = paths.engines_dir().join(id);
     let version = std::fs::read_to_string(root.join("current")).ok()?.trim().to_owned();
@@ -482,7 +507,8 @@ fn managed(paths: &AppPaths, id: &str, exe: &str) -> Option<(PathBuf, String)> {
     find_exe(&root.join("versions").join(&version), exe).map(|p| (p, version))
 }
 
-/// Cherche un exécutable dans un dossier de version (jusqu'à trois niveaux : `ffmpeg-x/bin/ffmpeg`).
+/// Cherche un exécutable dans un dossier de version (jusqu'à quatre niveaux :
+/// `Calibre/Calibre2/ebook-convert`, `LibreOffice/program/soffice`…).
 pub(crate) fn find_exe(base: &Path, exe: &str) -> Option<PathBuf> {
     let mut stack = vec![(base.to_path_buf(), 0)];
     while let Some((d, depth)) = stack.pop() {
@@ -490,7 +516,7 @@ pub(crate) fn find_exe(base: &Path, exe: &str) -> Option<PathBuf> {
         if candidate.is_file() {
             return Some(candidate);
         }
-        if depth < 3
+        if depth < 4
             && let Ok(rd) = std::fs::read_dir(&d)
         {
             stack.extend(rd.flatten().filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false)).map(|e| (e.path(), depth + 1)));
@@ -574,6 +600,15 @@ impl EngineManager {
 
     /// Détecte un moteur.
     pub fn discover_one(&self, m: &Manifest) -> EngineStatus {
+        let mut st = self.detect_one(m);
+        // Déjà là : la voie « paquets du système » n'a plus rien à proposer (pas de copie à côté).
+        if st.path.is_some() && st.installable.as_ref().is_some_and(|o| o.system.is_some()) {
+            st.installable = None;
+        }
+        st
+    }
+
+    fn detect_one(&self, m: &Manifest) -> EngineStatus {
         let mut status = EngineStatus {
             id: m.id.clone(),
             name: m.name.clone(),
@@ -678,12 +713,24 @@ impl EngineManager {
 fn build_adapter(st: &EngineStatus) -> Result<Arc<dyn Engine>, String> {
     let path = st.path.clone().ok_or(chud_core::tr!("chemin absent", "path missing"))?;
     let origin = st.origin.unwrap_or(EngineOrigin::System);
+    let v = st.version.clone();
     match st.id.as_str() {
         "ffmpeg" => {
             let ffprobe = st.companions.get("ffprobe").cloned();
             Ok(Arc::new(Ffmpeg::new(path, ffprobe, st.version.clone(), origin)?))
         }
         "7zip" => Ok(Arc::new(SevenZip::new(path, st.version.clone(), origin)?)),
+        "pandoc" => Ok(Arc::new(engines::pandoc::Pandoc::new(path, v, origin)?)),
+        "libreoffice" => Ok(Arc::new(engines::libreoffice::LibreOffice::new(path, v, origin)?)),
+        "calibre" => Ok(Arc::new(engines::calibre::Calibre::new(path, v, origin)?)),
+        "imagemagick" => Ok(Arc::new(engines::imagemagick::ImageMagick::new(path, v, origin)?)),
+        "libvips" => Ok(Arc::new(engines::libvips::Libvips::new(path, v, origin)?)),
+        "qpdf" => Ok(Arc::new(engines::qpdf::Qpdf::new(path, v, origin)?)),
+        "ghostscript" => Ok(Arc::new(engines::ghostscript::Ghostscript::new(path, v, origin)?)),
+        "tesseract" => Ok(Arc::new(engines::tesseract::Tesseract::new(path, v, origin)?)),
+        "mkvtoolnix" => Ok(Arc::new(engines::mkvtoolnix::MkvToolNix::new(path, v, origin)?)),
+        "mediainfo" => Ok(Arc::new(engines::mediainfo::MediaInfo::new(path, v, origin)?)),
+        "exiftool" => Ok(Arc::new(engines::exiftool::ExifTool::new(path, v, origin)?)),
         other => Err(chud_core::trf!("aucun adaptateur pour {other}", "no adapter for {other}")),
     }
 }

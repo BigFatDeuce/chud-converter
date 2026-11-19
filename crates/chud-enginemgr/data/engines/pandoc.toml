@@ -1,6 +1,6 @@
 id = "pandoc"
 name = "Pandoc"
-adapter = "none"
+adapter = "pandoc"
 homepage = "https://pandoc.org"
 license = "GPL-2.0-or-later"
 description = "Documents texte : Markdown, HTML, DOCX, ODT, EPUB, LaTeX…"
@@ -19,3 +19,38 @@ known_paths_macos = ['/opt/homebrew/bin/pandoc']
 windows = "winget install JohnMacFarlane.Pandoc"
 linux = "sudo apt install pandoc"
 macos = "brew install pandoc"
+
+# Installation depuis l'application : publication officielle (jgm/pandoc), un seul exécutable autonome.
+
+[[install]]
+platform = "windows-x86_64"
+version = "3.14"
+method = "zip"
+publisher = "John MacFarlane, auteur de Pandoc (publication officielle)"
+publisher_en = "John MacFarlane, author of Pandoc (official release)"
+page = "https://github.com/jgm/pandoc/releases/tag/3.14"
+files = [
+  { url = "https://github.com/jgm/pandoc/releases/download/3.14/pandoc-3.14-windows-x86_64.zip", sha256 = "0144b96e8c7b023fd382ec5ef5bdc475e873f1019d6fa72502492df2c9a94a3b", size = 43614099 },
+]
+
+[[install]]
+platform = "linux-x86_64"
+version = "3.14"
+method = "tar-gz"
+publisher = "John MacFarlane, auteur de Pandoc (publication officielle)"
+publisher_en = "John MacFarlane, author of Pandoc (official release)"
+page = "https://github.com/jgm/pandoc/releases/tag/3.14"
+files = [
+  { url = "https://github.com/jgm/pandoc/releases/download/3.14/pandoc-3.14-linux-amd64.tar.gz", sha256 = "c5f4720cdefb3f7bdc5d07202ef579feef0d1370773c873804dd8fdaa8c4f1b8", size = 36635549 },
+]
+
+[[install]]
+platform = "linux-aarch64"
+version = "3.14"
+method = "tar-gz"
+publisher = "John MacFarlane, auteur de Pandoc (publication officielle)"
+publisher_en = "John MacFarlane, author of Pandoc (official release)"
+page = "https://github.com/jgm/pandoc/releases/tag/3.14"
+files = [
+  { url = "https://github.com/jgm/pandoc/releases/download/3.14/pandoc-3.14-linux-arm64.tar.gz", sha256 = "c692f3d78a415741bbbac4cdbbbe26fa7edca1f43d2301b982fbf4009cc8cf7f", size = 39208196 },
+]

@@ -1,6 +1,6 @@
 id = "libreoffice"
 name = "LibreOffice"
-adapter = "none"
+adapter = "libreoffice"
 homepage = "https://www.libreoffice.org"
 license = "MPL-2.0"
 description = "Bureautique : DOCX, XLSX, PPTX, ODT, ODS, ODP, PDF…"
@@ -20,3 +20,30 @@ known_paths_macos = ['/Applications/LibreOffice.app/Contents/MacOS/soffice']
 windows = "winget install TheDocumentFoundation.LibreOffice"
 linux = "sudo apt install libreoffice"
 macos = "brew install --cask libreoffice"
+
+# Installation depuis l'application : Windows, paquet officiel de The Document Foundation (archive
+# permanente), extrait par « msiexec /a » dans le dossier de Chud Converter (rien n'est enregistré
+# sur le système). Linux : paquets du système.
+
+[[install]]
+platform = "windows-x86_64"
+version = "26.8.3.1"
+method = "msi"
+publisher = "The Document Foundation, éditeur de LibreOffice (publication officielle)"
+publisher_en = "The Document Foundation, publisher of LibreOffice (official release)"
+page = "https://downloadarchive.documentfoundation.org/libreoffice/old/26.8.3.1/win/x86_64/"
+files = [
+  { url = "https://downloadarchive.documentfoundation.org/libreoffice/old/26.8.3.1/win/x86_64/LibreOffice_26.8.3.1_Win_x86-64.msi", sha256 = "0e6918c273eabbdbbd800ee0dacbbf130a14c13c2e4cec861b06dd59e015bf94", size = 376311808 },
+]
+# Le runtime Visual C++ fourni dans le paquet est placé à côté des programmes : rien à installer
+# sur le système.
+copies = [["System64", "program"]]
+remove = ["System", "System64"]
+
+# Linux sans paquet portable officiel : gestionnaire de paquets du système (mot de passe demandé
+# par la fenêtre du système ; le paquet appartient ensuite à la distribution).
+[packages]
+apt = ["libreoffice-core", "libreoffice-writer", "libreoffice-calc", "libreoffice-impress"]
+dnf = ["libreoffice-core", "libreoffice-writer", "libreoffice-calc", "libreoffice-impress"]
+pacman = ["libreoffice-fresh"]
+zypper = ["libreoffice-writer", "libreoffice-calc", "libreoffice-impress"]

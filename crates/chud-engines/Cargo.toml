@@ -1,6 +1,6 @@
 [package]
 name = "chud-engines"
-description = "Built-in engines: native image/data engines and external tool adapters (FFmpeg, 7-Zip)"
+description = "Built-in engines: native image/data engines and external tool adapters (FFmpeg, 7-Zip, Pandoc, LibreOffice, Calibre, ImageMagick, libvips, qpdf, Ghostscript, Tesseract, MKVToolNix, MediaInfo, ExifTool)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -19,6 +19,6 @@ image.workspace = true
 regex.workspace = true
 encoding_rs = "0.8"
 chardetng = "1"
+zip.workspace = true
 
 [dev-dependencies]
-zip.workspace = true

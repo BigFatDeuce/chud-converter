@@ -2,8 +2,40 @@
 // bandeau des moteurs manquants.
 
 import { L } from "./i18n.svelte";
+import { formatSize } from "./format";
 import type { EngineOp } from "./machines";
-import type { EngineView } from "./types";
+import type { EngineView, InstallOffer } from "./types";
+
+/** Taille du bouton « Installer (…) » : octets à télécharger, ou le gestionnaire du système. */
+export function offerSize(o: InstallOffer): string {
+  return o.system ? L(`via ${o.system.manager}`, `via ${o.system.manager}`) : formatSize(o.size);
+}
+
+/** Ce que l'installation fera hors du dossier de Chud Converter (à dire avant de confirmer). */
+export function offerSystemNotes(o: InstallOffer): string[] {
+  const out: string[] = [];
+  if (o.system) {
+    out.push(
+      L(
+        `Installé par le gestionnaire de paquets de votre système (${o.system.manager}) : ${o.system.packages.join(", ")}. Votre mot de passe administrateur sera demandé dans une fenêtre du système.`,
+        `Installed by your system's package manager (${o.system.manager}): ${o.system.packages.join(", ")}. Your administrator password will be asked in a system window.`,
+      ),
+      L(
+        "Le paquet appartient ensuite à votre distribution : il se met à jour et se retire avec elle, pas depuis Chud Converter.",
+        "The package then belongs to your distribution: it is updated and removed with it, not from Chud Converter.",
+      ),
+    );
+  }
+  if (o.runtime) {
+    out.push(
+      L(
+        "Il a besoin du runtime Visual C++ de Microsoft, absent de cet ordinateur : il sera installé aussi, depuis Microsoft (empreinte vérifiée). Windows vous demandera une autorisation.",
+        "It needs the Microsoft Visual C++ runtime, missing on this computer: it will be installed too, from Microsoft (fingerprint checked). Windows will ask for your permission.",
+      ),
+    );
+  }
+  return out;
+}
 
 /** « téléchargement 45 % », « prêt », « en attente »… */
 export function engineStatus(e: EngineView, op: EngineOp | null | undefined): string {
@@ -16,6 +48,8 @@ export function engineStatus(e: EngineView, op: EngineOp | null | undefined): st
       return L(`téléchargement ${n} %`, `downloading ${n}%`);
     }
     if (p.phase === "verifying") return L("vérification SHA-256…", "checking SHA-256…");
+    if (p.phase === "runtime") return L("runtime Visual C++…", "Visual C++ runtime…");
+    if (p.phase === "system") return p.line;
     if (p.phase === "extracting") {
       if (!p.total) return L("extraction…", "extracting…");
       const n = Math.round((p.done * 100) / p.total);

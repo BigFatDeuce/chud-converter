@@ -93,8 +93,9 @@ impl Registry {
     /// au format que son extension annonce. Sans cela, on proposerait des dizaines de
     /// conversions vouées à l'échec.
     pub fn probe_checked(&self, path: &Path, format: &FormatId) -> Result<Option<SourceInfo>, String> {
-        if !self.active().any(|e| e.can_probe(format)) {
-            return Ok(None);
+        if !self.active().any(|e| !e.enriches_probe() && e.can_probe(format)) {
+            // Seuls des moteurs d'analyse savent le lire : leur échec ne prouve rien.
+            return Ok(self.probe(path, format));
         }
         self.probe(path, format).map(Some).ok_or_else(|| {
             let name = self.catalog.get(format.as_str()).map_or(format.as_str(), |d| d.label());
@@ -105,9 +106,25 @@ impl Registry {
         })
     }
 
-    /// Sonde le fichier avec le premier moteur actif capable de le faire.
+    /// Sonde le fichier avec le premier moteur actif capable de le faire, complétée par les
+    /// moteurs d'analyse (voir `Engine::enriches_probe`).
     pub fn probe(&self, path: &Path, format: &FormatId) -> Option<SourceInfo> {
-        self.active().filter(|e| e.can_probe(format)).find_map(|e| e.probe(path, format))
+        let has_primary = self.active().any(|e| !e.enriches_probe() && e.can_probe(format));
+        let mut base = self.active().filter(|e| !e.enriches_probe() && e.can_probe(format)).find_map(|e| e.probe(path, format));
+        if has_primary && base.is_none() {
+            return None;
+        }
+        for e in self.active().filter(|e| e.enriches_probe() && e.can_probe(format)) {
+            let Some(extra) = e.probe(path, format) else { continue };
+            match &mut base {
+                Some(b) => merge_probe(b, extra),
+                None => {
+                    // Sans sonde principale, la liste des caractéristiques reste inconnue.
+                    base = Some(SourceInfo { features: None, ..extra });
+                }
+            }
+        }
+        base
     }
 
     /// Premier refus d'un moteur fondé sur le contenu de la source (voir `Engine::content_veto`).
@@ -251,5 +268,18 @@ impl Registry {
         plan.report = report;
         plan.cost = cost;
         Ok(plan)
+    }
+}
+
+/// Ajoute à une sonde ce qu'un moteur d'analyse a établi : lignes de résumé nouvelles,
+/// caractéristiques présentes (jamais retirées). Une liste inconnue le reste.
+fn merge_probe(base: &mut SourceInfo, extra: SourceInfo) {
+    for (k, v) in extra.summary {
+        if !base.summary.iter().any(|(bk, bv)| bk == &k || bv == &v) {
+            base.summary.push((k, v));
+        }
+    }
+    if let (Some(b), Some(x)) = (base.features.as_mut(), extra.features) {
+        b.extend(x);
     }
 }

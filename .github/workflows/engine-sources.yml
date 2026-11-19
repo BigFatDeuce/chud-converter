@@ -1,8 +1,10 @@
 name: Sources des moteurs
 
-# Installe réellement FFmpeg et 7-Zip depuis les adresses figées dans les manifestes, sur chaque
+# Installe réellement chaque moteur (FFmpeg, 7-Zip, Pandoc, LibreOffice, Calibre…) depuis les adresses figées dans les manifestes, sur chaque
 # plateforme proposée dans l'application : une source retirée ou modifiée (empreinte SHA-256
-# différente) est repérée avant qu'un utilisateur ne tombe dessus. Voir ADR-022.
+# différente) est repérée avant qu'un utilisateur ne tombe dessus. Voir ADR-022 et ADR-023.
+# Sous Linux, les moteurs sans version portable passent par les paquets de la distribution :
+# ils sont couverts par la CI (installation apt, tests réels des adaptateurs).
 on:
   schedule:
     - cron: "17 5 * * 1"
@@ -34,6 +36,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, ubuntu-24.04-arm]
+    # LibreOffice et Calibre pèsent à eux seuls près de 700 Mo à télécharger et extraire.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 

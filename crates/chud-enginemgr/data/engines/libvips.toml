@@ -1,6 +1,6 @@
 id = "libvips"
 name = "libvips"
-adapter = "none"
+adapter = "libvips"
 homepage = "https://www.libvips.org"
 license = "LGPL-2.1-or-later"
 description = "Images très grandes, HEIC, AVIF, JPEG XL ; rapide et économe."
@@ -18,3 +18,25 @@ known_paths_macos = ['/opt/homebrew/bin/vips']
 [hints]
 linux = "sudo apt install libvips-tools"
 macos = "brew install vips"
+
+# Installation depuis l'application : Windows, version officielle du projet libvips
+# (libvips/build-win64-mxe) ; Linux, paquets de la distribution.
+
+[[install]]
+platform = "windows-x86_64"
+version = "8.18.7"
+method = "zip"
+publisher = "Projet libvips (publication officielle pour Windows)"
+publisher_en = "libvips project (official Windows release)"
+page = "https://github.com/libvips/build-win64-mxe/releases/tag/v8.18.7"
+files = [
+  { url = "https://github.com/libvips/build-win64-mxe/releases/download/v8.18.7/vips-dev-x64-all-8.18.7.zip", sha256 = "78e56ba30c267ba32ff965200534bd5721364cadbead8c4d595e44b58dfeff15", size = 19734071 },
+]
+
+# Linux sans paquet portable officiel : gestionnaire de paquets du système (mot de passe demandé
+# par la fenêtre du système ; le paquet appartient ensuite à la distribution).
+[packages]
+apt = ["libvips-tools"]
+dnf = ["vips-tools"]
+pacman = ["libvips"]
+zypper = ["vips-tools"]

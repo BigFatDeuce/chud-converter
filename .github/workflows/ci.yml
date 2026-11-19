@@ -67,7 +67,15 @@ jobs:
       - name: Moteurs (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get install -y --no-install-recommends ffmpeg 7zip
+          sudo apt-get install -y --no-install-recommends ffmpeg 7zip pandoc qpdf ghostscript             tesseract-ocr tesseract-ocr-eng tesseract-ocr-fra libvips-tools mkvtoolnix mediainfo             libimage-exiftool-perl calibre libreoffice-writer-nogui libreoffice-calc-nogui
+          # ImageMagick 7 (« magick ») : Ubuntu ne fournit que la 6, on prend la version portable
+          # officielle que l'application installe, avec la même empreinte.
+          url=https://github.com/ImageMagick/ImageMagick/releases/download/7.1.2-36/ImageMagick-7.1.2-36-portable-Q16-HDRI-linux-x64.tar.xz
+          curl -fsSL -o /tmp/im.tar.xz "$url"
+          echo "72c8dd0268f824f621e1628737b79d8e80bc63a5d46a69950dabb13c5de80c91  /tmp/im.tar.xz" | sha256sum -c -
+          mkdir -p /tmp/im && tar -xJf /tmp/im.tar.xz -C /tmp/im
+          echo "CHUD_TOOL_IMAGEMAGICK=$(find /tmp/im -type f -name magick | head -1)" >> "$GITHUB_ENV"
+          echo "CHUD_REQUIRE_TOOLS=1" >> "$GITHUB_ENV"
 
       - name: Moteurs (Windows)
         if: runner.os == 'Windows'

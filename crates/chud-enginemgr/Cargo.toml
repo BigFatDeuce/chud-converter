@@ -19,6 +19,8 @@ thiserror.workspace = true
 directories.workspace = true
 zip.workspace = true
 tar = { version = "0.4", default-features = false }
+# GZip en pur Rust (Pandoc pour Linux).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 # XZ en pur Rust, avec les filtres BCJ (x86, ARM64…) utilisés par les archives de 7-Zip.
 lzma-rust2 = { version = "0.25", default-features = false, features = ["std", "xz", "optimization"] }
 sha2 = "0.10"
@@ -28,3 +30,4 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 
 [dev-dependencies]
 lzma-rust2 = { version = "0.25", default-features = false, features = ["std", "xz", "encoder"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }

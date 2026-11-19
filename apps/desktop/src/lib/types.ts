@@ -127,6 +127,10 @@ export interface InstallOffer {
   license: string;
   /** Page de la publication, pour vérifier soi-même. */
   page: string;
+  /** Windows : le runtime Visual C++ de Microsoft manque et sera installé avec (autorisation demandée). */
+  runtime: boolean;
+  /** Linux : installation par le gestionnaire de paquets du système (mot de passe demandé). */
+  system: { manager: string; packages: string[] } | null;
 }
 
 /** Étape d'une installation de moteur (événement « engine-install »). */
@@ -135,6 +139,10 @@ export type InstallProgress =
   | { phase: "verifying" }
   /** `total = 0` : avancement inconnu. */
   | { phase: "extracting"; done: number; total: number }
+  /** Installation du runtime Visual C++ (Windows affiche sa propre demande d'autorisation). */
+  | { phase: "runtime" }
+  /** Gestionnaire de paquets du système : dernière ligne affichée. */
+  | { phase: "system"; line: string }
   | { phase: "checking" };
 
 /** Nouvelle version publiée. */

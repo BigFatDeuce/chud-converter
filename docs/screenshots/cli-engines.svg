@@ -1,14 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="884" height="725" viewBox="0 0 884 725" role="img" aria-label="Real output of the chud engines command">
+<svg xmlns="http://www.w3.org/2000/svg" width="1319" height="743" viewBox="0 0 1319 743" role="img" aria-label="Real output of the chud engines command">
 <title>chud engines</title>
 <style>text{font-family:ui-monospace,'Cascadia Mono','SF Mono',Menlo,Consolas,'Liberation Mono',monospace;font-size:14px;white-space:pre}.t{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;font-size:13px}</style>
-<rect x="0.5" y="0.5" width="883" height="724" rx="10" fill="#011128" stroke="#123f7d"/>
-<path d="M0.5 36V10.5a10 10 0 0 1 10-10h863a10 10 0 0 1 10 10V36Z" fill="#0a1f3f"/>
-<line x1="0.5" y1="36" x2="883.5" y2="36" stroke="#123f7d"/>
+<rect x="0.5" y="0.5" width="1318" height="742" rx="10" fill="#011128" stroke="#123f7d"/>
+<path d="M0.5 36V10.5a10 10 0 0 1 10-10h1298a10 10 0 0 1 10 10V36Z" fill="#0a1f3f"/>
+<line x1="0.5" y1="36" x2="1318.5" y2="36" stroke="#123f7d"/>
 <circle cx="20" cy="18.0" r="6" fill="#ff5f57"/>
 <circle cx="40" cy="18.0" r="6" fill="#febc2e"/>
 <circle cx="60" cy="18.0" r="6" fill="#28c840"/>
-<text class="t" x="442.0" y="22.5" text-anchor="middle" fill="#8fa8c8">Windows PowerShell — chud</text>
-<text x="22" y="68" xml:space="preserve"><tspan fill="#38d6ff" font-weight="600">PS D:\Videos&gt; </tspan><tspan fill="#ffffff" font-weight="600">chud engines</tspan></text>
+<text class="t" x="659.5" y="22.5" text-anchor="middle" fill="#8fa8c8">Windows PowerShell — chud</text>
+<text x="22" y="68" xml:space="preserve"><tspan fill="#38d6ff" font-weight="600">PS D:\Documents&gt; </tspan><tspan fill="#ffffff" font-weight="600">chud engines</tspan></text>
 <text x="22" y="89" xml:space="preserve"><tspan fill="#d6e2f5">Data: C:\Users\you\AppData\Local\Chud Converter\data</tspan></text>
 <text x="22" y="110" xml:space="preserve"><tspan fill="#d6e2f5">Built-in engines: images (native), data (native)</tspan></text>
 <text x="22" y="131" xml:space="preserve"></text>
@@ -16,27 +16,28 @@
 <text x="22" y="173" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Users\you\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe [system]</tspan></text>
 <text x="22" y="194" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">7-Zip                      </tspan><tspan fill="#5ee08a" font-weight="600">ready</tspan><tspan fill="#d6e2f5"> — 26.06</tspan></text>
 <text x="22" y="215" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Program Files\7-Zip\7z.exe [system]</tspan></text>
-<text x="22" y="236" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Pandoc                     </tspan><tspan fill="#7f93b3" font-weight="600">missing</tspan></text>
-<text x="22" y="257" xml:space="preserve"><tspan fill="#7f93b3">                           install: winget install JohnMacFarlane.Pandoc</tspan></text>
-<text x="22" y="278" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">LibreOffice                </tspan><tspan fill="#7f93b3" font-weight="600">missing</tspan></text>
-<text x="22" y="299" xml:space="preserve"><tspan fill="#7f93b3">                           install: winget install TheDocumentFoundation.LibreOffice</tspan></text>
-<text x="22" y="320" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Calibre (ebook-convert)    </tspan><tspan fill="#7f93b3" font-weight="600">missing</tspan></text>
-<text x="22" y="341" xml:space="preserve"><tspan fill="#7f93b3">                           install: winget install calibre.calibre</tspan></text>
-<text x="22" y="362" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">ImageMagick                </tspan><tspan fill="#7f93b3" font-weight="600">missing</tspan></text>
-<text x="22" y="383" xml:space="preserve"><tspan fill="#7f93b3">                           install: winget install ImageMagick.ImageMagick</tspan></text>
-<text x="22" y="404" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">libvips                    </tspan><tspan fill="#7f93b3" font-weight="600">missing</tspan></text>
-<text x="22" y="425" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">qpdf                       </tspan><tspan fill="#7f93b3" font-weight="600">missing</tspan></text>
-<text x="22" y="446" xml:space="preserve"><tspan fill="#7f93b3">                           install: winget install QPDF.QPDF</tspan></text>
-<text x="22" y="467" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Ghostscript                </tspan><tspan fill="#7f93b3" font-weight="600">missing</tspan></text>
-<text x="22" y="488" xml:space="preserve"><tspan fill="#7f93b3">                           install: winget install ArtifexSoftware.GhostScript</tspan></text>
-<text x="22" y="509" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Tesseract OCR              </tspan><tspan fill="#7f93b3" font-weight="600">missing</tspan></text>
-<text x="22" y="530" xml:space="preserve"><tspan fill="#7f93b3">                           install: winget install UB-Mannheim.TesseractOCR</tspan></text>
-<text x="22" y="551" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">ExifTool                   </tspan><tspan fill="#7f93b3" font-weight="600">missing</tspan></text>
-<text x="22" y="572" xml:space="preserve"><tspan fill="#7f93b3">                           install: winget install OliverBetz.ExifTool</tspan></text>
-<text x="22" y="593" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">MediaInfo                  </tspan><tspan fill="#7f93b3" font-weight="600">missing</tspan></text>
-<text x="22" y="614" xml:space="preserve"><tspan fill="#7f93b3">                           install: winget install MediaArea.MediaInfo</tspan></text>
-<text x="22" y="635" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">MKVToolNix                 </tspan><tspan fill="#f9c83a" font-weight="600">detected (integration to come)</tspan><tspan fill="#d6e2f5"> — 103.0</tspan></text>
-<text x="22" y="656" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Program Files\MKVToolNix\mkvmerge.exe [system]</tspan></text>
-<text x="22" y="677" xml:space="preserve"></text>
-<text x="22" y="698" xml:space="preserve"><tspan fill="#d6e2f5">1706 direct conversions available.</tspan></text>
+<text x="22" y="236" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Pandoc                     </tspan><tspan fill="#5ee08a" font-weight="600">ready</tspan><tspan fill="#d6e2f5"> — 3.14</tspan></text>
+<text x="22" y="257" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Users\you\AppData\Local\Chud Converter\data\engines\pandoc\versions\3.14\pandoc-3.14\pandoc.exe [managed]</tspan></text>
+<text x="22" y="278" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">LibreOffice                </tspan><tspan fill="#5ee08a" font-weight="600">ready</tspan><tspan fill="#d6e2f5"> — 26.8.3.1</tspan></text>
+<text x="22" y="299" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Users\you\AppData\Local\Chud Converter\data\engines\libreoffice\versions\26.8.3.1\program\soffice.com [managed]</tspan></text>
+<text x="22" y="320" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Calibre (ebook-convert)    </tspan><tspan fill="#5ee08a" font-weight="600">ready</tspan><tspan fill="#d6e2f5"> — 9.18.0</tspan></text>
+<text x="22" y="341" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Users\you\AppData\Local\Chud Converter\data\engines\calibre\versions\9.18.0\PFiles64\Calibre2\ebook-convert.exe [managed]</tspan></text>
+<text x="22" y="362" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">ImageMagick                </tspan><tspan fill="#5ee08a" font-weight="600">ready</tspan><tspan fill="#d6e2f5"> — 7.1.2-36</tspan></text>
+<text x="22" y="383" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Users\you\AppData\Local\Chud Converter\data\engines\imagemagick\versions\7.1.2-36\magick.exe [managed]</tspan></text>
+<text x="22" y="404" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">libvips                    </tspan><tspan fill="#5ee08a" font-weight="600">ready</tspan><tspan fill="#d6e2f5"> — 8.18.7</tspan></text>
+<text x="22" y="425" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Users\you\AppData\Local\Chud Converter\data\engines\libvips\versions\8.18.7\vips-dev-8.18\bin\vips.exe [managed]</tspan></text>
+<text x="22" y="446" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">qpdf                       </tspan><tspan fill="#5ee08a" font-weight="600">ready</tspan><tspan fill="#d6e2f5"> — 12.4.2</tspan></text>
+<text x="22" y="467" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Users\you\AppData\Local\Chud Converter\data\engines\qpdf\versions\12.4.2\qpdf-12.4.2-msvc64\bin\qpdf.exe [managed]</tspan></text>
+<text x="22" y="488" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Ghostscript                </tspan><tspan fill="#5ee08a" font-weight="600">ready</tspan><tspan fill="#d6e2f5"> — 10.08.0</tspan></text>
+<text x="22" y="509" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Users\you\AppData\Local\Chud Converter\data\engines\ghostscript\versions\10.08.0\bin\gswin64c.exe [managed]</tspan></text>
+<text x="22" y="530" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">Tesseract OCR              </tspan><tspan fill="#5ee08a" font-weight="600">ready</tspan><tspan fill="#d6e2f5"> — 5.4.0.20240606</tspan></text>
+<text x="22" y="551" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Users\you\AppData\Local\Chud Converter\data\engines\tesseract\versions\5.4.0.20240606\tesseract.exe [managed]</tspan></text>
+<text x="22" y="572" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">ExifTool                   </tspan><tspan fill="#5ee08a" font-weight="600">ready</tspan><tspan fill="#d6e2f5"> — 13.64</tspan></text>
+<text x="22" y="593" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Users\you\AppData\Local\Chud Converter\data\engines\exiftool\versions\13.64\exiftool-13.64_64\exiftool.exe [managed]</tspan></text>
+<text x="22" y="614" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">MediaInfo                  </tspan><tspan fill="#5ee08a" font-weight="600">ready</tspan><tspan fill="#d6e2f5"> — 26.10</tspan></text>
+<text x="22" y="635" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Users\you\AppData\Local\Chud Converter\data\engines\mediainfo\versions\26.10\mediainfo.exe [managed]</tspan></text>
+<text x="22" y="656" xml:space="preserve"><tspan fill="#ffffff" font-weight="600">MKVToolNix                 </tspan><tspan fill="#5ee08a" font-weight="600">ready</tspan><tspan fill="#d6e2f5"> — 103.0</tspan></text>
+<text x="22" y="677" xml:space="preserve"><tspan fill="#7f93b3">                           C:\Program Files\MKVToolNix\mkvmerge.exe [system]</tspan></text>
+<text x="22" y="698" xml:space="preserve"></text>
+<text x="22" y="719" xml:space="preserve"><tspan fill="#d6e2f5">2998 direct conversions available.</tspan></text>
 </svg>
