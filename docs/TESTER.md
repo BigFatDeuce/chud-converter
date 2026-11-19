@@ -119,7 +119,7 @@ possible sur **un autre disque** que celui de l'application.
 | 62 | Une piste MKV qui ne contient que de l'audio (ex. un gamerip) | Plus d'« extension trompeuse » ; en haut de « Convertir en », **Qualité d'origine → Audio d'origine .mp3** (« la piste mp3 … ressort telle quelle, sans ré-encodage ») |
 | 63 | Convertir les N pistes d'un coup avec **Audio d'origine**, puis avec le préréglage **MP3**, vers un autre disque | Toutes réussissent (plus d'« os error 32 ») ; avec le préréglage : « copié tel quel : le ré-encoder en 192 kbit/s n'améliorerait pas sa qualité » |
 | 64 | `Exemples\vacances.mkv` | **Qualité d'origine** : audio d'origine, sous-titres d'origine (ASS) ; pas « Vidéo d'origine » (c'est déjà un MKV) |
-| 65 | `Exemples\faux.jpg` (ou une photo JPEG) | **Image sans perte .png** |
+| 65 | Une photo JPEG à vous (pas `faux.jpg`, qui est en réalité un PNG) | **Qualité d'origine → Image sans perte .png** |
 
 ## Écrans qui défilent (corrigé)
 
