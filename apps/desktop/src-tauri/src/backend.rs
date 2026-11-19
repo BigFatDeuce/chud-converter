@@ -5,7 +5,8 @@
 //! (rapports de fidélité, erreurs) sont produits ici par le cœur, dans la langue choisie.
 
 use chud_core::{
-    Category, Fidelity, FidelityReport, FormatCatalog, FormatId, OptionSpec, OptionValue, OptionValues, Verification, detect_path,
+    Category, Fidelity, FidelityReport, FormatCatalog, FormatId, OptionSpec, OptionValue, OptionValues, SourceInfo, StreamInfo, StreamKind,
+    Verification, detect_path,
 };
 use chud_core::{Lang, LangChoice};
 use chud_enginemgr::{
@@ -96,6 +97,19 @@ pub struct FileTargets {
     pub source: String,
     pub summary: Vec<(String, String)>,
     pub targets: Vec<TargetView>,
+    /// « Qualité d'origine » : ce qui ressort le contenu sans rien perdre (audio d'origine…).
+    pub original: Vec<OriginalChoice>,
+}
+
+/// Proposition « qualité d'origine » : un format cible déjà présent dans `targets`, sans perte.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OriginalChoice {
+    /// `audio`, `subtitles`, `video` ou `image` : une seule proposition par sorte.
+    pub kind: &'static str,
+    pub format: String,
+    pub title: String,
+    pub detail: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -556,12 +570,14 @@ impl Engines {
                 lost: t.best.report.lost_features.iter().map(|l| l.label.clone()).collect(),
                 engines: t.best.steps.iter().map(|s| s.engine.to_string()).collect(),
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let original = original_choices(&source, info.as_ref(), &targets);
         Ok(FileTargets {
             path: path.display().to_string(),
             source: source.to_string(),
             summary: info.map(|i| i.summary).unwrap_or_default(),
             targets,
+            original,
         })
     }
 
@@ -675,6 +691,233 @@ fn inspect_one(path: &Path) -> FileInfo {
         Err(e) => info.error = Some(e.to_string()),
     }
     info
+}
+
+/// Format qui contient tel quel un codec audio (copie sans ré-encodage).
+fn audio_home(codec: &str) -> Option<&'static str> {
+    Some(match codec {
+        "mp3" | "mp3float" => "mp3",
+        "aac" => "m4a",
+        "opus" => "opus",
+        "vorbis" => "ogg",
+        "flac" => "flac",
+        "alac" => "alac",
+        "ac3" => "ac3",
+        "eac3" => "eac3",
+        "dts" => "dts",
+        "wmav1" | "wmav2" | "wmapro" => "wma",
+        "wavpack" => "wv",
+        "tta" => "tta",
+        c if c.starts_with("pcm_") => "wav",
+        _ => return None,
+    })
+}
+
+/// Format qui contient tel quel un codec de sous-titres.
+fn subtitle_home(codec: &str) -> Option<&'static str> {
+    Some(match codec {
+        "subrip" | "srt" => "srt",
+        "ass" | "ssa" => "ass",
+        "webvtt" => "vtt",
+        _ => return None,
+    })
+}
+
+/// Propositions « qualité d'origine » : extraire l'audio (ou les sous-titres) tel quel, garder la
+/// vidéo sans ré-encodage, une image sans aucune perte. Chacune n'est proposée que si le format
+/// est parmi les cibles et que le plan prévu est réellement sans perte.
+fn original_choices(source: &FormatId, info: Option<&SourceInfo>, targets: &[TargetView]) -> Vec<OriginalChoice> {
+    use chud_core::{tr, trf};
+    let cat = catalog().get(source.as_str()).map(|d| d.category);
+    let intact = |f: &str| targets.iter().find(|t| t.format == f && matches!(t.fidelity, FidelityLevel::Lossless | FidelityLevel::Partial));
+    let label = |f: &str| catalog().get(f).map(|d| d.label().to_owned()).unwrap_or_else(|| f.to_uppercase());
+    let mut out = Vec::new();
+    let Some(info) = info else {
+        if cat == Some(Category::Image) && source.as_str() != "png" && intact("png").is_some() {
+            out.push(OriginalChoice {
+                kind: "image",
+                format: "png".into(),
+                title: tr!("Image sans perte", "Lossless image").into(),
+                detail: tr!("PNG : chaque pixel est gardé tel quel", "PNG: every pixel is kept as is").into(),
+            });
+        }
+        return out;
+    };
+    if matches!(cat, Some(Category::Audio | Category::Video)) {
+        let audio: Vec<&StreamInfo> = info.streams_of(StreamKind::Audio).collect();
+        if let Some(a) = audio.first() {
+            let more =
+                if audio.len() > 1 { trf!(" (1re piste audio sur {})", " (first audio track of {})", audio.len()) } else { String::new() };
+            let kbps = a.bitrate.filter(|b| *b > 0).map(|b| format!(" {} kbit/s", b.div_ceil(1000))).unwrap_or_default();
+            match audio_home(&a.codec).filter(|h| *h != source.as_str()).filter(|h| intact(h).is_some()) {
+                Some(h) => out.push(OriginalChoice {
+                    kind: "audio",
+                    format: h.into(),
+                    title: tr!("Audio d'origine", "Original audio").into(),
+                    detail: trf!(
+                        "{} : la piste {}{kbps} ressort telle quelle, sans ré-encodage{more}",
+                        "{}: the {}{kbps} track comes out as is, without re-encoding{more}",
+                        label(h),
+                        a.codec
+                    ),
+                }),
+                None if audio_home(&a.codec) != Some(source.as_str()) => {
+                    if let Some(f) = ["flac", "wav"].into_iter().find(|f| intact(f).is_some()) {
+                        out.push(OriginalChoice {
+                            kind: "audio",
+                            format: f.into(),
+                            title: tr!("Audio d'origine", "Original audio").into(),
+                            detail: trf!(
+                                "{} : le son {} décodé sans aucune perte supplémentaire{more}",
+                                "{}: the {} sound decoded without any further loss{more}",
+                                label(f),
+                                a.codec
+                            ),
+                        });
+                    }
+                }
+                None => {}
+            }
+        }
+        if let Some(s) = info.streams_of(StreamKind::Subtitle).next()
+            && let Some(h) = subtitle_home(&s.codec).filter(|h| intact(h).is_some())
+        {
+            out.push(OriginalChoice {
+                kind: "subtitles",
+                format: h.into(),
+                title: tr!("Sous-titres d'origine", "Original subtitles").into(),
+                detail: trf!("{} : texte et minutage tels quels", "{}: text and timing as they are", label(h)),
+            });
+        }
+        if cat == Some(Category::Video)
+            && info.streams_of(StreamKind::Video).next().is_some()
+            && source.as_str() != "mkv"
+            && intact("mkv").is_some()
+        {
+            out.push(OriginalChoice {
+                kind: "video",
+                format: "mkv".into(),
+                title: tr!("Vidéo d'origine", "Original video").into(),
+                detail: tr!("MKV : toutes les pistes gardées, sans ré-encodage", "MKV: every track kept, without re-encoding").into(),
+            });
+        }
+    }
+    if cat == Some(Category::Image) && source.as_str() != "png" && intact("png").is_some() {
+        out.push(OriginalChoice {
+            kind: "image",
+            format: "png".into(),
+            title: tr!("Image sans perte", "Lossless image").into(),
+            detail: tr!("PNG : chaque pixel est gardé tel quel", "PNG: every pixel is kept as is").into(),
+        });
+    }
+    out
+}
+
+/// Dossier remplacé par les fichiers qu'il contient (voir [`expand_paths`]).
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExpandedFolder {
+    pub folder: String,
+    pub files: Vec<String>,
+    /// Phrase à afficher : combien de fichiers, lesquels sont laissés de côté.
+    pub note: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Expansion {
+    /// Chemins à ajouter, dans l'ordre : dossiers remplacés par leurs fichiers, le reste tel quel.
+    pub paths: Vec<String>,
+    pub folders: Vec<ExpandedFolder>,
+}
+
+/// Fichiers qui accompagnent souvent une série (pochettes, listes, sommes de contrôle…) et
+/// n'empêchent pas de prendre le dossier comme « des fichiers du même type ».
+const COMPANION_EXT: &[&str] =
+    &["txt", "nfo", "cue", "log", "m3u", "m3u8", "pls", "sfv", "md5", "sha1", "sha256", "ini", "url", "accurip", "ffp", "db"];
+const MAX_FOLDER_FILES: usize = 5000;
+
+/// Un dossier qui ne contient que des fichiers du même type (plus d'éventuels fichiers
+/// d'accompagnement : pochettes d'un album, .txt, .cue…) est remplacé par ces fichiers : on veut
+/// convertir les musiques d'un dossier d'album, pas l'archiver. Les autres dossiers restent un
+/// élément unique (archives ZIP, 7z…). Les sous-dossiers sont parcourus (« CD 1 », « CD 2 »).
+pub fn expand_paths(paths: &[String]) -> Expansion {
+    let mut out = Expansion { paths: Vec::new(), folders: Vec::new() };
+    for p in paths {
+        let dir = Path::new(p);
+        match dir.is_dir().then(|| same_type_files(dir)).flatten() {
+            Some((category, files, aside)) => {
+                let files: Vec<String> = files.iter().map(|f| f.display().to_string()).collect();
+                let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.clone());
+                let n = files.len();
+                let mut note = chud_core::trf!(
+                    "Dossier « {name} » : {n} fichier(s) ({}) ajouté(s)",
+                    "Folder “{name}”: {n} file(s) ({}) added",
+                    category.label().to_lowercase()
+                );
+                if !aside.is_empty() {
+                    let names: Vec<String> =
+                        aside.iter().take(3).map(|a| a.file_name().unwrap_or_default().to_string_lossy().into_owned()).collect();
+                    let more = if aside.len() > 3 { ", …" } else { "" };
+                    note.push_str(&chud_core::trf!(" ; laissé(s) de côté : {}{more}", "; left aside: {}{more}", names.join(", ")));
+                }
+                note.push('.');
+                out.paths.extend(files.iter().cloned());
+                out.folders.push(ExpandedFolder { folder: p.clone(), files, note });
+            }
+            None => out.paths.push(p.clone()),
+        }
+    }
+    out
+}
+
+/// Catégorie commune, fichiers à convertir (triés) et fichiers d'accompagnement laissés de côté.
+fn same_type_files(dir: &Path) -> Option<(Category, Vec<PathBuf>, Vec<PathBuf>)> {
+    let mut all = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(&d).ok()?.flatten() {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            if name.starts_with('.') || name == "desktop.ini" || name == "thumbs.db" {
+                continue;
+            }
+            match e.file_type() {
+                Ok(t) if t.is_dir() => stack.push(e.path()),
+                Ok(t) if t.is_file() => all.push(e.path()),
+                _ => {}
+            }
+            if all.len() > MAX_FOLDER_FILES {
+                return None;
+            }
+        }
+    }
+    let mut by_cat: BTreeMap<&'static str, (Category, Vec<PathBuf>)> = BTreeMap::new();
+    let mut companions = Vec::new();
+    for f in all {
+        let ext = f.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        if COMPANION_EXT.contains(&ext.as_str()) {
+            companions.push(f);
+            continue;
+        }
+        let cat = detect_path(&f, catalog()).ok()?.format.and_then(|id| catalog().get(id.as_str()).map(|d| d.category))?;
+        by_cat.entry(cat.as_str()).or_insert_with(|| (cat, Vec::new())).1.push(f);
+    }
+    let (main, mut files) = by_cat.values().max_by_key(|(_, v)| v.len()).cloned()?;
+    for (cat, v) in by_cat.values() {
+        if *cat == main {
+            continue;
+        }
+        // Pochettes et livrets d'un album, sous-titres d'une vidéo : accompagnement. Sinon, types mélangés.
+        let companion = (matches!(main, Category::Audio | Category::Video) && matches!(cat, Category::Image | Category::Pdf))
+            || (main == Category::Video && *cat == Category::Subtitle);
+        if !companion || v.len() >= files.len() {
+            return None;
+        }
+        companions.extend(v.iter().cloned());
+    }
+    files.sort();
+    companions.sort();
+    Some((main, files, companions))
 }
 
 /// Taille d'un dossier, bornée pour ne pas bloquer l'interface sur un disque entier.
@@ -1221,6 +1464,132 @@ mod tests {
         let app = App::new(paths, Arc::new(move |e| ev.lock().unwrap().push(e)));
         assert_eq!(chud_core::lang(), Lang::Fr);
         (dir, app, events, serial)
+    }
+
+    fn wav() -> Vec<u8> {
+        let mut b = b"RIFF".to_vec();
+        b.extend_from_slice(&40u32.to_le_bytes());
+        b.extend_from_slice(b"WAVEfmt ");
+        b.extend_from_slice(&16u32.to_le_bytes());
+        b.extend_from_slice(&[1, 0, 1, 0, 0x44, 0xAC, 0, 0, 0x88, 0x58, 1, 0, 2, 0, 16, 0]);
+        b.extend_from_slice(b"data");
+        b.extend_from_slice(&4u32.to_le_bytes());
+        b.extend_from_slice(&[0, 0, 0, 0]);
+        b
+    }
+
+    fn tv(format: &str, fidelity: FidelityLevel) -> TargetView {
+        TargetView {
+            format: format.into(),
+            name: format.into(),
+            category: Category::Audio,
+            extension: None,
+            fidelity,
+            headline: String::new(),
+            lost: vec![],
+            engines: vec![],
+        }
+    }
+
+    fn stream(kind: StreamKind, codec: &str, bitrate: Option<u64>) -> StreamInfo {
+        StreamInfo {
+            index: 0,
+            kind,
+            codec: codec.into(),
+            attached_pic: false,
+            language: None,
+            width: None,
+            height: None,
+            channels: Some(2),
+            sample_rate: Some(32000),
+            bit_depth: None,
+            sample_format: None,
+            frame_rate: None,
+            bitrate,
+            duration: None,
+        }
+    }
+
+    #[test]
+    fn original_quality_choices() {
+        let _serial = lock(&SERIAL);
+        chud_core::i18n::with_lang(Lang::Fr, || {
+            // MKV d'un jeu, audio MP3 seulement : l'MP3 ressort tel quel.
+            let info = SourceInfo { streams: vec![stream(StreamKind::Audio, "mp3", Some(96_000))], ..Default::default() };
+            let targets = [tv("mp3", FidelityLevel::Lossless), tv("wav", FidelityLevel::Lossless), tv("aac", FidelityLevel::Lossy)];
+            let o = original_choices(&"mka".into(), Some(&info), &targets);
+            assert_eq!(o.len(), 1);
+            assert_eq!((o[0].kind, o[0].format.as_str()), ("audio", "mp3"));
+            assert!(o[0].detail.contains("96 kbit/s") && o[0].detail.contains("sans ré-encodage"), "{}", o[0].detail);
+            // Un MP3 est déjà l'audio d'origine : rien à proposer.
+            assert!(original_choices(&"mp3".into(), Some(&info), &targets).is_empty());
+            // Codec sans format « maison » proposé : décodé sans perte.
+            let info = SourceInfo { streams: vec![stream(StreamKind::Audio, "truehd", None)], ..Default::default() };
+            let o = original_choices(&"mka".into(), Some(&info), &targets);
+            assert_eq!(o[0].format, "wav");
+            // Vidéo MP4 avec sous-titres : audio AAC → M4A, sous-titres, vidéo sans ré-encodage.
+            let info = SourceInfo {
+                streams: vec![
+                    stream(StreamKind::Video, "h264", None),
+                    stream(StreamKind::Audio, "aac", None),
+                    stream(StreamKind::Audio, "aac", None),
+                    stream(StreamKind::Subtitle, "subrip", None),
+                ],
+                ..Default::default()
+            };
+            let targets = [
+                tv("m4a", FidelityLevel::Lossless),
+                tv("srt", FidelityLevel::Partial),
+                tv("mkv", FidelityLevel::Lossless),
+                tv("mp3", FidelityLevel::Lossy),
+            ];
+            let o = original_choices(&"mp4".into(), Some(&info), &targets);
+            let kinds: Vec<_> = o.iter().map(|c| (c.kind, c.format.as_str())).collect();
+            assert_eq!(kinds, [("audio", "m4a"), ("subtitles", "srt"), ("video", "mkv")]);
+            assert!(o[0].detail.contains("1re piste audio sur 2"));
+            // Une cible avec perte n'est jamais proposée comme « d'origine ».
+            let o = original_choices(&"mp4".into(), Some(&info), &[tv("m4a", FidelityLevel::Lossy)]);
+            assert!(o.is_empty());
+            // Image JPEG : PNG sans perte.
+            let o = original_choices(&"jpeg".into(), None, &[tv("png", FidelityLevel::Lossless)]);
+            assert_eq!(o[0].format, "png");
+        });
+    }
+
+    #[test]
+    fn a_folder_of_same_type_files_is_replaced_by_its_files() {
+        let (dir, _app, _events, _serial) = setup("expand");
+        let album = dir.join("Album é");
+        std::fs::create_dir_all(album.join("CD 2")).unwrap();
+        for f in ["Piste 01.wav", "Piste 02.wav", "CD 2/Piste 03.wav"] {
+            std::fs::write(album.join(f), wav()).unwrap();
+        }
+        std::fs::write(album.join("cover.png"), PNG_1X1).unwrap();
+        std::fs::write(album.join("infos.txt"), "rip").unwrap();
+        std::fs::write(album.join("desktop.ini"), "x").unwrap();
+        // Dossier mélangé : reste un seul élément (à archiver).
+        let mixed = dir.join("Mélange");
+        std::fs::create_dir_all(&mixed).unwrap();
+        std::fs::write(mixed.join("son.wav"), wav()).unwrap();
+        std::fs::write(mixed.join("photo.png"), PNG_1X1).unwrap();
+        std::fs::write(mixed.join("autre.png"), PNG_1X1).unwrap();
+        let single = dir.join("seul.png");
+        std::fs::write(&single, PNG_1X1).unwrap();
+
+        let e = expand_paths(&[album.display().to_string(), mixed.display().to_string(), single.display().to_string()]);
+        assert_eq!(e.folders.len(), 1);
+        assert_eq!(e.folders[0].files.len(), 3);
+        assert!(e.folders[0].files.iter().all(|f| f.ends_with(".wav")));
+        assert!(e.folders[0].note.contains("3 fichier(s)") && e.folders[0].note.contains("cover.png"), "{}", e.folders[0].note);
+        assert_eq!(e.paths.len(), 5);
+        assert_eq!(e.paths[3], mixed.display().to_string());
+        assert_eq!(e.paths[4], single.display().to_string());
+        // Un dossier d'images seulement est aussi remplacé par ses images.
+        let pics = dir.join("Images");
+        std::fs::create_dir_all(&pics).unwrap();
+        std::fs::write(pics.join("a.png"), PNG_1X1).unwrap();
+        assert_eq!(expand_paths(&[pics.display().to_string()]).folders[0].files.len(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

@@ -34,9 +34,11 @@ import type {
   Category,
   Conflict,
   EngineView,
+  ExpandedFolder,
   FidelityLevel,
   FileInfo,
   OptionValue,
+  OriginalChoice,
   PresetView,
   QuickBatch,
   SettingsView,
@@ -95,6 +97,15 @@ export interface CommonTarget {
 }
 
 /** Cibles possibles pour TOUS les fichiers cochés, avec la fidélité la moins bonne. */
+function commonOriginals(entries: FileEntry[]): OriginalChoice[] {
+  const lists = entries.map((e) => analysisTargets(e.analysis)?.original ?? null);
+  if (!lists.length || lists.some((l) => l === null)) return [];
+  const [first, ...rest] = lists as OriginalChoice[][];
+  return first
+    .filter((c) => rest.every((l) => l.some((o) => o.kind === c.kind && o.format === c.format)))
+    .map((c) => (rest.length && rest.some((l) => l.find((o) => o.kind === c.kind)?.detail !== c.detail) ? { ...c, detail: "" } : c));
+}
+
 function commonTargets(entries: FileEntry[]): CommonTarget[] {
   const ready = entries.map((e) => analysisTargets(e.analysis)).filter((t) => t !== null);
   if (!ready.length) return [];
@@ -156,6 +167,8 @@ class Store {
   view = $state<View>("convert");
   fake = $state(false);
   notice = $state<string | null>(null);
+  /** Bouton facultatif du message (ex. « Garder le dossier entier »). */
+  noticeAction = $state<{ label: string; run: () => void } | null>(null);
 
   files = $state<FileEntry[]>([]);
   jobs = $state<Job[]>([]);
@@ -203,6 +216,8 @@ class Store {
   checked = $derived(this.files.filter((f) => f.checked && usable(f.info)));
   loadingTargets = $derived(this.checked.some((f) => f.analysis.state === "loading"));
   common = $derived(commonTargets(this.checked));
+  /** Propositions « qualité d'origine » communes à tous les fichiers cochés (même format). */
+  originals = $derived(commonOriginals(this.checked));
   targetInfo = $derived(this.common.find((t) => t.format === this.target) ?? null);
   active = $derived(this.jobs.filter((j) => isActive(j.status)).length);
   /** Sortes des fichiers cochés, au sens des préréglages (catégorie, ou « folder »). */
@@ -289,23 +304,60 @@ class Store {
     }
   }
 
-  say(text: string) {
+  say(text: string, action: { label: string; run: () => void } | null = null) {
     this.notice = text;
+    this.noticeAction = action;
     clearTimeout(this.#noticeTimer);
-    this.#noticeTimer = setTimeout(() => (this.notice = null), 6000);
+    this.#noticeTimer = setTimeout(
+      () => {
+        this.notice = null;
+        this.noticeAction = null;
+      },
+      action ? 15000 : 6000,
+    );
+  }
+
+  closeNotice() {
+    clearTimeout(this.#noticeTimer);
+    this.notice = null;
+    this.noticeAction = null;
   }
 
   // ---------------------------------------------------------------- fichiers
 
-  async addPaths(paths: string[]) {
+  /**
+   * Ajoute des fichiers ou dossiers. Un dossier qui ne contient qu'un type de fichiers (un album,
+   * avec sa pochette) est remplacé par ces fichiers, sauf `keepFolders` (« Garder le dossier entier »).
+   */
+  async addPaths(paths: string[], keepFolders = false) {
     if (!paths.length) return;
     const a = await api;
     let infos: FileInfo[];
+    let expanded: ExpandedFolder[] = [];
     try {
+      if (!keepFolders) {
+        const ex = await a.expand(paths);
+        paths = ex.paths;
+        expanded = ex.folders;
+      }
       infos = await a.inspect(paths);
     } catch (e) {
       this.say(errorText(e));
       return;
+    }
+    if (expanded.length === 1) {
+      const f = expanded[0];
+      const added = new Set(f.files);
+      this.say(f.note, {
+        label: L("Garder le dossier entier", "Keep the whole folder"),
+        run: () => {
+          this.files = this.files.filter((x) => !added.has(x.info.path));
+          this.closeNotice();
+          void this.addPaths([f.folder], true);
+        },
+      });
+    } else if (expanded.length > 1) {
+      this.say(expanded.map((f) => f.note).join(" "));
     }
     const known = new Set(this.files.map((f) => f.info.path));
     const fresh = infos.filter((i) => !known.has(i.path));
@@ -385,6 +437,12 @@ class Store {
 
   setAllChecked(on: boolean) {
     for (const f of this.files) if (usable(f.info)) f.checked = on;
+    this.#keepTargetValid();
+  }
+
+  /** Ne garde cochés que les fichiers de cette sorte (catégorie, ou « folder »). */
+  checkOnlyKind(kind: string) {
+    for (const f of this.files) if (f.checked) f.checked = (f.info.isDir ? "folder" : (f.info.category ?? "?")) === kind;
     this.#keepTargetValid();
   }
 

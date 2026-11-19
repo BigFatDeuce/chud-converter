@@ -153,6 +153,7 @@ fn main() {
             commands::engine_uninstall,
             commands::engine_rollback,
             commands::inspect,
+            commands::expand,
             commands::targets,
             commands::plan,
             commands::convert,

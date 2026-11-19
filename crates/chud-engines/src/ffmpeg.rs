@@ -1454,14 +1454,27 @@ impl Ffmpeg {
             let codec_ok = codec_ok && !(to.id == "caf" && s.codec == "pcm_u8");
             let choice_ok = wanted == "auto" || wanted == "copy" || afam(wanted).is_some_and(|f| family_accepts_audio(f, &s.codec));
             let pcm_forced = depth != "auto" && s.codec.starts_with("pcm_");
-            if codec_ok && choice_ok && !changes_rate && !changes_ch && !normalize && bitrate == 0 && !pcm_forced {
+            // Débit demandé supérieur ou égal à celui de la source : ré-encoder ne ferait que
+            // perdre (un MP3 96 kbit/s ré-encodé en 192 kbit/s est moins bon que l'original).
+            let source_kbps = s.bitrate.filter(|b| *b > 0).map(|b| b.div_ceil(1000));
+            let bitrate_moot = bitrate > 0 && source_kbps.is_some_and(|k| k <= bitrate as u64);
+            if codec_ok && choice_ok && !changes_rate && !changes_ch && !normalize && (bitrate == 0 || bitrate_moot) && !pcm_forced {
                 r.out([format!("-c:a:{oa}"), "copy".into()]);
                 r.worsen(Fidelity::Lossless);
                 r.keep("audio");
                 r.audio_out.push((s.channels, s.sample_rate));
                 r.keep("surround");
                 r.keep("high_bit_depth");
-                r.notes.push(trf!("audio {} copié sans ré-encodage", "{} audio copied without re-encoding", s.codec));
+                if bitrate_moot {
+                    r.notes.push(trf!(
+                        "audio {} à {} kbit/s copié tel quel : le ré-encoder en {bitrate} kbit/s n'améliorerait pas sa qualité",
+                        "{} audio at {} kbit/s copied as is: re-encoding it at {bitrate} kbit/s would not improve its quality",
+                        s.codec,
+                        source_kbps.unwrap_or_default()
+                    ));
+                } else {
+                    r.notes.push(trf!("audio {} copié sans ré-encodage", "{} audio copied without re-encoding", s.codec));
+                }
                 return Ok(());
             }
             if wanted == "copy" {

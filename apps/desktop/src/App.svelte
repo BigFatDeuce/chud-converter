@@ -82,7 +82,10 @@
   {#if store.notice}
     <div class="toast card" role="status">
       <span>{store.notice}</span>
-      <button class="icon-btn" aria-label={L("Fermer", "Close")} onclick={() => (store.notice = null)}><Icon name="x" size={14} /></button>
+      {#if store.noticeAction}
+        <button class="btn" onclick={() => store.noticeAction?.run()}>{store.noticeAction.label}</button>
+      {/if}
+      <button class="icon-btn" aria-label={L("Fermer", "Close")} onclick={() => store.closeNotice()}><Icon name="x" size={14} /></button>
     </div>
   {/if}
 </div>

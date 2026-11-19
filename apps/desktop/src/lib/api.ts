@@ -7,6 +7,7 @@ import type {
   AppInfo,
   ConvertRequest,
   EngineView,
+  Expansion,
   FileInfo,
   FileTargets,
   InstallProgress,
@@ -42,6 +43,8 @@ export interface Api {
   engineRollback(id: string): Promise<EngineView[]>;
   onEngineInstall(cb: (id: string, p: InstallProgress) => void): Promise<() => void>;
   inspect(paths: string[]): Promise<FileInfo[]>;
+  /** Dossiers ne contenant qu'un type de fichiers (plus pochettes, .txt…) remplacés par ces fichiers. */
+  expand(paths: string[]): Promise<Expansion>;
   targets(path: string): Promise<FileTargets>;
   plan(request: PlanRequest): Promise<PlanView>;
   convert(request: ConvertRequest): Promise<Submitted[]>;
@@ -107,6 +110,7 @@ function tauriApi(): Api {
       return listen<{ id: string; progress: InstallProgress }>("engine-install", (e) => cb(e.payload.id, e.payload.progress));
     },
     inspect: (paths) => call("inspect", { paths }),
+    expand: (paths) => call("expand", { paths }),
     targets: (path) => call("targets", { path }),
     plan: (request) => call("plan", { request }),
     convert: (request) => call("convert", { request }),

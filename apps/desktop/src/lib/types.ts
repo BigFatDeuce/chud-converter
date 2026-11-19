@@ -36,6 +36,18 @@ export interface FileInfo {
   error: string | null;
 }
 
+/** Dossier d'un seul type remplacé par ses fichiers à l'ajout. */
+export interface ExpandedFolder {
+  folder: string;
+  files: string[];
+  note: string;
+}
+
+export interface Expansion {
+  paths: string[];
+  folders: ExpandedFolder[];
+}
+
 export interface TargetView {
   format: string;
   name: string;
@@ -47,11 +59,20 @@ export interface TargetView {
   engines: string[];
 }
 
+/** « Qualité d'origine » : format qui ressort le contenu sans rien perdre. */
+export interface OriginalChoice {
+  kind: "audio" | "subtitles" | "video" | "image";
+  format: string;
+  title: string;
+  detail: string;
+}
+
 export interface FileTargets {
   path: string;
   source: string;
   summary: [string, string][];
   targets: TargetView[];
+  original: OriginalChoice[];
 }
 
 export type OptionValue = boolean | number | string;

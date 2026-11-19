@@ -106,6 +106,21 @@ et Calibre (≈ 290 Mo) sont les plus longs.
 | 57 | Copier `notes.md` sous le nom `essai [1] %d.md`, le convertir en DOCX | Réussit : les `[ ]` et `%d` du nom ne sont jamais interprétés par un moteur |
 | 58 | Ligne de commande : `chud.exe engines`, puis `chud.exe engines install qpdf` | Tous les moteurs listés comme installables ; installation avec ses étapes |
 
+## Dossiers d'album et qualité d'origine (nouveau)
+
+Prenez un dossier de musique à vous (un album avec sa pochette, ou des MKV « gamerip »), si
+possible sur **un autre disque** que celui de l'application.
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 59 | **Ajouter un dossier** → le dossier de l'album | Les pistes s'ajoutent une par une ; message « Dossier … : N fichier(s) (audio) ajouté(s) ; laissé(s) de côté : cover.png » avec le bouton **Garder le dossier entier** |
+| 60 | Cliquer **Garder le dossier entier** | Les pistes disparaissent, le dossier revient comme un seul élément (formats d'archive proposés) |
+| 61 | Ajouter les pistes **et** la pochette avec **Ajouter des fichiers** | « Aucun format commun » puis un bouton par sorte : **Seulement les N fichier(s) : audio** ; un clic décoche la pochette |
+| 62 | Une piste MKV qui ne contient que de l'audio (ex. un gamerip) | Plus d'« extension trompeuse » ; en haut de « Convertir en », **Qualité d'origine → Audio d'origine .mp3** (« la piste mp3 … ressort telle quelle, sans ré-encodage ») |
+| 63 | Convertir les N pistes d'un coup avec **Audio d'origine**, puis avec le préréglage **MP3**, vers un autre disque | Toutes réussissent (plus d'« os error 32 ») ; avec le préréglage : « copié tel quel : le ré-encoder en 192 kbit/s n'améliorerait pas sa qualité » |
+| 64 | `Exemples\vacances.mkv` | **Qualité d'origine** : audio d'origine, sous-titres d'origine (ASS) ; pas « Vidéo d'origine » (c'est déjà un MKV) |
+| 65 | `Exemples\faux.jpg` (ou une photo JPEG) | **Image sans perte .png** |
+
 ## Écrans qui défilent (corrigé)
 
 | # | Action | Résultat attendu |

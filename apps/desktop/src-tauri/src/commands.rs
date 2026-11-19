@@ -84,6 +84,12 @@ pub async fn inspect(app: Shared<'_>, paths: Vec<String>) -> Result<Vec<FileInfo
     blocking(move || Ok(app.engines()?.inspect(&paths))).await
 }
 
+/// Dossiers d'un seul type remplacés par leurs fichiers (à l'ajout dans la liste).
+#[tauri::command]
+pub async fn expand(paths: Vec<String>) -> Result<crate::backend::Expansion, String> {
+    blocking(move || Ok(crate::backend::expand_paths(&paths))).await
+}
+
 #[tauri::command]
 pub async fn targets(app: Shared<'_>, path: String) -> Result<FileTargets, String> {
     let app = app.inner().clone();

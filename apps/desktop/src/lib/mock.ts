@@ -280,6 +280,7 @@ export function mockApi(): Api {
       installListeners.push(cb);
       return () => {};
     },
+    expand: async (paths) => ({ paths, folders: [] }),
     inspect: (paths) =>
       delay(
         paths.map(
@@ -305,7 +306,11 @@ export function mockApi(): Api {
       if (!f) return Promise.reject("format non reconnu");
       // Comme le vrai moteur de règles : une cible n'existe que si ses moteurs sont prêts.
       const usable = f.targets.filter((t) => t.engines.every((id) => (ENGINES.find((e) => e.id === id)?.state ?? "ready") === "ready"));
-      const t: FileTargets = { path, source: f.info.format!, summary: [["Durée", "fictive"]], targets: usable };
+      const original =
+        f.info.category === "video" && usable.some((x) => x.format === "flac")
+          ? [{ kind: "audio" as const, format: "flac", title: "Audio d'origine", detail: "FLAC : la piste flac ressort telle quelle, sans ré-encodage (fictif)" }]
+          : [];
+      const t: FileTargets = { path, source: f.info.format!, summary: [["Durée", "fictive"]], targets: usable, original };
       return delay(t, 300);
     },
     plan: (req) => {

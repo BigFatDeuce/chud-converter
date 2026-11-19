@@ -117,6 +117,11 @@ installs a missing one, verified the same way as in the app:
 | **Lossless MKV** | MKVToolNix | every track, chapter and attachment into MKV without re-encoding; a dropped track is reported |
 | **Analysis** | MediaInfo, ExifTool | HDR, Dolby Vision, bitrates, track languages; EXIF, XMP, IPTC, ICC profile, camera and date, in the file details |
 
+**Original quality.** For each file, the app suggests what gets its content out without losing
+anything: the audio track as it is (an MP3 inside an MKV game rip comes out as an MP3, never
+re-encoded), the original subtitles, the video remuxed to MKV, an image as PNG. Adding an album
+folder adds its tracks (the cover and `.cue`/`.txt` files are left aside).
+
 The automated tests run on real files generated at each run, on Windows and Linux. They cover
 MKV → MP4 lossless (checked by decoding), WebM, MP3, GIF, frame extraction, Windows-1252 SRT →
 VTT, trimming, WAV → FLAC → ALAC bit-identical, ZIP / 7z / TGZ round trips, malicious archives,

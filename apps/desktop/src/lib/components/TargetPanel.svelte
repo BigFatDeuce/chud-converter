@@ -13,6 +13,19 @@
   let query = $state("");
   let picking = $state(false);
 
+  // Sélection mélangée (ex. 46 musiques et leur pochette) : un bouton par sorte de fichiers.
+  const kindGroups = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const f of store.checked) {
+      const k = f.info.isDir ? "folder" : (f.info.category ?? "?");
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .filter(([k]) => k !== "?")
+      .sort((a, b) => b[1] - a[1])
+      .map(([kind, count]) => ({ kind, count, label: kind === "folder" ? L("dossiers", "folders") : categoryLabel(kind as Category).toLowerCase() }));
+  });
+
   // Liste des formats, groupés par catégorie, filtrés par la recherche.
   const groups = $derived.by(() => {
     const q = query.trim().toLowerCase();
@@ -156,7 +169,27 @@
           ? L("Aucune conversion possible pour ce fichier avec les moteurs dont Chud Converter dispose aujourd'hui.", "No conversion possible for this file with the engines Chud Converter has today.")
           : L(`Aucun format de sortie commun à ces ${store.checked.length} fichiers. Décochez-en certains pour les convertir par groupes.`, `No output format is common to these ${store.checked.length} files. Uncheck some to convert them in groups.`)}
       </p>
+      {#if kindGroups.length > 1}
+        <div class="row-actions">
+          {#each kindGroups as g (g.kind)}
+            <button class="btn" onclick={() => store.checkOnlyKind(g.kind)}>
+              {L(`Seulement les ${g.count} fichier(s) : ${g.label}`, `Only the ${g.count} file(s): ${g.label}`)}
+            </button>
+          {/each}
+        </div>
+      {/if}
     {:else}
+      {#if store.originals.length}
+        <div class="presets originals">
+          <div class="section-title">{L("Qualité d'origine", "Original quality")}</div>
+          {#each store.originals as o (o.kind)}
+            <button class="orig" class:sel={store.target === o.format} onclick={() => store.chooseTarget(o.format)}>
+              <span class="orig-title">{o.title} <span class="ext">.{store.common.find((t) => t.format === o.format)?.extension ?? o.format}</span></span>
+              {#if o.detail}<span class="orig-detail">{o.detail}</span>{/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
       {#if store.suggested.length}
         <div class="presets">
           <div class="section-title">{L("Préréglages", "Presets")}</div>
@@ -359,6 +392,12 @@
     border: 1px solid var(--border);
     border-left: 4px solid var(--link);
     background: var(--surface-2);
+  }
+
+  .row-actions {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
   }
 
   .need-actions {
@@ -603,6 +642,44 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .orig {
+    display: grid;
+    gap: 2px;
+    text-align: left;
+    padding: 8px 11px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--ok);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+  }
+
+  .orig:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
+  }
+
+  .orig.sel {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+
+  .orig-title {
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .orig-title .ext {
+    font-family: var(--mono);
+    font-weight: 400;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .orig-detail {
+    font-size: 12px;
+    color: var(--muted);
   }
 
   .pchips {

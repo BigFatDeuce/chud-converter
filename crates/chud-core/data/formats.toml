@@ -431,6 +431,7 @@ extensions = ["m4a", "m4b", "m4r"]
 mime = ["audio/mp4", "audio/x-m4a"]
 compression = "both"
 features = ["audio", "tags", "cover_art", "chapters"]
+based_on = ["mp4"]
 
 [[format]]
 id = "alac"
@@ -458,6 +459,7 @@ extensions = ["opus"]
 mime = ["audio/opus"]
 compression = "lossy"
 features = ["audio", "tags", "cover_art"]
+based_on = ["ogg"]
 
 [[format]]
 id = "wma"
@@ -538,6 +540,7 @@ extensions = ["mka"]
 mime = ["audio/x-matroska"]
 compression = "both"
 features = ["audio", "multi_audio", "tags", "chapters", "cover_art", "attachments", "high_bit_depth", "surround"]
+based_on = ["mkv"]
 
 [[format]]
 id = "amr"

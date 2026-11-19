@@ -4,6 +4,30 @@ All notable changes to Chud Converter. Versions follow [Semantic Versioning](htt
 
 ## [Unreleased]
 
+### Added
+- **Original quality**: above the formats, the app now suggests what gets the content out
+  without losing anything — the audio track as it is (an MP3 inside an MKV comes out as an MP3,
+  without re-encoding; FLAC or WAV when it cannot be copied), the original subtitles, the video
+  remuxed to MKV, an image as PNG. Only offered when the planned conversion is really lossless.
+- **Album folders**: adding a folder that holds only one kind of file (an album with its cover,
+  `.txt` or `.cue`) adds the files themselves, ready to convert; a "Keep the whole folder" button
+  brings back the old behaviour (to make an archive). Sub-folders ("CD 1", "CD 2") are included.
+- When the selected files have no common format (46 tracks and their cover), one button per
+  kind of file keeps only those checked.
+
+### Changed
+- A preset asking for a bitrate higher than the source's no longer re-encodes for nothing: an
+  MP3 at 96 kbit/s stays as it is with the MP3 preset (192 kbit/s), instead of getting bigger and
+  worse.
+
+### Fixed
+- Several conversions at once to another drive than the app's (music on `M:`, app on `C:`)
+  shared the same temporary file: some failed with "the process cannot access the file because
+  it is being used by another process (os error 32)". Each conversion now has its own, and a file
+  briefly held by Explorer, the search indexer or an antivirus is tried again.
+- An MKV holding only audio (game rips), an MP4 holding only audio and an Ogg file with Opus
+  inside are no longer flagged "misleading extension".
+
 ## [0.2.0] — 2026-11-19
 
 Every engine, from the app: Pandoc, LibreOffice, Calibre, ImageMagick, libvips, qpdf,
