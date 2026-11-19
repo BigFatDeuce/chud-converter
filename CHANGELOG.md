@@ -52,6 +52,9 @@ installs in one click — no terminal, nothing to copy.
 
 - Symbolic links inside ZIP archives (the Linux build of qpdf has some) are copied as plain files
   when they point inside the archive, like in TAR archives, instead of failing the install.
+- Pandoc builds that do not embed their data files (Debian, Ubuntu and Fedora packages) cannot
+  write DOCX or EPUB in sandbox mode: those outputs are now tried at startup and left out when
+  they fail (LibreOffice and Calibre still offer them), instead of failing at conversion time.
 - A download cut by the network, or refused for a moment by the server, is tried again twice
   before the install gives up.
 

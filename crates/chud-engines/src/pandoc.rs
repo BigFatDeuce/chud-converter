@@ -3,6 +3,10 @@
 //! - Toujours lancé avec `--sandbox` : Pandoc ne lit aucun fichier en dehors de la source et
 //!   n'accède jamais au réseau (images distantes, `\include`, feuilles de style…).
 //! - Les formats lus et écrits sont demandés à l'exécutable au démarrage.
+//! - Certaines compilations (paquets Debian, Ubuntu, Fedora) n'intègrent pas leurs fichiers de
+//!   données : en `--sandbox`, elles ne savent plus écrire DOCX ni EPUB (« Could not find data
+//!   file »). Ces sorties sont alors essayées au démarrage et retirées si elles échouent, plutôt
+//!   que de lever le bac à sable (LibreOffice et Calibre les produisent aussi).
 //! - Pandoc reconstruit le document à partir de sa structure : les styles et la mise en page
 //!   fine ne sont pas conservés (LibreOffice est préféré entre formats bureautiques).
 //! - Vérification : le résultat est relu par Pandoc et doit contenir du texte.
@@ -63,6 +67,25 @@ pub struct Pandoc {
     readers: HashSet<String>,
 }
 
+/// Essai réel d'une sortie en `--sandbox` sur un petit document (dossier temporaire retiré).
+fn sandbox_can_write(exe: &Path, writer: &str) -> bool {
+    static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("chud-pandoc-check-{}-{n}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    if std::fs::create_dir_all(&dir).is_err() || std::fs::write(dir.join("in.md"), "# Essai\n\nTexte.\n").is_err() {
+        return true; // essai impossible : la conversion dira elle-même si elle échoue
+    }
+    let spec = ProcessSpec::new(exe)
+        .args(["--sandbox", "-f", "markdown", "-t", writer, "-o", "out.bin", "in.md"])
+        .cwd(&dir)
+        .timeout(Some(std::time::Duration::from_secs(30)));
+    let ok = chud_process::run_capture(&spec, 64 * 1024).is_ok_and(|o| o.success())
+        && std::fs::metadata(dir.join("out.bin")).is_ok_and(|m| m.len() > 0);
+    let _ = std::fs::remove_dir_all(&dir);
+    ok
+}
+
 fn names(text: &str) -> HashSet<String> {
     text.lines().map(|l| l.trim().to_owned()).filter(|l| !l.is_empty()).collect()
 }
@@ -76,7 +99,12 @@ impl Pandoc {
             }
             Ok(names(&out.stdout_text()))
         };
-        let (inputs, outputs) = (list("--list-input-formats")?, list("--list-output-formats")?);
+        let (inputs, mut outputs) = (list("--list-input-formats")?, list("--list-output-formats")?);
+        for w in ["docx", "epub3"] {
+            if outputs.contains(w) && !sandbox_can_write(&exe, w) {
+                outputs.remove(w);
+            }
+        }
         Ok(Self::with_formats(exe, version, origin, &inputs, &outputs))
     }
 

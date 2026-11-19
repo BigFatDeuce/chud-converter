@@ -64,13 +64,20 @@ fn pandoc_documents() {
     let d = workdir("pandoc");
     let md = d.join("é [1] %d.md");
     std::fs::write(&md, "# Titre\n\nUn *paragraphe* avec un tableau :\n\n| a | b |\n|---|---|\n| 1 | 2 |\n").unwrap();
-    let docx = d.join("out é.docx");
-    assert!(matches!(convert(&e, &md, "md", "docx", &docx, &[]), Verification::Decoded(_)));
+    // Paquets Linux sans fichiers de données intégrés : DOCX et EPUB ne sont pas proposés en
+    // bac à sable (essai au démarrage) ; ODT sert alors de format bureautique.
+    let has = |to: &str| e.conversions().iter().any(|c| c.from.as_str() == "md" && c.to.as_str() == to);
+    let office = if has("docx") { "docx" } else { "odt" };
+    eprintln!("pandoc : DOCX {}, EPUB {}", has("docx"), has("epub"));
+    let doc = d.join(format!("out é.{office}"));
+    assert!(matches!(convert(&e, &md, "md", office, &doc, &[]), Verification::Decoded(_)));
     let html = d.join("out.html");
-    assert!(matches!(convert(&e, &docx, "docx", "html", &html, &[]), Verification::Decoded(_)));
+    assert!(matches!(convert(&e, &doc, office, "html", &html, &[]), Verification::Decoded(_)));
     assert!(std::fs::read_to_string(&html).unwrap().contains("paragraphe"));
-    convert(&e, &docx, "docx", "txt", &d.join("out.txt"), &[]);
-    convert(&e, &md, "md", "epub", &d.join("out.epub"), &[]);
+    convert(&e, &doc, office, "txt", &d.join("out.txt"), &[]);
+    if has("epub") {
+        convert(&e, &md, "md", "epub", &d.join("out.epub"), &[]);
+    }
     let _ = std::fs::remove_dir_all(&d);
 }
 

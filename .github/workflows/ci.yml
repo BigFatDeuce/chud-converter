@@ -25,6 +25,9 @@ jobs:
   test:
     name: Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Les miroirs apt sont parfois très lents (66 min observées pour LibreOffice et Calibre) :
+    # un blocage s'arrête ici au lieu de durer six heures.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -67,7 +70,7 @@ jobs:
       - name: Moteurs (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get install -y --no-install-recommends ffmpeg 7zip pandoc qpdf ghostscript             tesseract-ocr tesseract-ocr-eng tesseract-ocr-fra libvips-tools mkvtoolnix mediainfo             libimage-exiftool-perl calibre libreoffice-writer-nogui libreoffice-calc-nogui
+          sudo apt-get install -y --no-install-recommends -o Acquire::Retries=3 ffmpeg 7zip pandoc qpdf ghostscript             tesseract-ocr tesseract-ocr-eng tesseract-ocr-fra libvips-tools mkvtoolnix mediainfo             libimage-exiftool-perl calibre libreoffice-writer-nogui libreoffice-calc-nogui
           # ImageMagick 7 (« magick ») : Ubuntu ne fournit que la 6, on prend la version portable
           # officielle que l'application installe, avec la même empreinte.
           url=https://github.com/ImageMagick/ImageMagick/releases/download/7.1.2-36/ImageMagick-7.1.2-36-portable-Q16-HDRI-linux-x64.tar.xz
