@@ -50,6 +50,9 @@ installs in one click — no terminal, nothing to copy.
 - An engine whose files would exceed Windows' 260-character path limit is refused with a clear
   explanation (move the app to a shorter folder), instead of failing halfway.
 
+- Symbolic links inside ZIP archives (the Linux build of qpdf has some) are copied as plain files
+  when they point inside the archive, like in TAR archives, instead of failing the install.
+
 ### Internal
 - Unit tests of the native image and data engines no longer leave folders in the temporary
   directory.

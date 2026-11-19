@@ -634,6 +634,7 @@ fn extract_zip(archive: &Path, dest: &Path, cancel: &AtomicBool, report: Report)
     let mut zip =
         zip::ZipArchive::new(f).map_err(|e| InstallError::Failed(trf!("archive ZIP illisible : {}", "unreadable ZIP archive: {}", e)))?;
     let mut budget = Budget::new();
+    let mut links: Vec<(PathBuf, PathBuf)> = Vec::new();
     let total: u64 = (0..zip.len()).filter_map(|i| zip.by_index_raw(i).ok().map(|e| e.size())).sum();
     for i in 0..zip.len() {
         report(budget.bytes, total);
@@ -651,11 +652,23 @@ fn extract_zip(archive: &Path, dest: &Path, cancel: &AtomicBool, report: Report)
             )));
         };
         if entry.is_symlink() {
-            return Err(InstallError::Failed(trf!(
-                "lien refusé dans l'archive : {}",
-                "link refused in the archive: {}",
-                entry.name().unwrap_or_default()
-            )));
+            // Le contenu d'un lien est le chemin visé. Recopié à la fin s'il reste dans l'archive.
+            let mut link = String::new();
+            let resolved = std::io::Read::take(&mut entry, 4096)
+                .read_to_string(&mut link)
+                .ok()
+                .and_then(|_| safe_relative(&rel.parent().map(Path::to_path_buf).unwrap_or_default().join(link.trim())));
+            match resolved {
+                Some(r) => links.push((r, dest.join(&rel))),
+                None => {
+                    return Err(InstallError::Failed(trf!(
+                        "lien refusé dans l'archive : {}",
+                        "link refused in the archive: {}",
+                        entry.name().unwrap_or_default()
+                    )));
+                }
+            }
+            continue;
         }
         let target = dest.join(rel);
         if entry.is_dir() {
@@ -672,6 +685,29 @@ fn extract_zip(archive: &Path, dest: &Path, cancel: &AtomicBool, report: Report)
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(&target, std::fs::Permissions::from_mode(mode & 0o755));
         }
+    }
+    copy_links(dest, links, &mut budget)
+}
+
+/// Liens d'une archive recopiés comme fichiers ordinaires (plusieurs passes : un lien peut viser
+/// un autre lien). `links` : (cible relative déjà validée, emplacement du lien). Un lien vers un
+/// dossier ou vers rien n'est pas recopié ; les essais d'après installation diront s'il manquait.
+fn copy_links(dest: &Path, mut links: Vec<(PathBuf, PathBuf)>, budget: &mut Budget) -> Result<(), InstallError> {
+    for _ in 0..4 {
+        let mut left = Vec::new();
+        for (src, target) in links {
+            let src_path = dest.join(&src);
+            if src_path.is_file() {
+                if let Some(parent) = target.parent() {
+                    std::fs::create_dir_all(parent).map_err(|e| io_err(tr!("extraction", "extraction"), e))?;
+                }
+                let n = std::fs::copy(&src_path, &target).map_err(|e| io_err(tr!("extraction", "extraction"), e))?;
+                budget.add(n)?;
+            } else {
+                left.push((src, target));
+            }
+        }
+        links = left;
     }
     Ok(())
 }
@@ -809,24 +845,7 @@ fn extract_tar(archive: &Path, comp: Compression, dest: &Path, cancel: &AtomicBo
             }
         }
     }
-    // Liens recopiés (plusieurs passes : un lien peut viser un autre lien). Un lien vers un
-    // dossier ou vers rien n'est pas recopié ; les essais d'après installation diront s'il manquait.
-    for _ in 0..4 {
-        let mut left = Vec::new();
-        for (src, target) in links {
-            let src_path = dest.join(&src);
-            if src_path.is_file() {
-                if let Some(parent) = target.parent() {
-                    std::fs::create_dir_all(parent).map_err(|e| io_err(tr!("extraction", "extraction"), e))?;
-                }
-                let n = std::fs::copy(&src_path, &target).map_err(|e| io_err(tr!("extraction", "extraction"), e))?;
-                budget.add(n)?;
-            } else {
-                left.push((src, target));
-            }
-        }
-        links = left;
-    }
+    copy_links(dest, links, &mut budget)?;
     // Les en-têtes du tar comptent dans sa taille : la fin est annoncée explicitement.
     report(SCALE, SCALE);
     Ok(())
@@ -1318,6 +1337,29 @@ mod tests {
         std::fs::create_dir_all(&dest2).unwrap();
         assert!(extract_zip(&bad, &dest2, &AtomicBool::new(false), &mut |_, _| {}).is_err());
         assert!(!dir.join("evil.txt").exists());
+
+        // Liens Unix (qpdf pour Linux) : recopiés s'ils restent dans l'archive, refusés sinon.
+        let links = |target: &str| {
+            let mut buf = std::io::Cursor::new(Vec::new());
+            let mut w = zip::ZipWriter::new(&mut buf);
+            let o = zip::write::SimpleFileOptions::default();
+            w.start_file("lib/libx.so.30.4", o).unwrap();
+            w.write_all(b"ELF").unwrap();
+            w.add_symlink("lib/libx.so.30", target, o).unwrap();
+            w.finish().unwrap();
+            buf.into_inner()
+        };
+        let l = dir.join("links.zip");
+        std::fs::write(&l, links("libx.so.30.4")).unwrap();
+        let dest3 = dir.join("out3");
+        std::fs::create_dir_all(&dest3).unwrap();
+        extract_zip(&l, &dest3, &AtomicBool::new(false), &mut |_, _| {}).unwrap();
+        assert_eq!(std::fs::read(dest3.join("lib/libx.so.30")).unwrap(), b"ELF");
+        assert!(!std::fs::symlink_metadata(dest3.join("lib/libx.so.30")).unwrap().file_type().is_symlink());
+        std::fs::write(&l, links("../../etc/passwd")).unwrap();
+        let dest4 = dir.join("out4");
+        std::fs::create_dir_all(&dest4).unwrap();
+        assert!(extract_zip(&l, &dest4, &AtomicBool::new(false), &mut |_, _| {}).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
