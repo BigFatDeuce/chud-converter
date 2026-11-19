@@ -222,6 +222,19 @@ impl Engine for Pandoc {
         {
             return Verification::Failed(e);
         }
+        if to == "ipynb" {
+            // Lu directement : le lecteur ipynb des anciens Pandoc (Ubuntu 24.04) perd les tableaux.
+            return match std::fs::read(output).map_err(|e| e.to_string()).and_then(|b| notebook_words(&b)) {
+                Ok((cells, words)) if words > 0 => Verification::Decoded(trf!(
+                    "carnet relu : {cells} cellule(s), {words} mots",
+                    "notebook re-read: {cells} cell(s), {words} words"
+                )),
+                Ok(_) => Verification::Failed(
+                    tr!("le document produit ne contient aucun texte", "the produced document contains no text").into(),
+                ),
+                Err(e) => Verification::Failed(e),
+            };
+        }
         let Some(r) = reader(to).filter(|_| self.readers.contains(to)) else {
             return Verification::SignatureOnly;
         };
@@ -256,8 +269,33 @@ impl Engine for Pandoc {
     }
 }
 
+/// Cellules et mots d'un carnet Jupyter (`source` est une chaîne ou une liste de lignes).
+fn notebook_words(bytes: &[u8]) -> Result<(usize, usize), String> {
+    let invalid = || tr!("carnet Jupyter illisible", "unreadable Jupyter notebook").to_owned();
+    let v: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| invalid())?;
+    let cells = v.get("cells").and_then(|c| c.as_array()).ok_or_else(invalid)?;
+    let words = cells
+        .iter()
+        .map(|c| match c.get("source") {
+            Some(serde_json::Value::String(s)) => s.split_whitespace().count(),
+            Some(serde_json::Value::Array(a)) => a.iter().filter_map(|l| l.as_str()).map(|l| l.split_whitespace().count()).sum(),
+            _ => 0,
+        })
+        .sum();
+    Ok((cells.len(), words))
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn notebooks_are_read_directly() {
+        let nb = br#"{"cells":[{"cell_type":"markdown","source":["| a | b |\n","| 1 | 2 |"]},{"cell_type":"code","source":"x = 1"}]}"#;
+        assert_eq!(notebook_words(nb).unwrap(), (2, 13));
+        assert_eq!(notebook_words(br#"{"cells":[]}"#).unwrap(), (0, 0));
+        assert!(notebook_words(b"pas du json").is_err());
+    }
+
     use super::*;
 
     fn fake() -> Pandoc {

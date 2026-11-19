@@ -16,10 +16,12 @@ use chud_process::ProcessSpec;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const INPUTS: &[&str] = &["png", "jpeg", "tiff", "bmp", "gif", "webp", "pnm", "jp2"];
+// Pas de GIF : Leptonica d'Ubuntu échoue sur les GIF animés (« gif: no pix returned ») même avec
+// giflib ; un autre moteur les convertit d'abord en PNG.
+const INPUTS: &[&str] = &["png", "jpeg", "tiff", "bmp", "webp", "pnm", "jp2"];
 
-/// Formats lus d'après la liste des bibliothèques affichée par `tesseract --version` : une
-/// compilation de Leptonica sans giflib (Ubuntu) ne lit pas le GIF. BMP et PNM sont toujours lus ;
+/// Formats lus d'après la liste des bibliothèques affichée par `tesseract --version` (une
+/// compilation de Leptonica sans libwebp ne lit pas le WebP). BMP et PNM sont toujours lus ;
 /// si la liste est introuvable, tous les formats sont gardés (la conversion dira si elle échoue).
 fn readable_inputs(version_text: &str) -> Vec<&'static str> {
     let t = version_text.to_lowercase();
@@ -33,7 +35,6 @@ fn readable_inputs(version_text: &str) -> Vec<&'static str> {
             "png" => t.contains("libpng"),
             "jpeg" => t.contains("libjpeg"),
             "tiff" => t.contains("libtiff"),
-            "gif" => t.contains("libgif") || t.contains("giflib"),
             "webp" => t.contains("libwebp"),
             "jp2" => t.contains("libopenjp2"),
             _ => true,
@@ -216,9 +217,9 @@ mod tests {
     fn inputs_follow_leptonica_libraries() {
         let ubuntu = "tesseract 5.3.4\n leptonica-1.82.0\n  libjpeg 8d (libjpeg-turbo 2.1.5) : libpng 1.6.43 : libtiff 4.5.1 : zlib 1.3 : libwebp 1.3.2 : libopenjp2 2.5.0\n";
         let ins = readable_inputs(ubuntu);
-        assert!(ins.contains(&"png") && ins.contains(&"webp") && ins.contains(&"bmp") && !ins.contains(&"gif"));
-        let full = "leptonica-1.85.0\n  libgif 5.2.2 : libjpeg 8d : libpng 1.6.44 : libtiff 4.7.0 : zlib 1.3.1 : libwebp 1.4.0 : libopenjp2 2.5.2\n";
-        assert_eq!(readable_inputs(full).len(), INPUTS.len());
+        assert!(ins.contains(&"png") && ins.contains(&"webp") && ins.contains(&"bmp") && ins.contains(&"jp2"));
+        let old = "leptonica-1.79.0\n  libjpeg 8d : libpng 1.6.37 : zlib 1.2.11\n";
+        assert!(!readable_inputs(old).contains(&"webp") && !readable_inputs(old).contains(&"tiff"));
         assert_eq!(readable_inputs("rien").len(), INPUTS.len());
     }
 

@@ -57,8 +57,10 @@ installs in one click — no terminal, nothing to copy.
 - A download cut by the network, or refused for a moment by the server, is tried again twice
   before the install gives up.
 - libvips builds whose HEIF library has no AV1 encoder (Ubuntu packages) no longer offer AVIF:
-  writing is tried at startup. Tesseract no longer offers image formats its Leptonica build
-  cannot read (GIF on Ubuntu).
+  writing is tried at startup. Tesseract no longer reads GIF directly (Ubuntu's build fails on
+  animated GIFs; another engine turns them into PNG first) nor formats its Leptonica build lacks.
+- Jupyter notebooks produced by Pandoc are checked by reading their cells directly: older Pandoc
+  versions (Ubuntu 24.04) lost tables when re-reading them, which failed correct conversions.
 - Comic book archives (CBZ, CBR, CB7) are no longer used as an intermediate step: a folder or
   archive of arbitrary files turned into a "comic" made Calibre fail with "no pages found".
 
