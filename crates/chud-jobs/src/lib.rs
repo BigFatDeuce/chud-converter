@@ -591,21 +591,47 @@ fn finalize(staged: &Path, wanted: &Path, source: &Path, conflict: Conflict, is_
     Ok(Some(target))
 }
 
-fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
-    match std::fs::rename(from, to) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            // Volumes différents : copie vers un fichier temporaire voisin, puis renommage.
-            let dir = to.parent().unwrap_or(Path::new("."));
-            let tmp = dir.join(format!(".~chud-{}.part", std::process::id()));
-            std::fs::copy(from, &tmp)?;
-            let r = std::fs::rename(&tmp, to);
-            if r.is_err() {
-                let _ = std::fs::remove_file(&tmp);
+/// Fichier tenu un instant par un autre programme (aperçu de l'Explorateur, indexation,
+/// antivirus) : Windows refuse alors l'accès (erreurs 5, 32, 33).
+fn is_busy(e: &std::io::Error) -> bool {
+    cfg!(windows) && (e.kind() == std::io::ErrorKind::PermissionDenied || matches!(e.raw_os_error(), Some(32 | 33)))
+}
+
+/// Réessaie pendant une dizaine de secondes tant que le fichier est occupé.
+fn retry_busy<T>(mut op: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let mut tries = 0;
+    loop {
+        match op() {
+            Err(e) if is_busy(&e) && tries < 40 => {
+                tries += 1;
+                std::thread::sleep(Duration::from_millis(250));
             }
-            r
+            r => return r,
         }
     }
+}
+
+fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    match retry_busy(|| std::fs::rename(from, to)) {
+        Ok(()) => Ok(()),
+        Err(_) => copy_then_rename(from, to),
+    }
+}
+
+/// Volumes différents : copie vers un fichier temporaire voisin, propre à cette tâche (les
+/// conversions simultanées ne doivent jamais partager ce nom), puis renommage.
+fn copy_then_rename(from: &Path, to: &Path) -> std::io::Result<()> {
+    static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = to.parent().unwrap_or(Path::new("."));
+    let tmp = dir.join(format!(".~chud-{}-{n}.part", std::process::id()));
+    let r = retry_busy(|| std::fs::copy(from, &tmp)).and_then(|_| retry_busy(|| std::fs::rename(&tmp, to)));
+    if r.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    } else {
+        let _ = std::fs::remove_file(from);
+    }
+    r
 }
 
 fn move_dir_contents(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -613,12 +639,12 @@ fn move_dir_contents(from: &Path, to: &Path) -> std::io::Result<()> {
         let ent = ent?;
         let dest = to.join(ent.file_name());
         let ft = ent.file_type()?;
-        if std::fs::rename(ent.path(), &dest).is_err() {
+        if retry_busy(|| std::fs::rename(ent.path(), &dest)).is_err() {
             if ft.is_dir() {
                 std::fs::create_dir(&dest)?;
                 move_dir_contents(&ent.path(), &dest)?;
             } else if ft.is_file() {
-                std::fs::copy(ent.path(), &dest)?;
+                retry_busy(|| std::fs::copy(ent.path(), &dest))?;
             } else {
                 return Err(std::io::Error::other(chud_core::tr!("lien inattendu dans le résultat", "unexpected link in the result")));
             }
@@ -727,6 +753,36 @@ fn human_size(n: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// Régression : des conversions simultanées vers un autre disque partageaient le même
+    /// fichier temporaire (« os error 32 », voire contenus mélangés).
+    #[test]
+    fn simultaneous_cross_volume_moves_never_share_a_temp_file() {
+        let dir = std::env::temp_dir().join(format!("chud-move-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("out")).unwrap();
+        std::thread::scope(|s| {
+            for i in 0..16 {
+                let dir = &dir;
+                s.spawn(move || {
+                    let src = dir.join(format!("src-{i}"));
+                    let body = vec![i as u8; 4 * 1024 * 1024];
+                    std::fs::write(&src, &body).unwrap();
+                    let dst = dir.join("out").join(format!("piste {i}.mp3"));
+                    super::copy_then_rename(&src, &dst).unwrap();
+                    assert_eq!(std::fs::read(&dst).unwrap(), body);
+                    assert!(!src.exists());
+                });
+            }
+        });
+        let left: Vec<_> = std::fs::read_dir(dir.join("out"))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".part"))
+            .collect();
+        assert!(left.is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn human_sizes_in_french() {
         assert_eq!(super::human_size(512), "512 o");

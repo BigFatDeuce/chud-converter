@@ -168,11 +168,30 @@ pub(crate) fn deliver(produced: &Path, output: &Path, tool: &str) -> Result<(), 
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    if std::fs::rename(produced, output).is_err() {
-        std::fs::copy(produced, output)?;
+    if retry_busy(|| std::fs::rename(produced, output)).is_err() {
+        retry_busy(|| std::fs::copy(produced, output))?;
         let _ = std::fs::remove_file(produced);
     }
     Ok(())
+}
+
+/// Réessaie une dizaine de secondes tant qu'un autre programme (antivirus, indexation) tient
+/// le fichier : Windows refuse alors l'accès (erreurs 5, 32, 33).
+pub(crate) fn retry_busy<T>(mut op: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let mut tries = 0;
+    loop {
+        match op() {
+            Err(e)
+                if cfg!(windows)
+                    && (e.kind() == std::io::ErrorKind::PermissionDenied || matches!(e.raw_os_error(), Some(32 | 33)))
+                    && tries < 40 =>
+            {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(250));
+            }
+            r => return r,
+        }
+    }
 }
 
 /// Premier fichier du dossier portant cette extension (sorties nommées par l'outil lui-même).
