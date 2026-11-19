@@ -65,15 +65,17 @@ fn pandoc_documents() {
     let md = d.join("é [1] %d.md");
     std::fs::write(&md, "# Titre\n\nUn *paragraphe* avec un tableau :\n\n| a | b |\n|---|---|\n| 1 | 2 |\n").unwrap();
     // Paquets Linux sans fichiers de données intégrés : DOCX et EPUB ne sont pas proposés en
-    // bac à sable (essai au démarrage) ; ODT sert alors de format bureautique.
+    // bac à sable (essai au démarrage) ; on passe alors par ODT ou HTML.
     let has = |to: &str| e.conversions().iter().any(|c| c.from.as_str() == "md" && c.to.as_str() == to);
-    let office = if has("docx") { "docx" } else { "odt" };
-    eprintln!("pandoc : DOCX {}, EPUB {}", has("docx"), has("epub"));
+    let office = ["docx", "odt", "html"].into_iter().find(|t| has(t)).unwrap();
+    eprintln!("pandoc : DOCX {}, ODT {}, EPUB {}", has("docx"), has("odt"), has("epub"));
     let doc = d.join(format!("out é.{office}"));
     assert!(matches!(convert(&e, &md, "md", office, &doc, &[]), Verification::Decoded(_)));
-    let html = d.join("out.html");
-    assert!(matches!(convert(&e, &doc, office, "html", &html, &[]), Verification::Decoded(_)));
-    assert!(std::fs::read_to_string(&html).unwrap().contains("paragraphe"));
+    if office != "html" {
+        let html = d.join("out.html");
+        assert!(matches!(convert(&e, &doc, office, "html", &html, &[]), Verification::Decoded(_)));
+        assert!(std::fs::read_to_string(&html).unwrap().contains("paragraphe"));
+    }
     convert(&e, &doc, office, "txt", &d.join("out.txt"), &[]);
     if has("epub") {
         convert(&e, &md, "md", "epub", &d.join("out.epub"), &[]);

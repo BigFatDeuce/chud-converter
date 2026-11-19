@@ -4,7 +4,7 @@
 //!   n'accède jamais au réseau (images distantes, `\include`, feuilles de style…).
 //! - Les formats lus et écrits sont demandés à l'exécutable au démarrage.
 //! - Certaines compilations (paquets Debian, Ubuntu, Fedora) n'intègrent pas leurs fichiers de
-//!   données : en `--sandbox`, elles ne savent plus écrire DOCX ni EPUB (« Could not find data
+//!   données : en `--sandbox`, elles ne savent plus écrire DOCX, ODT ni EPUB (« Could not find data
 //!   file »). Ces sorties sont alors essayées au démarrage et retirées si elles échouent, plutôt
 //!   que de lever le bac à sable (LibreOffice et Calibre les produisent aussi).
 //! - Pandoc reconstruit le document à partir de sa structure : les styles et la mise en page
@@ -100,9 +100,13 @@ impl Pandoc {
             Ok(names(&out.stdout_text()))
         };
         let (inputs, mut outputs) = (list("--list-input-formats")?, list("--list-output-formats")?);
-        for w in ["docx", "epub3"] {
-            if outputs.contains(w) && !sandbox_can_write(&exe, w) {
-                outputs.remove(w);
+        // DOCX réussi : les fichiers de données sont intégrés, rien d'autre à essayer.
+        if outputs.contains("docx") && !sandbox_can_write(&exe, "docx") {
+            outputs.remove("docx");
+            for w in ["odt", "epub3"] {
+                if outputs.contains(w) && !sandbox_can_write(&exe, w) {
+                    outputs.remove(w);
+                }
             }
         }
         Ok(Self::with_formats(exe, version, origin, &inputs, &outputs))
