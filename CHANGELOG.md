@@ -4,6 +4,11 @@ All notable changes to Chud Converter. Versions follow [Semantic Versioning](htt
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-11-19
+
+Fixes for converting a whole album at once (several files to another drive), and a new
+"Original quality" choice that gets audio, subtitles, video or images out without any loss.
+
 ### Added
 - **Original quality**: above the formats, the app now suggests what gets the content out
   without losing anything — the audio track as it is (an MP3 inside an MKV comes out as an MP3,
