@@ -49,7 +49,6 @@ installs in one click — no terminal, nothing to copy.
   scanning the new files: the app now waits a few seconds and tries again.
 - An engine whose files would exceed Windows' 260-character path limit is refused with a clear
   explanation (move the app to a shorter folder), instead of failing halfway.
-
 - Symbolic links inside ZIP archives (the Linux build of qpdf has some) are copied as plain files
   when they point inside the archive, like in TAR archives, instead of failing the install.
 - Pandoc builds that do not embed their data files (Debian, Ubuntu and Fedora packages) cannot
@@ -57,6 +56,11 @@ installs in one click — no terminal, nothing to copy.
   they fail (LibreOffice and Calibre still offer them), instead of failing at conversion time.
 - A download cut by the network, or refused for a moment by the server, is tried again twice
   before the install gives up.
+- libvips builds whose HEIF library has no AV1 encoder (Ubuntu packages) no longer offer AVIF:
+  writing is tried at startup. Tesseract no longer offers image formats its Leptonica build
+  cannot read (GIF on Ubuntu).
+- Comic book archives (CBZ, CBR, CB7) are no longer used as an intermediate step: a folder or
+  archive of arbitrary files turned into a "comic" made Calibre fail with "no pages found".
 
 ### Internal
 - Unit tests of the native image and data engines no longer leave folders in the temporary

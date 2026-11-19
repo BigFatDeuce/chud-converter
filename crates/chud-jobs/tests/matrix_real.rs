@@ -332,8 +332,20 @@ fn convert_all(e: &Env, sources: &[PathBuf]) -> Vec<Outcome> {
     results.into_inner().unwrap()
 }
 
+/// Refus attendu : les échantillons synthétiques ne contiennent aucun texte, la reconnaissance
+/// (OCR) doit donc échouer clairement plutôt que produire un fichier vide. L'OCR sur une vraie
+/// image de texte est vérifiée dans `chud-engines/tests/tools_real.rs`.
+fn expected_refusal(error: &str) -> bool {
+    error.contains("aucun texte reconnu dans l'image")
+}
+
 fn report(results: &[Outcome]) {
-    let failures: Vec<String> = results.iter().filter_map(|o| o.error.as_ref().map(|e| format!("  {} : {e}", o.label))).collect();
+    let refused = results.iter().filter(|o| o.error.as_deref().is_some_and(expected_refusal)).count();
+    if refused > 0 {
+        eprintln!("{refused} reconnaissance(s) de texte refusée(s) faute de texte, comme attendu");
+    }
+    let failures: Vec<String> =
+        results.iter().filter_map(|o| o.error.as_ref().filter(|e| !expected_refusal(e)).map(|e| format!("  {} : {e}", o.label))).collect();
     let weak: Vec<&str> = results.iter().filter(|o| o.weak_check).map(|o| o.label.as_str()).collect();
     eprintln!("{} conversions, {} échecs, {} vérifiées par signature seulement", results.len(), failures.len(), weak.len());
     assert!(failures.is_empty(), "{} conversion(s) proposée(s) en échec :\n{}", failures.len(), failures.join("\n"));

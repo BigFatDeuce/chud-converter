@@ -54,6 +54,23 @@ fn parse_foreign(text: &str) -> (HashSet<String>, HashSet<String>) {
     (load, save)
 }
 
+/// Essai réel d'écriture d'une petite image (dossier temporaire retiré ensuite).
+fn can_write(exe: &Path, ext: &str) -> bool {
+    static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("chud-vips-check-{}-{n}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return true; // essai impossible : la conversion dira elle-même si elle échoue
+    }
+    let out = format!("out.{ext}");
+    let spec = ProcessSpec::new(exe).args(["black", out.as_str(), "16", "16"]).cwd(&dir).timeout(Some(std::time::Duration::from_secs(30)));
+    let ok = chud_process::run_capture(&spec, 64 * 1024).is_ok_and(|o| o.success())
+        && std::fs::metadata(dir.join(&out)).is_ok_and(|m| m.len() > 0);
+    let _ = std::fs::remove_dir_all(&dir);
+    ok
+}
+
 pub struct Libvips {
     info: EngineInfo,
     exe: PathBuf,
@@ -63,9 +80,14 @@ pub struct Libvips {
 impl Libvips {
     pub fn new(exe: PathBuf, version: Option<String>, origin: EngineOrigin) -> Result<Self, String> {
         let out = tool::query(&exe, &["-l", "foreign"])?;
-        let (load, save) = parse_foreign(&out.stdout_text());
+        let (load, mut save) = parse_foreign(&out.stdout_text());
         if load.is_empty() || save.is_empty() {
             return Err(tr!("liste des formats libvips illisible", "unreadable libvips format list").into());
+        }
+        // heifsave est annoncé même quand libheif n'a pas d'encodeur AV1 (paquets Ubuntu) :
+        // « Unsupported compression » à chaque conversion. L'AVIF est donc essayé pour de vrai.
+        if save.contains("avif") && !can_write(&exe, "avif") {
+            save.remove("avif");
         }
         Ok(Self::with_suffixes(exe, version, origin, &load, &save))
     }

@@ -180,6 +180,10 @@ pub struct FormatDef {
     pub variant_of: Option<FormatId>,
     #[serde(default)]
     pub pivot: bool,
+    /// Jamais utilisé comme étape intermédiaire : seul un vrai fichier de ce format, donné en
+    /// source, a le contenu attendu (une BD fabriquée à partir d'un dossier quelconque n'en est pas une).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub source_only: bool,
     #[serde(default)]
     pub limitations: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -210,6 +214,11 @@ impl FormatDef {
 
     pub fn is_variant(&self) -> bool {
         self.variant_of.is_some()
+    }
+
+    /// Peut servir d'étape intermédiaire dans une conversion en plusieurs étapes.
+    pub fn can_be_intermediate(&self) -> bool {
+        !self.is_variant() && !self.source_only
     }
 }
 

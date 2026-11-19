@@ -18,6 +18,29 @@ use std::time::Duration;
 
 const INPUTS: &[&str] = &["png", "jpeg", "tiff", "bmp", "gif", "webp", "pnm", "jp2"];
 
+/// Formats lus d'après la liste des bibliothèques affichée par `tesseract --version` : une
+/// compilation de Leptonica sans giflib (Ubuntu) ne lit pas le GIF. BMP et PNM sont toujours lus ;
+/// si la liste est introuvable, tous les formats sont gardés (la conversion dira si elle échoue).
+fn readable_inputs(version_text: &str) -> Vec<&'static str> {
+    let t = version_text.to_lowercase();
+    if !t.contains("libpng") && !t.contains("libjpeg") {
+        return INPUTS.to_vec();
+    }
+    INPUTS
+        .iter()
+        .copied()
+        .filter(|f| match *f {
+            "png" => t.contains("libpng"),
+            "jpeg" => t.contains("libjpeg"),
+            "tiff" => t.contains("libtiff"),
+            "gif" => t.contains("libgif") || t.contains("giflib"),
+            "webp" => t.contains("libwebp"),
+            "jp2" => t.contains("libopenjp2"),
+            _ => true,
+        })
+        .collect()
+}
+
 pub struct Tesseract {
     info: EngineInfo,
     exe: PathBuf,
@@ -57,12 +80,20 @@ impl Tesseract {
         if langs.is_empty() {
             return Err(tr!("aucune langue de reconnaissance installée", "no recognition language installed").into());
         }
-        Ok(Self::with_langs(exe, version, origin, langs))
+        let inputs = match tool::query(&exe, &["--version"]) {
+            Ok(v) => readable_inputs(&format!("{}\n{}", v.stdout_text(), v.stderr_tail)),
+            Err(_) => INPUTS.to_vec(),
+        };
+        Ok(Self::with_inputs(exe, version, origin, langs, &inputs))
     }
 
     pub fn with_langs(exe: PathBuf, version: Option<String>, origin: EngineOrigin, langs: Vec<String>) -> Self {
+        Self::with_inputs(exe, version, origin, langs, INPUTS)
+    }
+
+    fn with_inputs(exe: PathBuf, version: Option<String>, origin: EngineOrigin, langs: Vec<String>, inputs: &[&str]) -> Self {
         let mut caps = Vec::new();
-        for from in INPUTS {
+        for from in inputs {
             caps.push(ConversionCap::new(from, "txt", Fidelity::Lossy, &FeatureSet::new(), 6));
             caps.push(ConversionCap::new(from, "pdf", Fidelity::Lossy, &features(&["images", "text_layer", "multipage"]), 6));
         }
@@ -128,7 +159,7 @@ impl Engine for Tesseract {
     fn execute(&self, task: &StepTask, ctx: &ExecContext) -> Result<StepOutput, EngineError> {
         ctx.check_cancelled()?;
         let (from, to) = (task.from.as_str(), task.to.as_str());
-        if !INPUTS.contains(&from) || !matches!(to, "txt" | "pdf") {
+        if !self.caps.iter().any(|c| c.from.as_str() == from) || !matches!(to, "txt" | "pdf") {
             return Err(EngineError::Unsupported(format!("{from} → {to}")));
         }
         let default = self.default_lang();
@@ -180,6 +211,17 @@ impl Engine for Tesseract {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn inputs_follow_leptonica_libraries() {
+        let ubuntu = "tesseract 5.3.4\n leptonica-1.82.0\n  libjpeg 8d (libjpeg-turbo 2.1.5) : libpng 1.6.43 : libtiff 4.5.1 : zlib 1.3 : libwebp 1.3.2 : libopenjp2 2.5.0\n";
+        let ins = readable_inputs(ubuntu);
+        assert!(ins.contains(&"png") && ins.contains(&"webp") && ins.contains(&"bmp") && !ins.contains(&"gif"));
+        let full = "leptonica-1.85.0\n  libgif 5.2.2 : libjpeg 8d : libpng 1.6.44 : libtiff 4.7.0 : zlib 1.3.1 : libwebp 1.4.0 : libopenjp2 2.5.2\n";
+        assert_eq!(readable_inputs(full).len(), INPUTS.len());
+        assert_eq!(readable_inputs("rien").len(), INPUTS.len());
+    }
+
     use super::*;
 
     #[test]

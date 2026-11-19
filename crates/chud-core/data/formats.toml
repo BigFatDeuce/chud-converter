@@ -14,6 +14,7 @@
 #   based_on     formats « porteurs » reconnus par signature (ex. CBZ → zip, NEF → tiff)
 #   variant_of   variante proposée comme cible mais jamais renvoyée par la détection
 #   pivot        format intermédiaire sans perte privilégié par le planificateur
+#   source_only  jamais étape intermédiaire (ex. CBZ : seul un vrai fichier BD contient des pages)
 #   limitations  limites du format affichées avant conversion
 #   limitations_en  les mêmes, en anglais (obligatoire avec limitations)
 
@@ -1204,6 +1205,7 @@ mime = ["application/vnd.comicbook+zip"]
 compression = "none"
 features = ["multipage", "images", "directories"]
 based_on = ["zip"]
+source_only = true
 
 [[format]]
 id = "cbr"
@@ -1215,6 +1217,7 @@ mime = ["application/vnd.comicbook-rar"]
 compression = "none"
 features = ["multipage", "images", "directories"]
 based_on = ["rar"]
+source_only = true
 
 [[format]]
 id = "cb7"
@@ -1225,6 +1228,7 @@ extensions = ["cb7"]
 compression = "none"
 features = ["multipage", "images", "directories"]
 based_on = ["7z"]
+source_only = true
 
 [[format]]
 id = "cbt"

@@ -385,8 +385,9 @@ impl<'a> Planner<'a> {
                 if has_essential_content(self.catalog, &e.to, &rem) {
                     candidates.entry(e.to.clone()).or_default().push((cost.clone(), new_path.clone()));
                 }
-                // Les variantes (ALAC, PDF/A…) ne servent jamais d'intermédiaire.
-                if !self.catalog.get(e.to.as_str()).is_some_and(|f| f.is_variant()) {
+                // Les variantes (ALAC, PDF/A…) et les formats « source seulement » (CBZ…) ne
+                // servent jamais d'intermédiaire.
+                if self.catalog.get(e.to.as_str()).is_some_and(|f| f.can_be_intermediate()) {
                     nodes.push(Node { format: e.to.clone(), path: new_path, remaining: rem });
                     heap.push(Reverse((cost, nodes.len() - 1)));
                 }
@@ -547,6 +548,19 @@ mod tests {
         p.add_engine(&EngineId::new("x"), &[cap("mp3", "flac", Fidelity::Lossless, &["audio", "tags"], 1)]);
         let plan = &p.plan(&"mp3".into(), None, &"flac".into())[0];
         assert!(plan.report.warnings.iter().any(|w| matches!(w, Warning::SourceAlreadyLossy { .. })));
+    }
+
+    #[test]
+    fn comic_books_are_never_intermediates() {
+        let mut p = Planner::new(cat());
+        p.add_engine(
+            &EngineId::new("x"),
+            &[cap("zip", "cbz", Fidelity::Lossless, &["images"], 1), cap("cbz", "epub", Fidelity::Lossy, &["images"], 1)],
+        );
+        let all = p.plan_all(&"zip".into(), None);
+        assert!(all.contains_key(&FormatId::new("cbz")));
+        assert!(!all.contains_key(&FormatId::new("epub")));
+        assert!(p.plan_all(&"cbz".into(), None).contains_key(&FormatId::new("epub")));
     }
 
     #[test]
