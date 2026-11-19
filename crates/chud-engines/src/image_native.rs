@@ -568,11 +568,33 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
-    fn tmpdir(name: &str) -> std::path::PathBuf {
+    /// Dossier de test retiré à la fin du test, même en cas d'échec.
+    struct TmpDir(std::path::PathBuf);
+
+    impl std::ops::Deref for TmpDir {
+        type Target = std::path::PathBuf;
+        fn deref(&self) -> &std::path::PathBuf {
+            &self.0
+        }
+    }
+
+    impl AsRef<Path> for TmpDir {
+        fn as_ref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TmpDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn tmpdir(name: &str) -> TmpDir {
         let d = std::env::temp_dir().join(format!("chud-img-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
-        d
+        TmpDir(d)
     }
 
     fn sample(path: &Path, alpha: bool) -> RgbaImage {

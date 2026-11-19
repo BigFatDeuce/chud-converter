@@ -51,6 +51,8 @@ installs in one click — no terminal, nothing to copy.
   explanation (move the app to a shorter folder), instead of failing halfway.
 
 ### Internal
+- Unit tests of the native image and data engines no longer leave folders in the temporary
+  directory.
 - Linux CI installs every engine (ImageMagick 7 from its official portable build, checked by
   SHA-256) and runs the real adapter tests with `CHUD_REQUIRE_TOOLS=1`.
 - `engine-sources.yml` now installs the thirteen engines on Windows, Linux x64 and ARM64.

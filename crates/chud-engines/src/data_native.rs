@@ -706,9 +706,12 @@ mod tests {
             source: None,
         };
         let ctx = ExecContext::new(dir.clone());
-        let r = e.execute(&task, &ctx)?;
-        assert!(e.verify(&out, &task, &ctx).is_ok());
-        Ok((std::fs::read_to_string(&out).unwrap(), r))
+        let r = e.execute(&task, &ctx).map(|r| {
+            assert!(e.verify(&out, &task, &ctx).is_ok());
+            (std::fs::read_to_string(&out).unwrap(), r)
+        });
+        let _ = std::fs::remove_dir_all(&dir);
+        r
     }
 
     #[test]

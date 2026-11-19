@@ -128,9 +128,25 @@ impl Engine for ExifTool {
     }
 
     fn probe(&self, path: &Path, _format: &FormatId) -> Option<SourceInfo> {
-        let dir = std::env::temp_dir().join(format!("chud-exiftool-{}", std::process::id()));
+        // Un dossier par analyse, retiré ensuite (les analyses peuvent être simultanées).
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("chud-exiftool-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&dir).ok()?;
-        let args = dir.join(format!("args-{}.txt", SEQ.fetch_add(1, Ordering::Relaxed)));
+        let r = self.probe_with(path, &dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        r
+    }
+
+    fn execute(&self, _task: &StepTask, _ctx: &ExecContext) -> Result<StepOutput, EngineError> {
+        Err(EngineError::Unsupported(
+            tr!("ExifTool analyse les fichiers, il ne les convertit pas", "ExifTool analyzes files, it does not convert them").into(),
+        ))
+    }
+}
+
+impl ExifTool {
+    fn probe_with(&self, path: &Path, dir: &Path) -> Option<SourceInfo> {
+        let args = dir.join("args.txt");
         // Un argument par ligne ; un nom de fichier ne peut pas contenir de saut de ligne ici.
         let p = path.to_str()?;
         if p.contains(['\n', '\r']) {
@@ -141,18 +157,10 @@ impl Engine for ExifTool {
             .args(["-charset", "filename=UTF8", "-j", "-G", "-n", "-q", "-@"])
             .arg(&args)
             .timeout(Some(Duration::from_secs(60)));
-        let out = chud_process::run_capture(&spec, 16 * 1024 * 1024);
-        let _ = std::fs::remove_file(&args);
-        let out = out.ok()?;
+        let out = chud_process::run_capture(&spec, 16 * 1024 * 1024).ok()?;
         let v: Value = serde_json::from_slice(&out.stdout).ok()?;
         let tags = v.as_array()?.first()?.as_object()?;
         Some(summarize(tags))
-    }
-
-    fn execute(&self, _task: &StepTask, _ctx: &ExecContext) -> Result<StepOutput, EngineError> {
-        Err(EngineError::Unsupported(
-            tr!("ExifTool analyse les fichiers, il ne les convertit pas", "ExifTool analyzes files, it does not convert them").into(),
-        ))
     }
 }
 
