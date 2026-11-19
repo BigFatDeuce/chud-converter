@@ -505,10 +505,27 @@ fn download(
     cancel: &AtomicBool,
     progress: &mut dyn FnMut(u64),
 ) -> Result<(), InstallError> {
-    let mut resp = client
-        .get(&f.url)
-        .send()
-        .map_err(|e| InstallError::Failed(trf!("téléchargement impossible ({}) : {}", "download failed ({}): {}", f.url, e)))?;
+    // Coupure réseau ou serveur momentanément indisponible (5xx) : deux nouveaux essais espacés
+    // (les miroirs de SourceForge échouent parfois). Une réponse 4xx ne change pas : pas d'essai.
+    let mut attempt = 0;
+    let mut resp = loop {
+        attempt += 1;
+        let r = client.get(&f.url).send();
+        let retry = match &r {
+            Ok(resp) => resp.status().is_server_error(),
+            Err(e) => !e.is_builder() && !e.is_redirect(),
+        };
+        if !retry || attempt >= 3 {
+            break r
+                .map_err(|e| InstallError::Failed(trf!("téléchargement impossible ({}) : {}", "download failed ({}): {}", f.url, e)))?;
+        }
+        for _ in 0..(attempt * 20) {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(InstallError::Cancelled);
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    };
     if !resp.status().is_success() {
         return Err(InstallError::Failed(trf!("le serveur a répondu {} pour {}", "the server answered {} for {}", resp.status(), f.url)));
     }

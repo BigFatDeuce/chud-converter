@@ -23,7 +23,9 @@ use std::time::Duration;
 /// (format du catalogue, décodeur ImageMagick, écriture autorisée)
 const MAP: &[(&str, &str, bool)] = &[
     ("png", "PNG", true),
-    ("apng", "APNG", true),
+    // Lecture seulement : pour une image fixe, ImageMagick écrit un PNG ordinaire sous le nom
+    // APNG (sans bloc d'animation), que FFmpeg refuse ensuite. FFmpeg et le moteur natif écrivent l'APNG.
+    ("apng", "APNG", false),
     ("jpeg", "JPEG", true),
     ("webp", "WEBP", true),
     ("avif", "AVIF", true),
@@ -254,7 +256,14 @@ mod tests {
         assert_eq!(f["HEIC"], (true, false));
         let im = ImageMagick::with_formats(PathBuf::from("/x"), None, EngineOrigin::System, &f);
         let has = |a: &str, b: &str| im.caps.iter().any(|c| c.from.as_str() == a && c.to.as_str() == b);
-        assert!(has("heic", "png") && has("xcf", "apng") && !has("png", "heic") && !has("png", "pdf"));
+        assert!(
+            has("heic", "png")
+                && has("xcf", "png")
+                && has("apng", "png")
+                && !has("png", "apng")
+                && !has("png", "heic")
+                && !has("png", "pdf")
+        );
         assert_eq!(raster_fidelity("png", "jpeg"), Fidelity::Lossy);
         assert_eq!(raster_fidelity("cr2", "tiff"), Fidelity::Lossy);
         assert_eq!(raster_fidelity("psd", "png"), Fidelity::Depends);
