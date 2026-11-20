@@ -18,7 +18,13 @@
   const busy = $derived(list.some((e) => store.engineOps[e.id]?.state === "running") || store.bulkInstall?.state === "running");
 
   function uses(e: EngineView): string {
-    const kinds = e.categories.filter((c) => c !== "image").map((c) => categoryLabel(c as Category).toLowerCase());
+    // Les images courantes marchent déjà sans moteur : seules les autres familles sont citées,
+    // sauf pour un moteur d'images (ImageMagick, libvips), qui apporte les formats avancés.
+    const others = e.categories.filter((c) => c !== "image");
+    if (others.length === 0 && e.categories.includes("image")) {
+      return L("images avancées (PSD, HEIC, RAW, JPEG XL…)", "advanced images (PSD, HEIC, RAW, JPEG XL…)");
+    }
+    const kinds = others.map((c) => categoryLabel(c as Category).toLowerCase());
     return new Intl.ListFormat(locale(), { type: "conjunction" }).format(kinds);
   }
 

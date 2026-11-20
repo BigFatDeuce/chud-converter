@@ -106,7 +106,7 @@ et Calibre (≈ 290 Mo) sont les plus longs.
 | 57 | Copier `notes.md` sous le nom `essai [1] %d.md`, le convertir en DOCX | Réussit : les `[ ]` et `%d` du nom ne sont jamais interprétés par un moteur |
 | 58 | Ligne de commande : `chud.exe engines`, puis `chud.exe engines install qpdf` | Tous les moteurs listés comme installables ; installation avec ses étapes |
 
-## Dossiers d'album et qualité d'origine (nouveau)
+## Dossiers d'album et qualité d'origine (0.2.1)
 
 Prenez un dossier de musique à vous (un album avec sa pochette, ou des MKV « gamerip »), si
 possible sur **un autre disque** que celui de l'application.
@@ -120,6 +120,24 @@ possible sur **un autre disque** que celui de l'application.
 | 63 | Convertir les N pistes d'un coup avec **Audio d'origine**, puis avec le préréglage **MP3**, vers un autre disque | Toutes réussissent (plus d'« os error 32 ») ; avec le préréglage : « copié tel quel : le ré-encoder en 192 kbit/s n'améliorerait pas sa qualité » |
 | 64 | `Exemples\vacances.mkv` | **Qualité d'origine** : audio d'origine, sous-titres d'origine (ASS) ; pas « Vidéo d'origine » (c'est déjà un MKV) |
 | 65 | Une photo JPEG à vous (pas `faux.jpg`, qui est en réalité un PNG) | **Qualité d'origine → Image sans perte .png** |
+
+## Images, livres et Linux (nouveau, 0.3.0)
+
+Les moteurs ImageMagick, libvips, Calibre, Pandoc et LibreOffice doivent être installés (écran
+**Moteurs**).
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 66 | `Exemples\grande-image.png` (1024 × 512) → **ICO** | Réussit ; le plan et le rapport disent « redimensionnement 1024×512 → 256×128 (taille maximale d'une icône) » |
+| 67 | Glisser `Exemples\image.tga` | Reconnu comme **Targa (TGA)**, plus comme « Curseur Windows » |
+| 68 | `Exemples\image.pcx` | **APNG** n'est plus proposé (une image fixe ne peut pas devenir une animation) ; un GIF animé, lui, le propose toujours |
+| 69 | `Exemples\grande-image.png` (avec transparence) → **Netpbm (PPM)** | Perte de la transparence annoncée **avant** ; le `.ppm` obtenu s'ouvre dans un autre logiciel (GIMP, IrfanView…) et se reconvertit en PNG |
+| 70 | `Exemples\photo.png` → **Radiance HDR**, puis le `.hdr` obtenu → **PNG** | Les deux réussissent (avant : « ce fichier ne peut pas être analysé » pour le HDR écrit sous Windows en français) |
+| 71 | `Exemples\bd.cbz` → **Texte brut (TXT)** | Échec clair : « aucun texte à extraire : ce livre ne contient que des images » (avant : « Calibre a produit un fichier vide ») |
+| 72 | `Exemples\lettre.odt` (créée par LibreOffice, avec une image) → **MOBI** ou **EPUB** | Réussit, en passant par LibreOffice ou Pandoc (avant : « KeyError: 'Bitmap_20_1' » de Calibre) |
+| 73 | `Exemples\notes-image.md` (fait référence à `couverture.jpg`) → **Jupyter (ipynb)** | Réussit ; le rapport dit « images liées non reprises (remplacées par leur légende) » |
+| 74 | Linux (Fedora, Nobara) : l'AppImage, écran **Moteurs** | Les moteurs installés par le système sont « prêts » (plus de « symbol lookup error … nghttp2 ») ; **Installer** ExifTool fonctionne (paquet `perl-Image-ExifTool`) |
+| 75 | Linux (Fedora, Nobara) avec LibreOffice sans Calc (`sudo dnf remove libreoffice-calc`) | Écran **Moteurs** : « Installation incomplète, absent : Calc (classeurs) » et un bouton **Ajouter Calc (classeurs)** ; un `.xlsx` propose ce bouton au lieu de formats ; après l'ajout (mot de passe demandé), le `.xlsx` se convertit |
 
 ## Écrans qui défilent (corrigé)
 

@@ -20,7 +20,9 @@ use std::time::Duration;
 
 const EBOOKS: &[&str] = &["epub", "mobi", "azw3", "fb2", "lit", "pdb", "lrf"];
 const COMICS: &[&str] = &["cbz", "cbr", "cb7"];
-const DOCS: &[&str] = &["docx", "odt", "rtf", "txt", "html"];
+// Pas d'ODT : le lecteur ODF de Calibre plante sur les images de LibreOffice (« KeyError:
+// 'Bitmap_20_1' ») ; LibreOffice et Pandoc lisent l'ODT, Calibre prend le relais après eux.
+const DOCS: &[&str] = &["docx", "rtf", "txt", "html"];
 /// Formats écrits.
 const WRITES: &[&str] = &["epub", "mobi", "azw3", "fb2", "pdf", "docx", "rtf", "txt"];
 const EBOOK_OUT: &[&str] = &["epub", "mobi", "azw3", "fb2"];
@@ -123,10 +125,13 @@ impl Engine for Calibre {
             spec = spec.env(k, stage.subdir(d)?);
         }
         spec = spec.cwd(&stage.dir).timeout(ctx.timeout.or(Some(Duration::from_secs(1800))));
-        let mut drm = false;
+        let (mut drm, mut saved) = (false, false);
         let r = tool::run_ok(spec, ctx, &[], &mut |l| {
             if l.contains("DRM") {
                 drm = true;
+            }
+            if l.trim_start().starts_with("Output saved to") {
+                saved = true;
             }
             if l.trim_start().chars().next().is_some_and(|c| c.is_ascii_digit())
                 && let Some(f) = tool::percent_in(l.split_whitespace().next().unwrap_or(""))
@@ -140,9 +145,30 @@ impl Engine for Calibre {
                     .into(),
             ));
         }
-        r?;
-        tool::deliver(&out, &task.output, "Calibre")?;
         let mut notes = Vec::new();
+        match r {
+            Ok(_) => {}
+            // Sous Windows, Calibre plante parfois en se refermant (code 0xC0000005), une fois le
+            // fichier écrit et annoncé : le résultat est gardé, et vérifié comme les autres.
+            Err(EngineError::Process { .. }) if saved && crate::util::file_size(&out) > 0 => notes.push(
+                tr!(
+                    "Calibre s'est arrêté brutalement après avoir écrit le fichier : le résultat a été vérifié",
+                    "Calibre crashed after writing the file: the result was checked"
+                )
+                .to_owned(),
+            ),
+            Err(e) => return Err(e),
+        }
+        if to == "txt" && std::fs::read(&out).is_ok_and(|b| b.iter().all(u8::is_ascii_whitespace)) {
+            return Err(EngineError::Other(
+                tr!(
+                    "aucun texte à extraire : ce livre ne contient que des images (une bande dessinée, par exemple)",
+                    "no text to extract: this book only contains images (a comic, for example)"
+                )
+                .into(),
+            ));
+        }
+        tool::deliver(&out, &task.output, "Calibre")?;
         if from == "pdf" {
             notes.push(
                 tr!(
@@ -197,6 +223,7 @@ mod tests {
         let has = |a: &str, b: &str| c.caps.iter().any(|x| x.from.as_str() == a && x.to.as_str() == b);
         assert!(has("epub", "mobi") && has("mobi", "epub") && has("azw3", "pdf") && has("docx", "epub") && has("cbz", "epub"));
         assert!(!has("docx", "pdf"), "bureautique → PDF : LibreOffice");
+        assert!(!has("odt", "epub"), "lecteur ODF de Calibre peu fiable");
         assert!(!has("epub", "epub"));
         assert_eq!(c.caps.iter().find(|x| x.from.as_str() == "pdf").unwrap().fidelity, Fidelity::Lossy);
     }

@@ -184,6 +184,10 @@ pub struct FormatDef {
     /// source, a le contenu attendu (une BD fabriquée à partir d'un dossier quelconque n'en est pas une).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub source_only: bool,
+    /// Caractéristiques sans lesquelles un fichier de ce format n'a pas de raison d'être (un APNG
+    /// sans animation n'est qu'un PNG) : une conversion qui ne les apporterait pas n'est pas proposée.
+    #[serde(default, skip_serializing_if = "FeatureSet::is_empty")]
+    pub requires: FeatureSet,
     #[serde(default)]
     pub limitations: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

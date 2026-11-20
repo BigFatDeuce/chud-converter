@@ -38,6 +38,7 @@ extensions = ["apng", "png"]
 mime = ["image/apng"]
 compression = "lossless"
 features = ["alpha", "animation", "icc"]
+requires = ["animation"]
 based_on = ["png"]
 
 [[format]]
@@ -285,7 +286,9 @@ category = "image"
 extensions = ["ppm", "pgm", "pbm", "pnm", "pam"]
 mime = ["image/x-portable-anymap"]
 compression = "none"
-features = ["high_bit_depth", "alpha"]
+# Pas de transparence : tous les moteurs écrivent un vrai PPM (P6), que tout le monde lit ; seul
+# le PAM (P7) en a une, et libvips comme bien des visionneuses le refusent.
+features = ["high_bit_depth"]
 
 [[format]]
 id = "qoi"

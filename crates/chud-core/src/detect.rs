@@ -128,8 +128,19 @@ pub fn detect_reader<R: Read + Seek>(mut reader: R, file_name: Option<&str>, siz
         return Ok(d);
     }
 
-    let ff = FileFormat::from_reader(&mut reader)?;
+    let mut ff = FileFormat::from_reader(&mut reader)?;
     reader.seek(SeekFrom::Start(0))?;
+    // Les 4 octets « 00 00 02 00 » d'un curseur sont aussi le début de tout TGA en couleurs
+    // vraies sans palette (00 00 01 00, icône, reste possible pour un TGA mal formé) : un vrai
+    // curseur ou une vraie icône annonce au moins une image (octets 4 et 5).
+    if matches!(ff, FileFormat::WindowsCursor | FileFormat::WindowsIcon) {
+        let mut head = [0u8; 6];
+        let count = reader.read_exact(&mut head).map(|_| u16::from_le_bytes([head[4], head[5]])).unwrap_or(0);
+        if count == 0 {
+            ff = FileFormat::ArbitraryBinaryData;
+        }
+        reader.seek(SeekFrom::Start(0))?;
+    }
 
     match ff {
         FileFormat::PlainText | FileFormat::ArbitraryBinaryData | FileFormat::Empty => {
@@ -142,7 +153,19 @@ pub fn detect_reader<R: Read + Seek>(mut reader: R, file_name: Option<&str>, siz
                     classify_text(&mut d, &text, complete, ext_def, catalog);
                 }
                 _ => {
-                    if let Some(e) = ext_def {
+                    if let Some(e) = ext_def.filter(|e| e.id == "tga" && plausible_tga(&sample)) {
+                        // Le TGA n'a pas de signature : un en-tête cohérent est le mieux possible.
+                        d.format = Some(e.id.clone());
+                        d.confidence = Confidence::Medium;
+                        d.method = DetectionMethod::Extension;
+                        d.note = Some(
+                            crate::tr!(
+                                "en-tête Targa cohérent (ce format n'a pas de signature)",
+                                "consistent Targa header (this format has no signature)"
+                            )
+                            .into(),
+                        );
+                    } else if let Some(e) = ext_def {
                         d.format = Some(e.id.clone());
                         d.confidence = Confidence::Low;
                         d.method = DetectionMethod::Extension;
@@ -209,6 +232,20 @@ pub fn detect_reader<R: Read + Seek>(mut reader: R, file_name: Option<&str>, siz
         }
     }
     Ok(d)
+}
+
+/// En-tête Targa vraisemblable : type d'image, palette, profondeur et dimensions cohérents.
+fn plausible_tga(h: &[u8]) -> bool {
+    if h.len() < 18 {
+        return false;
+    }
+    let u16_at = |i: usize| u16::from_le_bytes([h[i], h[i + 1]]);
+    let palette_ok = match h[1] {
+        0 => u16_at(5) == 0,
+        1 => u16_at(5) > 0 && matches!(h[7], 15 | 16 | 24 | 32),
+        _ => false,
+    };
+    palette_ok && matches!(h[2], 1 | 2 | 3 | 9 | 10 | 11) && matches!(h[16], 8 | 15 | 16 | 24 | 32) && u16_at(12) > 0 && u16_at(14) > 0
 }
 
 fn apply_signature(d: &mut Detection, sig: &FormatDef, ext: Option<&FormatDef>, catalog: &FormatCatalog) {
@@ -499,6 +536,25 @@ mod tests {
         assert_eq!(d.format.as_ref().unwrap(), "png");
         assert_eq!(d.confidence, Confidence::High);
         assert!(!d.extension_mismatch);
+    }
+
+    #[test]
+    fn truecolor_tga_is_not_a_cursor() {
+        // En-tête TGA 2×1 en couleurs vraies, sans palette ni identifiant : 00 00 02 00 00 …
+        let mut tga = vec![0u8, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 1, 0, 24, 0];
+        tga.extend_from_slice(&[0, 0, 255, 0, 255, 0]);
+        let d = detect_bytes(&tga, Some("image.tga"), cat());
+        assert_eq!(d.format.as_ref().map(|f| f.as_str()), Some("tga"), "{d:?}");
+        assert!(!d.extension_mismatch);
+        assert_eq!(d.confidence, Confidence::Medium, "en-tête cohérent");
+        // Des octets quelconques nommés « .tga » restent une simple supposition.
+        let d = detect_bytes(&[7u8; 40], Some("faux.tga"), cat());
+        assert_eq!(d.confidence, Confidence::Low);
+        // Un vrai curseur (une image annoncée) reste un curseur, même mal nommé.
+        let mut cur = vec![0u8, 0, 2, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        cur.extend_from_slice(&[0; 40]);
+        let d = detect_bytes(&cur, Some("curseur.tga"), cat());
+        assert_eq!(d.format.as_ref().map(|f| f.as_str()), Some("cur"), "{d:?}");
     }
 
     #[test]

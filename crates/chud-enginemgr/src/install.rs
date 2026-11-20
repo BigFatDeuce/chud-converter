@@ -358,6 +358,8 @@ pub fn check_allowed(status: &crate::EngineStatus, alongside: bool) -> Result<()
     let path = status.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default();
     match status.origin {
         Some(EngineOrigin::Managed) => Ok(()),
+        // Modules absents, ajoutés par les paquets de la distribution : rien n'est remplacé.
+        _ if !status.missing.is_empty() && status.installable.as_ref().is_some_and(|o| o.system.is_some()) => Ok(()),
         // Rien de portable à installer à côté (voie « paquets du système ») : il est déjà là.
         _ if status.installable.is_none() => {
             Err(trf!("{} est déjà installé par le système ({})", "{} is already installed by the system ({})", status.name, path))
@@ -921,7 +923,14 @@ fn extract_nsis(sevenzr: &Path, sevenzip_installer: &Path, target: &Path, work: 
 /// donc déplié dans un dossier temporaire court, puis déplacé dans `dest` par Chud Converter, qui
 /// gère les chemins longs.
 fn extract_msi_short(msi: &Path, dest: &Path) -> Result<(), InstallError> {
-    let short = std::env::temp_dir().join(format!("chud-msi-{}", std::process::id()));
+    // LibreOffice et Calibre peuvent être installés en même temps : Windows Installer n'accepte
+    // qu'un paquet à la fois (sinon code 1618), le second attend donc son tour, dans son propre
+    // dossier.
+    static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let _turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let short = std::env::temp_dir().join(format!("chud-msi-{}-{n}", std::process::id()));
     let _ = std::fs::remove_dir_all(&short);
     std::fs::create_dir_all(&short).map_err(|e| io_err(tr!("création du dossier temporaire", "creating the temporary folder"), e))?;
     let r = extract_msi(msi, &short).and_then(|()| move_children(&short, dest));
@@ -1516,6 +1525,7 @@ mod tests {
                 system: None,
             }),
             previous: None,
+            missing: Vec::new(),
         };
         assert!(check_allowed(&st(EngineState::Missing, None), false).is_ok());
         assert!(check_allowed(&st(EngineState::Broken("x".into()), Some(EngineOrigin::System)), false).is_ok());
@@ -1527,6 +1537,14 @@ mod tests {
         let mut sys = st(EngineState::Ready, Some(EngineOrigin::System));
         sys.installable = None;
         assert!(check_allowed(&sys, true).is_err());
+        // … sauf pour ajouter les modules absents (LibreOffice Calc sous Fedora).
+        sys.missing = vec![chud_core::MissingPart { name: "Calc".into(), categories: vec!["spreadsheet".into()] }];
+        assert!(check_allowed(&sys, false).is_err(), "aucun paquet à installer ici");
+        sys.installable = st(EngineState::Ready, None).installable.map(|mut o| {
+            o.system = Some(crate::system::SystemRoute { manager: "dnf".into(), packages: vec!["libreoffice-calc".into()] });
+            o
+        });
+        assert!(check_allowed(&sys, false).is_ok());
     }
 
     #[test]

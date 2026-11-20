@@ -134,7 +134,11 @@ export type EngineOpEvent =
 
 /** Une installation du système est prête : une copie gérée ne peut être posée qu'à côté,
  *  sur demande explicite (même règle que `install::check_allowed` côté Rust). */
-export const installsAlongside = (e: EngineView): boolean => e.state === "ready" && e.origin === "system";
+export const installsAlongside = (e: EngineView): boolean => e.state === "ready" && e.origin === "system" && !e.installable?.system;
+
+/** Installation qui fonctionne mais à laquelle il manque des modules que les paquets du système
+ *  peuvent ajouter (LibreOffice Calc et Impress sous Fedora). */
+export const completesInstall = (e: EngineView): boolean => e.state === "ready" && e.missing.length > 0 && !!e.installable?.system;
 
 /** Actions possibles pour un moteur dans son état actuel. Une installation du système n'est
  *  jamais modifiée ; un chemin choisi par l'utilisateur passe avant toute copie gérée. */
@@ -142,7 +146,7 @@ export function engineActions(e: EngineView): EngineAction[] {
   const out: EngineAction[] = [];
   const managed = e.origin === "managed";
   const usable = e.state === "ready" || e.state === "no_adapter";
-  const install = !usable || (managed && e.version !== e.installable?.version) || installsAlongside(e);
+  const install = !usable || (managed && e.version !== e.installable?.version) || installsAlongside(e) || completesInstall(e);
   if (e.installable && install && !(e.state === "ready" && e.origin === "custom")) out.push("install");
   if (managed && e.previous) out.push("rollback");
   if (managed) out.push("uninstall");
@@ -155,7 +159,11 @@ export function missingEngineFor(category: string | null, engines: readonly Engi
   if (!category || !engines) return null;
   return (
     engines.find(
-      (e) => e.supported && e.state !== "ready" && e.state !== "disabled" && e.categories.includes(category) && engineActions(e).includes("install"),
+      (e) =>
+        e.supported &&
+        e.state !== "disabled" &&
+        (e.state !== "ready" ? e.categories.includes(category) : e.missing.some((p) => p.categories.includes(category))) &&
+        engineActions(e).includes("install"),
     ) ?? null
   );
 }

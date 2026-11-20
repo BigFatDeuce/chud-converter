@@ -80,6 +80,15 @@ fn pandoc_documents() {
     if has("epub") {
         convert(&e, &md, "md", "epub", &d.join("out.epub"), &[]);
     }
+    // Image liée (jamais lue : `--sandbox`) : un carnet Jupyter échouait (« not found in
+    // resource path ») ; elle est remplacée par sa légende, et c'est annoncé.
+    let linked = d.join("image liée.md");
+    std::fs::write(&linked, "# Titre\n\nTexte.\n\n![Couverture](cover_image.jpg)\n").unwrap();
+    if e.conversions().iter().any(|c| c.from.as_str() == "md" && c.to.as_str() == "ipynb") {
+        let nb = d.join("carnet.ipynb");
+        convert(&e, &linked, "md", "ipynb", &nb, &[]);
+        assert!(std::fs::read_to_string(&nb).unwrap().contains("Couverture"));
+    }
     let _ = std::fs::remove_dir_all(&d);
 }
 

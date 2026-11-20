@@ -269,9 +269,14 @@ pub fn evaluate(
 /// « l'audio » d'une image ni « les sous-titres » d'un fichier qui n'en contient pas, même si une
 /// chaîne de moteurs (image → GIF → vidéo → audio) le permettrait sur le papier.
 fn has_essential_content(catalog: &FormatCatalog, target: &FormatId, present: &FeatureSet) -> bool {
-    let needed: &[&str] = match catalog.get(target.as_str()).map(|f| f.category) {
-        Some(Category::Audio) => &["audio", "notation"],
-        Some(Category::Subtitle) => &["subtitles", "timed_text", "image_subtitles"],
+    let Some(def) = catalog.get(target.as_str()) else { return true };
+    // Un APNG tiré d'une image fixe, ou passé par un PNG intermédiaire, n'aurait qu'une image.
+    if !def.requires.iter().all(|f| supports(present, f)) {
+        return false;
+    }
+    let needed: &[&str] = match def.category {
+        Category::Audio => &["audio", "notation"],
+        Category::Subtitle => &["subtitles", "timed_text", "image_subtitles"],
         _ => return true,
     };
     needed.iter().any(|n| present.contains(&Feature::new(*n)))
@@ -467,6 +472,32 @@ mod tests {
         let silent = features(&["video"]);
         let all = p.plan_all(&"mkv".into(), Some(&silent));
         assert!(!all.contains_key(&FormatId::new("mp3")), "vidéo muette : pas d'extraction audio");
+    }
+
+    #[test]
+    fn never_offers_an_animation_that_cannot_exist() {
+        // Chaîne réelle : PCX → PNG → WebP → APNG donnait un PNG ordinaire nommé « .apng ».
+        let mut p = Planner::new(cat());
+        p.add_engine(&EngineId::new("im"), &[cap("pcx", "png", Fidelity::Depends, &["alpha"], 1)]);
+        p.add_engine(
+            &EngineId::new("img"),
+            &[cap("png", "webp", Fidelity::Lossless, &["alpha", "animation"], 1), cap("gif", "png", Fidelity::Lossless, &["alpha"], 1)],
+        );
+        p.add_engine(
+            &EngineId::new("av"),
+            &[
+                cap("webp", "apng", Fidelity::Lossless, &["alpha", "animation"], 1),
+                cap("gif", "apng", Fidelity::Lossless, &["alpha", "animation"], 1),
+                cap("mp4", "apng", Fidelity::Lossy, &["animation"], 1),
+            ],
+        );
+        assert!(!p.plan_all(&"pcx".into(), None).contains_key(&FormatId::new("apng")), "un PCX n'est jamais animé");
+        assert!(p.plan_all(&"webp".into(), None).contains_key(&FormatId::new("apng")), "un WebP peut l'être");
+        let still = features(&["alpha"]);
+        assert!(!p.plan_all(&"webp".into(), Some(&still)).contains_key(&FormatId::new("apng")), "WebP fixe d'après la sonde");
+        let gif = p.plan_all(&"gif".into(), None);
+        assert!(gif[&FormatId::new("apng")].iter().all(|pl| pl.steps.len() == 1), "jamais par un PNG intermédiaire");
+        assert!(p.plan_all(&"mp4".into(), None).contains_key(&FormatId::new("apng")), "une vidéo devient une animation");
     }
 
     #[test]

@@ -76,7 +76,9 @@ fn declared_fidelity(to: &str) -> Fidelity {
 }
 
 fn preserved(to: &str) -> FeatureSet {
-    let mut keep = vec!["alpha", "high_bit_depth"];
+    // PNM : un fichier « .ppm » doit être un vrai PPM (P6), que tous les logiciels lisent ; la
+    // transparence n'existe qu'en PAM (P7), que libvips et bien des visionneuses refusent.
+    let mut keep = if to == "pnm" { vec!["high_bit_depth"] } else { vec!["alpha", "high_bit_depth"] };
     if matches!(to, "png" | "jpeg" | "webp" | "tiff") {
         keep.push("icc");
     }
@@ -161,6 +163,24 @@ impl ImageNative {
         }
         let scale = (mw as f64 / w as f64).min(mh as f64 / h as f64);
         Some((((w as f64 * scale).round() as u32).max(1), ((h as f64 * scale).round() as u32).max(1)))
+    }
+}
+
+impl ImageNative {
+    /// Échec du décodeur : une variante non prise en charge (DDS aux côtés non multiples de 4,
+    /// TIFF en virgule flottante…) n'est pas un fichier abîmé — le moteur s'efface pour ce
+    /// fichier ; une erreur de décodage ou de lecture, elle, signale un fichier abîmé (`None`).
+    fn declined(&self, e: image::ImageError) -> Option<SourceInfo> {
+        use image::ImageError as E;
+        matches!(e, E::Unsupported(_) | E::Parameter(_) | E::Limits(_)).then(|| SourceInfo {
+            features: None,
+            summary: vec![(
+                tr!("Moteur natif", "Native engine").into(),
+                trf!("ne lit pas cette variante ({e})", "cannot read this variant ({e})"),
+            )],
+            unsupported_by: vec![self.info.id.clone()],
+            ..Default::default()
+        })
     }
 }
 
@@ -268,15 +288,20 @@ impl Engine for ImageNative {
     }
 
     fn probe(&self, path: &Path, format: &FormatId) -> Option<SourceInfo> {
-        let mut dec = Self::open(path, format.as_str()).ok()?.into_decoder().ok()?;
+        let mut dec = match Self::open(path, format.as_str()).ok()?.into_decoder() {
+            Ok(d) => d,
+            Err(e) => return self.declined(e),
+        };
         let (w, h) = dec.dimensions();
         let color = dec.color_type();
         let icc = dec.icc_profile().ok().flatten().is_some();
         let exif = dec.exif_metadata().ok().flatten().is_some();
         // Une image tronquée ou abîmée a souvent un en-tête intact : on la décode entièrement
         // (sauf si elle est très grande) pour ne pas proposer des conversions vouées à l'échec.
-        if dec.total_bytes() <= PROBE_DECODE_MAX {
-            image::DynamicImage::from_decoder(dec).ok()?;
+        if dec.total_bytes() <= PROBE_DECODE_MAX
+            && let Err(e) = image::DynamicImage::from_decoder(dec)
+        {
+            return self.declined(e);
         }
         let animated = match format.as_str() {
             "gif" => File::open(path).ok().and_then(|f| {
@@ -464,12 +489,18 @@ impl Engine for ImageNative {
                 img.write_with_encoder(enc).map_err(output_err)?;
                 w.write_all(&buf.into_inner())?;
             }
+            "pnm" => {
+                // Sans sous-type imposé, `image` écrit du PAM (P7) — même sous le nom « .ppm ».
+                use image::codecs::pnm::{PnmEncoder, PnmSubtype, SampleEncoding};
+                let enc = PnmEncoder::new(&mut w).with_subtype(PnmSubtype::Pixmap(SampleEncoding::Binary));
+                DynamicImage::ImageRgb8(img.to_rgb8()).write_with_encoder(enc).map_err(output_err)?;
+            }
             other => {
                 let fmt = format_of(other).ok_or_else(|| EngineError::Unsupported(trf!("écriture {other}", "writing {other}")))?;
                 let img = match other {
                     // ICO : le décodeur exige des PNG internes en RGBA, même sans transparence.
                     "ico" => DynamicImage::ImageRgba8(img.to_rgba8()),
-                    "bmp" | "tga" | "qoi" | "gif" | "pnm" => {
+                    "bmp" | "tga" | "qoi" | "gif" => {
                         if img.color().has_alpha() {
                             DynamicImage::ImageRgba8(img.to_rgba8())
                         } else {
@@ -529,7 +560,12 @@ impl Engine for ImageNative {
             if u64::from(w) * u64::from(h) > PIXEL_CHECK_MAX {
                 detail
                     .push_str(tr!(" ; comparaison des pixels omise (image très grande)", "; pixel comparison skipped (very large image)"));
-            } else if src.to_rgba16().as_raw() == img.to_rgba16().as_raw() {
+            } else if if preserved(to).contains(&chud_core::Feature::new("alpha")) {
+                src.to_rgba16().as_raw() == img.to_rgba16().as_raw()
+            } else {
+                // Transparence non gardée (perte annoncée à part) : les couleurs, elles, doivent l'être.
+                src.to_rgb16().as_raw() == img.to_rgb16().as_raw()
+            } {
                 detail.push_str(tr!(" ; pixels identiques à la source", "; pixels identical to the source"));
             } else {
                 return Verification::Failed(
@@ -617,7 +653,8 @@ mod tests {
             source: None,
         };
         let out = e.execute(&task, &ctx(out.parent().unwrap())).unwrap();
-        assert!(e.verify(&task.output, &task, &ctx(out_dir(&task))).is_ok());
+        let v = e.verify(&task.output, &task, &ctx(out_dir(&task)));
+        assert!(v.is_ok(), "{v:?}");
         out
     }
 
@@ -650,6 +687,48 @@ mod tests {
         assert_eq!(j.width(), 10);
         assert!(!j.color().has_alpha());
         assert!(out.notes.iter().any(|n| n.contains("transparence")));
+    }
+
+    /// DDS compressé en DXT1 : en-tête de 128 octets puis `blocks` blocs de 8 octets.
+    fn dds(w: u32, h: u32, blocks: usize) -> Vec<u8> {
+        let mut hdr = [0u32; 31];
+        (hdr[0], hdr[1], hdr[2], hdr[3]) = (124, 0x1 | 0x2 | 0x4 | 0x1000, h, w);
+        (hdr[18], hdr[19], hdr[20], hdr[26]) = (32, 0x4, u32::from_le_bytes(*b"DXT1"), 0x1000);
+        let mut v = b"DDS ".to_vec();
+        hdr.iter().for_each(|x| v.extend_from_slice(&x.to_le_bytes()));
+        v.extend(std::iter::repeat_n(0u8, blocks * 8));
+        v
+    }
+
+    #[test]
+    fn unsupported_variants_are_not_called_damaged() {
+        let d = tmpdir("dds");
+        let e = ImageNative::new();
+        let dds_id: FormatId = "dds".into();
+        // 4×4 complet : lu normalement.
+        std::fs::write(d.join("ok.dds"), dds(4, 4, 1)).unwrap();
+        let ok = e.probe(&d.join("ok.dds"), &dds_id).unwrap();
+        assert!(ok.unsupported_by.is_empty() && ok.width == Some(4));
+        // 6×6 (côtés non multiples de 4, valide, écrit par ImageMagick) : le moteur s'efface.
+        std::fs::write(d.join("odd.dds"), dds(6, 6, 4)).unwrap();
+        let odd = e.probe(&d.join("odd.dds"), &dds_id).expect("pas « abîmé »");
+        assert_eq!(odd.unsupported_by, vec![EngineId::new("image")]);
+        assert!(odd.features.is_none());
+        // Tronqué : vraiment abîmé.
+        std::fs::write(d.join("cut.dds"), dds(8, 8, 1)).unwrap();
+        assert!(e.probe(&d.join("cut.dds"), &dds_id).is_none());
+    }
+
+    #[test]
+    fn pnm_is_a_plain_ppm_that_everyone_reads() {
+        let d = tmpdir("pnm");
+        let e = ImageNative::new();
+        sample(&d.join("a.png"), true);
+        convert(&e, &d.join("a.png"), "png", "pnm", &d.join("a.ppm"), OptionValues::new());
+        let bytes = std::fs::read(d.join("a.ppm")).unwrap();
+        assert_eq!(&bytes[..2], b"P6", "pas de PAM (P7) sous le nom .ppm");
+        let cap = e.conversions().iter().find(|c| c.from.as_str() == "png" && c.to.as_str() == "pnm").unwrap();
+        assert!(!cap.preserves.contains(&chud_core::Feature::new("alpha")), "la perte de transparence est annoncée");
     }
 
     #[test]

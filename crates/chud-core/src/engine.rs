@@ -66,6 +66,16 @@ pub enum EngineOrigin {
     Custom,
 }
 
+/// Partie d'un moteur absente de cette installation : module que la distribution livre à part
+/// (LibreOffice Calc sous Fedora…). Les conversions qui en dépendent ne sont pas proposées.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MissingPart {
+    /// « Calc (classeurs) », dans la langue choisie.
+    pub name: String,
+    /// Familles de fichiers qui en dépendent (`spreadsheet`, `presentation`…).
+    pub categories: Vec<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EngineInfo {
     pub id: EngineId,
@@ -140,6 +150,11 @@ pub struct SourceInfo {
     pub streams: Vec<StreamInfo>,
     /// Résumé lisible (« Codec vidéo » → « h264 »…).
     pub summary: Vec<(String, String)>,
+    /// Moteurs dont le décodeur ne prend pas en charge cette variante du format (DDS aux côtés
+    /// non multiples de 4, TIFF en virgule flottante…) : ce n'est pas un fichier abîmé, ils
+    /// s'effacent simplement pour ce fichier et les autres moteurs prennent le relais.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unsupported_by: Vec<EngineId>,
 }
 
 impl SourceInfo {

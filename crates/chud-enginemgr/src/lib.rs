@@ -368,6 +368,18 @@ pub struct EngineStatus {
     pub installable: Option<InstallOffer>,
     /// Version précédente d'une installation gérée, gardée pour revenir en arrière.
     pub previous: Option<String>,
+    /// Parties absentes d'une installation qui fonctionne (modules de LibreOffice que la
+    /// distribution livre à part) : leurs conversions ne sont pas proposées, et la voie
+    /// « paquets du système » reste offerte pour les ajouter.
+    pub missing: Vec<chud_core::MissingPart>,
+}
+
+/// Parties absentes d'un moteur prêt.
+fn missing_parts(id: &str, exe: &Path) -> Vec<chud_core::MissingPart> {
+    match id {
+        "libreoffice" => engines::libreoffice::missing_modules(exe),
+        _ => Vec::new(),
+    }
 }
 
 /// Paquet proposé à l'installation : tout ce qu'il faut pour décider en connaissance de cause.
@@ -403,7 +415,7 @@ impl InstallOffer {
         }
         let (_, route) = system::route(m)?;
         Some(InstallOffer {
-            version: chud_core::tr!("celle de votre distribution", "your distribution's").into(),
+            version: chud_core::tr!("de votre distribution", "from your distribution").into(),
             size: 0,
             publisher: chud_core::trf!("votre distribution Linux ({})", "your Linux distribution ({})", route.manager),
             license: m.license_l().to_owned(),
@@ -601,8 +613,14 @@ impl EngineManager {
     /// Détecte un moteur.
     pub fn discover_one(&self, m: &Manifest) -> EngineStatus {
         let mut st = self.detect_one(m);
-        // Déjà là : la voie « paquets du système » n'a plus rien à proposer (pas de copie à côté).
-        if st.path.is_some() && st.installable.as_ref().is_some_and(|o| o.system.is_some()) {
+        if st.state == EngineState::Ready
+            && let Some(p) = &st.path
+        {
+            st.missing = missing_parts(&m.id, p);
+        }
+        // Déjà là : la voie « paquets du système » n'a plus rien à proposer (pas de copie à
+        // côté), sauf pour ajouter les modules qui manquent.
+        if st.path.is_some() && st.missing.is_empty() && st.installable.as_ref().is_some_and(|o| o.system.is_some()) {
             st.installable = None;
         }
         st
@@ -625,6 +643,7 @@ impl EngineManager {
             categories: m.categories.clone(),
             installable: InstallOffer::from_manifest(m),
             previous: install::previous_version(&self.paths, &m.id),
+            missing: Vec::new(),
         };
         if self.settings.engines.get(&m.id).is_some_and(|s| !s.enabled) {
             status.state = EngineState::Disabled;

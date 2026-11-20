@@ -65,6 +65,17 @@ const MAP: &[(&str, &str, bool)] = &[
 pub(crate) const RAW: &[&str] = &["dng", "cr2", "cr3", "nef", "arw", "orf", "rw2", "raf", "pef"];
 const LOSSY_TARGETS: &[&str] = &["jpeg", "gif", "webp", "avif", "heic", "jxl", "jp2"];
 const MULTI: &[&str] = &["gif", "apng", "webp", "tiff", "ico"];
+/// Côté maximal d'une image dans une icône : ImageMagick refuse d'écrire au-delà.
+const ICO_MAX: u32 = 256;
+
+/// Dimensions après réduction pour une icône, si la source dépasse 256 px.
+fn ico_shrink(w: u32, h: u32) -> Option<(u32, u32)> {
+    if w <= ICO_MAX && h <= ICO_MAX {
+        return None;
+    }
+    let scale = (ICO_MAX as f64 / w as f64).min(ICO_MAX as f64 / h as f64);
+    Some((((w as f64 * scale).round() as u32).max(1), ((h as f64 * scale).round() as u32).max(1)))
+}
 
 /// Fidélité d'une conversion d'image matricielle (partagée avec libvips).
 pub(crate) fn raster_fidelity(from: &str, to: &str) -> Fidelity {
@@ -179,6 +190,29 @@ impl Engine for ImageMagick {
         }
     }
 
+    fn assess(&self, q: &chud_core::StepQuery<'_>) -> chud_core::StepAssessment {
+        let Some(cap) = self.caps.iter().find(|c| &c.from == q.from && &c.to == q.to) else {
+            return chud_core::StepAssessment {
+                fidelity: Fidelity::Lossy,
+                notes: Vec::new(),
+                unavailable: Some(tr!("conversion non déclarée par le moteur", "conversion not declared by the engine").into()),
+                preserves: None,
+            };
+        };
+        let mut a = chud_core::StepAssessment { fidelity: cap.fidelity, notes: Vec::new(), unavailable: None, preserves: None };
+        let size = q.source.and_then(|s| s.width.zip(s.height));
+        if q.to.as_str() == "ico"
+            && let Some(((w, h), (nw, nh))) = size.and_then(|(w, h)| Some(((w, h), ico_shrink(w, h)?)))
+        {
+            a.fidelity = Fidelity::Lossy;
+            a.notes.push(trf!(
+                "redimensionnement {w}×{h} → {nw}×{nh} (taille maximale d'une icône)",
+                "resized {w}×{h} → {nw}×{nh} (largest icon size)"
+            ));
+        }
+        a
+    }
+
     fn execute(&self, task: &StepTask, ctx: &ExecContext) -> Result<StepOutput, EngineError> {
         ctx.check_cancelled()?;
         let (from, to) = (task.from.as_str(), task.to.as_str());
@@ -199,6 +233,13 @@ impl Engine for ImageMagick {
             notes.push(tr!("première image seulement", "first frame only").to_owned());
         }
         let mut spec = Self::limits(ProcessSpec::new(&self.exe)).arg(source);
+        if to == "ico" {
+            // « > » : seules les images plus grandes que 256 px sont réduites, proportions gardées.
+            spec = spec.args(["-resize", "256x256>"]);
+            if let Some((nw, nh)) = task.source.as_ref().and_then(|s| s.width.zip(s.height)).and_then(|(w, h)| ico_shrink(w, h)) {
+                notes.push(trf!("réduite à {nw}×{nh} (taille maximale d'une icône)", "reduced to {nw}×{nh} (largest icon size)"));
+            }
+        }
         if LOSSY_TARGETS.contains(&to) && to != "gif" {
             spec = spec.arg("-quality").arg(task.options.int_or("quality", 90).clamp(1, 100).to_string());
         }
@@ -267,5 +308,24 @@ mod tests {
         assert_eq!(raster_fidelity("png", "jpeg"), Fidelity::Lossy);
         assert_eq!(raster_fidelity("cr2", "tiff"), Fidelity::Lossy);
         assert_eq!(raster_fidelity("psd", "png"), Fidelity::Depends);
+    }
+
+    #[test]
+    fn icons_are_capped_at_256() {
+        assert_eq!(ico_shrink(256, 100), None);
+        assert_eq!(ico_shrink(1024, 512), Some((256, 128)));
+        assert_eq!(ico_shrink(300, 3000), Some((26, 256)));
+        let f = parse_formats(
+            "      PNG* PNG       rw-   Portable
+      ICO* ICO       rw+   Icon
+",
+        );
+        let im = ImageMagick::with_formats(PathBuf::from("/x"), None, EngineOrigin::System, &f);
+        let src = chud_core::SourceInfo { width: Some(1024), height: Some(512), ..Default::default() };
+        let opts = chud_core::OptionValues::new();
+        let (png, ico): (FormatId, FormatId) = ("png".into(), "ico".into());
+        let a = im.assess(&chud_core::StepQuery { from: &png, to: &ico, source: Some(&src), options: &opts });
+        assert_eq!(a.fidelity, Fidelity::Lossy);
+        assert!(a.notes.iter().any(|n| n.contains("256×128")), "{:?}", a.notes);
     }
 }

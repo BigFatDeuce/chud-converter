@@ -595,8 +595,31 @@ fn run(cli: Cli) -> Result<i32> {
                 if let Some(p) = &s.path {
                     out!("{:<26} {}{origin}", "", p.display());
                 }
+                if !s.missing.is_empty() {
+                    let names: Vec<&str> = s.missing.iter().map(|p| p.name.as_str()).collect();
+                    out!("{}", trf!("{:<26} incomplet, absent : {}", "{:<26} incomplete, missing: {}", "", names.join(", ")));
+                    if s.installable.is_some() {
+                        out!(
+                            "{}",
+                            trf!("{:<26} pour l'ajouter : chud engines install {}", "{:<26} to add it: chud engines install {}", "", s.id)
+                        );
+                    }
+                }
                 if matches!(s.state, EngineState::Missing | EngineState::Broken(_)) {
-                    if let Some(offer) = &s.installable {
+                    if let Some(offer) = s.installable.as_ref().filter(|o| o.system.is_some()) {
+                        let route = offer.system.as_ref().expect("filtré");
+                        out!(
+                            "{}",
+                            trf!(
+                                "{:<26} installation : chud engines install {} (paquets {} : {})",
+                                "{:<26} install: chud engines install {} ({} packages: {})",
+                                "",
+                                s.id,
+                                route.manager,
+                                route.packages.join(" ")
+                            )
+                        );
+                    } else if let Some(offer) = &s.installable {
                         out!(
                             "{}",
                             trf!(
@@ -685,6 +708,35 @@ fn run(cli: Cli) -> Result<i32> {
                 }
                 let via: Vec<String> = t.best.steps.iter().map(|s| s.engine.to_string()).collect();
                 out!("  {:<12} {:<34} {:<18} via {}", t.format.as_str(), t.name, t.best.report.headline(), via.join(" + "));
+            }
+            if targets.is_empty() {
+                out!(
+                    "\n{}",
+                    tr!("Aucune conversion possible avec les moteurs présents.", "No conversion possible with the engines present.")
+                );
+                // Ce qui manque pour ce genre de fichier : un module (Calc de LibreOffice), ou un moteur.
+                let cat = catalog().get(src.as_str()).map(|d| d.category.as_str()).unwrap_or("");
+                for s in env.statuses.iter().filter(|s| s.installable.is_some() || s.hint.is_some()) {
+                    let parts: Vec<&str> =
+                        s.missing.iter().filter(|p| p.categories.iter().any(|c| c == cat)).map(|p| p.name.as_str()).collect();
+                    if !parts.is_empty() {
+                        out!(
+                            "{}",
+                            trf!(
+                                "  {} : {} manque — chud engines install {}",
+                                "  {}: {} is missing — chud engines install {}",
+                                s.name,
+                                parts.join(", "),
+                                s.id
+                            )
+                        );
+                    } else if matches!(s.state, EngineState::Missing | EngineState::Broken(_)) && s.categories.iter().any(|c| c == cat) {
+                        match &s.installable {
+                            Some(_) => out!("{}", trf!("  {} : chud engines install {}", "  {}: chud engines install {}", s.name, s.id)),
+                            None => out!("{}", trf!("  {} : {}", "  {}: {}", s.name, s.hint.as_deref().unwrap_or(""))),
+                        }
+                    }
+                }
             }
             Ok(0)
         }

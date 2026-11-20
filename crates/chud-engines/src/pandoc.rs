@@ -191,18 +191,45 @@ impl Engine for Pandoc {
                 .to_owned(),
             );
         }
+        if to == "ipynb" && !embeds_images(from) {
+            // Le carnet joint ses images au lieu de les lier : une image liée (que `--sandbox`
+            // ne lit jamais) le ferait échouer (« not found in resource path »). Elle est
+            // remplacée par sa légende, comme les autres formats le font d'eux-mêmes.
+            let filter = stage.path("images.lua");
+            // Chaque image remplacée est signalée comme Pandoc le fait pour les autres formats.
+            let lua = "function Image(el) io.stderr:write('Could not fetch resource ' .. el.src .. '\\n') return el.caption end\n";
+            std::fs::write(&filter, lua)?;
+            spec = spec.arg("-L").arg(&filter);
+        }
         spec = spec.arg("-o").arg(&out).arg(&task.input);
-        let mut warnings = 0;
+        let (mut warnings, mut images) = (0, 0);
         tool::run_ok(spec, ctx, &[], &mut |l| {
-            if l.contains("[WARNING]") {
+            if l.contains("Could not fetch resource") {
+                images += 1;
+            } else if l.contains("[WARNING]") {
                 warnings += 1;
             }
         })?;
+        if images > 0 {
+            notes.push(
+                tr!(
+                    "images liées non reprises (remplacées par leur légende) : par sécurité, Pandoc ne lit que le fichier converti, pas les images à côté",
+                    "linked images not kept (replaced by their caption): for safety, Pandoc only reads the converted file, not the images next to it"
+                )
+                .to_owned(),
+            );
+        }
         if warnings > 0 {
             notes.push(trf!(
                 "Pandoc a signalé {warnings} avertissement(s) (éléments non convertibles ignorés)",
                 "Pandoc reported {warnings} warning(s) (unconvertible items skipped)"
             ));
+        }
+        if to == "asciidoc"
+            && let Ok(text) = std::fs::read_to_string(&out)
+            && let Some(clean) = without_trailing_anchors(&text)
+        {
+            std::fs::write(&out, clean)?;
         }
         tool::deliver(&out, &task.output, "Pandoc")?;
         tool::report_fraction(ctx, 1.0);
@@ -269,6 +296,21 @@ impl Engine for Pandoc {
     }
 }
 
+/// AsciiDoc : ancres de bloc (`[[id]]`) laissées en toute fin de document, sans rien à
+/// ancrer (sauts de page d'un livre Calibre) — le lecteur AsciiDoc de Pandoc les refuse
+/// (« Unexpected "[[…]]" »). `None` s'il n'y en a pas.
+fn without_trailing_anchors(text: &str) -> Option<String> {
+    let mut lines: Vec<&str> = text.trim_end().lines().collect();
+    let before = lines.len();
+    while lines.last().is_some_and(|l| {
+        let l = l.trim();
+        l.is_empty() || (l.starts_with("[[") && l.ends_with("]]") && !l[2..l.len() - 2].contains(['[', ']']))
+    }) {
+        lines.pop();
+    }
+    (lines.len() < before).then(|| lines.join("\n") + "\n")
+}
+
 /// Cellules et mots d'un carnet Jupyter (`source` est une chaîne ou une liste de lignes).
 fn notebook_words(bytes: &[u8]) -> Result<(usize, usize), String> {
     let invalid = || tr!("carnet Jupyter illisible", "unreadable Jupyter notebook").to_owned();
@@ -287,6 +329,14 @@ fn notebook_words(bytes: &[u8]) -> Result<(usize, usize), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn trailing_asciidoc_anchors_are_dropped() {
+        let calibre = "Texte.\n\n[[a.html_pb_0]]\n\nSuite.\n\n[[b.html_calibre_pb_2]]\n";
+        assert_eq!(without_trailing_anchors(calibre).as_deref(), Some("Texte.\n\n[[a.html_pb_0]]\n\nSuite.\n"));
+        assert_eq!(without_trailing_anchors("Texte.\n\n[[x]]\n\n[[y]]\n\n").as_deref(), Some("Texte.\n"));
+        assert_eq!(without_trailing_anchors("Texte.\n"), None, "rien à retirer");
+        assert_eq!(without_trailing_anchors("Voir <<x>>.\n\n[[x]]\n[[y]] suite\n"), None, "une ancre suivie de texte reste");
+    }
 
     #[test]
     fn notebooks_are_read_directly() {

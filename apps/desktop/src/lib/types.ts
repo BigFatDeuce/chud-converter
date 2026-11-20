@@ -138,6 +138,16 @@ export interface EngineView {
   previous: string | null;
   /** Une installation est en cours (lancée depuis cette fenêtre ou une autre). */
   installing: boolean;
+  /** Modules absents d'une installation qui fonctionne (LibreOffice Calc sous Fedora…) : leurs
+   *  conversions ne sont pas proposées ; les paquets du système peuvent les ajouter. */
+  missing: MissingPart[];
+}
+
+export interface MissingPart {
+  /** « Calc (classeurs) » */
+  name: string;
+  /** Familles de fichiers qui en dépendent : spreadsheet, presentation… */
+  categories: string[];
 }
 
 export interface InstallOffer {

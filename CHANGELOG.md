@@ -2,9 +2,58 @@
 
 All notable changes to Chud Converter. Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.0] — 2026-11-20
+
+Linux works for real (AppImage, Fedora, Nobara), and every document, spreadsheet, presentation,
+PDF, e-book and image format the app offers was converted to each of its targets, then read
+back, on Windows and on Linux (about 1,700 real conversions each): every failure found is fixed.
+
+### Added
+- **LibreOffice installed without some modules** (Fedora and Nobara ship Writer, Calc and Impress
+  as separate packages): the app now sees which ones are there, only offers the files it can
+  really convert, says what is missing ("Incomplete installation, missing: Calc
+  (spreadsheets)…"), and adds the missing packages in one click.
+- `chud targets` says why nothing can be converted, and what to install.
 
 ### Fixed
+- **Icons**: an image larger than 256 px could not become an ICO with ImageMagick ("width or
+  height exceeds limit"); it is now reduced to 256 px, and the plan says so.
+- **TGA** files were taken for Windows cursors (CUR), which start with the same four bytes.
+  TGA has no signature: a file whose header is consistent is now recognised with medium
+  confidence instead of being a mere guess from its name.
+- **APNG** was offered for still images through a detour (PCX, JPEG 2000, PSD, PDF…) and gave a
+  plain PNG named `.apng`; it is now offered only when the result is really animated.
+- **PPM** files written by the app were PAM files (P7) that libvips and many viewers refuse; they
+  are now real PPM files (transparency, which PPM cannot hold, is announced as lost, whichever
+  engine writes it).
+- **Radiance HDR** written by libvips on a French system had an unreadable header
+  (`EXPOSURE=1,000000e+00`, with a decimal comma); libvips no longer writes HDR, the built-in
+  engine and ImageMagick do. HDR and EXR to JPEG 2000 no longer go through libvips, which
+  refused them ("not an integer format").
+- A **DDS** whose sides are not multiples of 4, or a **floating-point TIFF**, was called
+  "damaged" because the built-in decoder does not read that variant; such files are now converted
+  by ImageMagick or libvips.
+- **Calibre**: an ODT made by LibreOffice with pictures failed (Calibre's ODF reader); ODT now
+  goes through LibreOffice or Pandoc. A comic book to plain text now says "no text to extract"
+  instead of "Calibre produced an empty file". On Windows, Calibre crashing while closing, after
+  writing the file, no longer loses the result (it is checked like any other).
+- **Pandoc**: a Markdown, Typst or LaTeX file with linked pictures could not become a Jupyter
+  notebook ("could not fetch resource"): for safety Pandoc only reads the converted file, not the
+  pictures next to it, and its notebook writer stops on the first missing one. Each picture is
+  now replaced by its caption, and the result says so.
+- **LibreOffice** could show "The application cannot be started. User installation could not be
+  completed" and wait for a click: when the engines list was reloaded (after an install) during
+  conversions, the old LibreOffice engine deleted the temporary profiles the new one was using.
+  Each engine now has its own folder of profiles.
+- Installing LibreOffice and Calibre at the same time on Windows: both unpacked their package in
+  the same temporary folder, and Windows Installer refuses two packages at once; the second now
+  waits for the first.
+- **E-books to AsciiDoc**: page-break anchors left by Calibre at the very end of the text
+  (`[[…_pb_2]]`) made the AsciiDoc file unreadable by Pandoc; they are now removed.
+- Engines list on Linux: "install … (LibreOffice your distribution's, 0 MB)" now names the
+  packages, and the confirmation reads "Install LibreOffice from your distribution's packages?".
+- Welcome screen: ImageMagick and libvips showed "for:" followed by nothing; they now say
+  "for: advanced images (PSD, HEIC, RAW, JPEG XL…)".
 - **Linux AppImage**: LibreOffice, libvips, Tesseract and MediaInfo installed by the system
   showed "installed, but not responding … symbol lookup error … undefined symbol: nghttp2_…"
   (seen on Nobara/Fedora). The AppImage put its own, older libraries first for every program it

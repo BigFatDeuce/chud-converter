@@ -32,6 +32,14 @@ struct Env {
     ffmpeg: Option<PathBuf>,
     sevenzip: bool,
     sevenzip_path: Option<PathBuf>,
+    /// Moteurs prêts (identifiants).
+    ready: Vec<String>,
+}
+
+impl Env {
+    fn has(&self, id: &str) -> bool {
+        self.ready.iter().any(|r| r == id)
+    }
 }
 
 impl Drop for Env {
@@ -45,14 +53,21 @@ fn env(name: &str) -> Env {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let paths = AppPaths::at(&dir.join("app"));
-    let mgr = EngineManager::new(paths.clone()).unwrap();
+    // `CHUD_TEST_ENGINES_DATA` : dossier `data` d'une installation portable dont on reprend les
+    // moteurs gérés (essai complet sous Windows, où ils ne sont pas dans le PATH).
+    let discovery = match std::env::var_os("CHUD_TEST_ENGINES_DATA").map(PathBuf::from) {
+        Some(d) => AppPaths { config_dir: d.join("config"), data_dir: d, cache_dir: paths.cache_dir.clone(), portable: true },
+        None => paths.clone(),
+    };
+    let mgr = EngineManager::new(discovery).unwrap();
     let mut statuses = mgr.discover();
     let registry: Registry = mgr.build_registry(&mut statuses);
     let ready = |id: &str| statuses.iter().find(|s| s.id == id && s.state == EngineState::Ready);
     let ffmpeg = ready("ffmpeg").and_then(|s| s.path.clone());
     let sevenzip = ready("7zip").is_some();
     let sevenzip_path = ready("7zip").and_then(|s| s.path.clone());
-    Env { runner: Arc::new(JobRunner::new(Arc::new(registry), paths.cache_dir.clone())), dir, ffmpeg, sevenzip, sevenzip_path }
+    let ready = statuses.iter().filter(|s| s.state == EngineState::Ready).map(|s| s.id.clone()).collect();
+    Env { runner: Arc::new(JobRunner::new(Arc::new(registry), paths.cache_dir.clone())), dir, ffmpeg, sevenzip, sevenzip_path, ready }
 }
 
 fn ff(ffmpeg: &Path, out: &Path, args: &[&str]) {
@@ -335,17 +350,21 @@ fn convert_all(e: &Env, sources: &[PathBuf]) -> Vec<Outcome> {
 /// Refus attendu : les échantillons synthétiques ne contiennent aucun texte, la reconnaissance
 /// (OCR) doit donc échouer clairement plutôt que produire un fichier vide. L'OCR sur une vraie
 /// image de texte est vérifiée dans `chud-engines/tests/tools_real.rs`.
-fn expected_refusal(error: &str) -> bool {
-    error.contains("aucun texte reconnu dans l'image")
+/// Refus honnêtes : une image sans texte pour l'OCR, une bande dessinée (« bd.* », que des
+/// images) vers un format de texte.
+fn expected_refusal(o: &Outcome) -> bool {
+    o.error
+        .as_deref()
+        .is_some_and(|e| e.contains("aucun texte reconnu dans l'image") || (o.label.starts_with("bd.") && e.contains("aucun texte")))
 }
 
 fn report(results: &[Outcome]) {
-    let refused = results.iter().filter(|o| o.error.as_deref().is_some_and(expected_refusal)).count();
+    let refused = results.iter().filter(|o| expected_refusal(o)).count();
     if refused > 0 {
-        eprintln!("{refused} reconnaissance(s) de texte refusée(s) faute de texte, comme attendu");
+        eprintln!("{refused} conversion(s) refusée(s) faute de texte, comme attendu");
     }
     let failures: Vec<String> =
-        results.iter().filter_map(|o| o.error.as_ref().filter(|e| !expected_refusal(e)).map(|e| format!("  {} : {e}", o.label))).collect();
+        results.iter().filter(|o| !expected_refusal(o)).filter_map(|o| Some(format!("  {} : {}", o.label, o.error.as_ref()?))).collect();
     let weak: Vec<&str> = results.iter().filter(|o| o.weak_check).map(|o| o.label.as_str()).collect();
     eprintln!("{} conversions, {} échecs, {} vérifiées par signature seulement", results.len(), failures.len(), weak.len());
     assert!(failures.is_empty(), "{} conversion(s) proposée(s) en échec :\n{}", failures.len(), failures.join("\n"));
@@ -400,4 +419,170 @@ fn every_offered_text_data_and_archive_conversion_works() {
 
 fn registry_kind(e: &Env, id: &str) -> Option<chud_core::Category> {
     e.runner.registry().catalog().get(id).map(|d| d.category)
+}
+
+/// Présentation OpenDocument minimale écrite à la main (aucun moteur ne sait en créer une à
+/// partir d'un autre format) : deux diapositives avec du texte accentué.
+fn odp(path: &Path) {
+    use std::io::Write;
+    let f = std::fs::File::create(path).unwrap();
+    let mut z = zip::ZipWriter::new(f);
+    let stored = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let deflated = zip::write::SimpleFileOptions::default();
+    z.start_file("mimetype", stored).unwrap();
+    z.write_all(b"application/vnd.oasis.opendocument.presentation").unwrap();
+    z.start_file("META-INF/manifest.xml", deflated).unwrap();
+    z.write_all(
+        br#"<?xml version="1.0" encoding="UTF-8"?>
+<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2">
+ <manifest:file-entry manifest:full-path="/" manifest:media-type="application/vnd.oasis.opendocument.presentation"/>
+ <manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/>
+</manifest:manifest>"#,
+    )
+    .unwrap();
+    z.start_file("content.xml", deflated).unwrap();
+    let slide = |n: u32, text: &str| {
+        format!(
+            r#"<draw:page draw:name="Diapo {n}"><draw:frame svg:x="2cm" svg:y="2cm" svg:width="20cm" svg:height="4cm"><draw:text-box><text:p>{text}</text:p></draw:text-box></draw:frame></draw:page>"#
+        )
+    };
+    let content = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:svg="urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" office:version="1.2"><office:body><office:presentation>{}{}</office:presentation></office:body></office:document-content>"#,
+        slide(1, "Bonjour, présentation é"),
+        slide(2, "Deuxième diapositive")
+    );
+    z.write_all(content.as_bytes()).unwrap();
+    z.finish().unwrap();
+}
+
+/// Deux pages PNG de bande dessinée.
+fn comic_pages(dir: &Path) -> Vec<PathBuf> {
+    (1..=2u32)
+        .map(|n| {
+            let p = dir.join(format!("page{n:02}.png"));
+            let img = image::RgbImage::from_fn(120, 160, |x, y| image::Rgb([(x * 2) as u8, (y + n * 40) as u8, 90]));
+            img.save(&p).unwrap();
+            p
+        })
+        .collect()
+}
+
+fn cbz(path: &Path, pages: &[PathBuf]) {
+    use std::io::Write;
+    let mut z = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+    for p in pages {
+        z.start_file(p.file_name().unwrap().to_string_lossy(), zip::write::SimpleFileOptions::default()).unwrap();
+        z.write_all(&std::fs::read(p).unwrap()).unwrap();
+    }
+    z.finish().unwrap();
+}
+
+/// Sources « documents » : textes balisés écrits ici, plus ce que seuls certains moteurs savent
+/// lire (PostScript, SVG, présentation, bandes dessinées).
+fn document_samples(e: &Env, dir: &Path) -> Vec<PathBuf> {
+    let files: &[(&str, &str)] = &[
+        (
+            "notes é.md",
+            "# Réunion du 3 mars\n\nTexte avec **gras**, *italique* et un [lien](https://example.org).\n\n- un\n- deux\n\n| Nom | Note |\n|-----|------|\n| Élise | 12 |\n| Zoë | 15 |\n\n```\ncode();\n```\n",
+        ),
+        (
+            "page.html",
+            "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Page é</title></head><body><h1>Titre</h1><p>Un paragraphe <b>gras</b>.</p><table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>2</td></tr></table></body></html>",
+        ),
+        ("lettre.txt", "Madame, Monsieur,\n\nVoici une lettre accentuée : été, Noël, cœur.\n\nCordialement.\n"),
+        ("doc.rst", "Titre\n=====\n\nUn paragraphe *accentué* : été.\n\n- un\n- deux\n"),
+        ("doc.org", "* Titre\nUn paragraphe /accentué/ : été.\n- un\n- deux\n"),
+        ("doc.tex", "\\documentclass{article}\n\\begin{document}\n\\section{Titre}\nUn paragraphe accentu\\'e.\n\\end{document}\n"),
+        (
+            "carnet.ipynb",
+            r##"{"cells":[{"cell_type":"markdown","metadata":{},"source":["# Carnet\n","Texte é."]},{"cell_type":"code","execution_count":1,"metadata":{},"outputs":[],"source":["print(1)"]}],"metadata":{},"nbformat":4,"nbformat_minor":5}"##,
+        ),
+        ("affiche.ps", "%!PS-Adobe-3.0\n/Helvetica findfont 48 scalefont setfont\n72 600 moveto (Bonjour Chud) show\nshowpage\n"),
+        (
+            "dessin.svg",
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80" viewBox="0 0 120 80"><rect width="120" height="80" fill="#3a6"/><circle cx="60" cy="40" r="25" fill="#fc0"/><text x="10" y="75" font-size="12">Chud</text></svg>"##,
+        ),
+    ];
+    let mut out: Vec<PathBuf> = files
+        .iter()
+        .map(|(n, b)| {
+            let p = dir.join(n);
+            std::fs::write(&p, b).unwrap();
+            p
+        })
+        .collect();
+    let p = dir.join("diapos é.odp");
+    odp(&p);
+    out.push(p);
+    let pages_dir = dir.join("pages");
+    std::fs::create_dir_all(&pages_dir).unwrap();
+    let pages = comic_pages(&pages_dir);
+    let p = dir.join("bd.cbz");
+    cbz(&p, &pages);
+    out.push(p);
+    if let Some(z) = &e.sevenzip_path {
+        for (t, ext) in [("tar", "cbt"), ("7z", "cb7")] {
+            let a = dir.join(format!("bd.{ext}"));
+            let spec = ProcessSpec::new(z).args(["a", "-bso0", "-bsp0", &format!("-t{t}")]).arg(&a).args(pages.iter());
+            let o = chud_process::run_capture(&spec, 0).expect("lancement 7-Zip");
+            assert!(o.success(), "7-Zip : {}", o.stderr_tail);
+            out.push(a);
+        }
+    }
+    out
+}
+
+/// Documents, tableurs, présentations, PDF, livres et images avancées : chaque cible proposée
+/// pour des sources écrites ici, puis **chaque format obtenu** relu comme source à son tour (un
+/// fichier par format) vers chacune de ses cibles. Demande LibreOffice et Pandoc (sinon
+/// « SKIP », ou échec si `CHUD_REQUIRE_TOOLS` est défini).
+#[test]
+fn every_offered_document_conversion_works() {
+    let e = env("docs");
+    if let Some(missing) = ["libreoffice", "pandoc"].iter().find(|id| !e.has(id)) {
+        assert!(std::env::var_os("CHUD_REQUIRE_TOOLS").is_none(), "{missing} absent alors que CHUD_REQUIRE_TOOLS est défini");
+        eprintln!("SKIP : {missing} absent");
+        return;
+    }
+    eprintln!("moteurs prêts : {}", e.ready.join(", "));
+    let src = e.dir.join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let sources = document_samples(&e, &src);
+    let start = std::time::Instant::now();
+    let first = convert_all(&e, &sources);
+    eprintln!("premier tour : {} sources, {:?}", sources.len(), start.elapsed());
+    use chud_core::Category as C;
+    let relu = [C::Document, C::Spreadsheet, C::Presentation, C::Pdf, C::Ebook, C::Image];
+    let already: std::collections::HashSet<String> =
+        sources.iter().filter_map(|p| detect_path(p, e.runner.registry().catalog()).ok()?.format.map(|f| f.to_string())).collect();
+    let mut seen = std::collections::HashSet::new();
+    // Un format par fichier relu : de préférence tiré d'une source qui a du texte (une BD
+    // convertie en RTF ou en EPUB ne contient que des images).
+    let mut ordered: Vec<&Outcome> = first.iter().collect();
+    ordered.sort_by_key(|o| o.label.starts_with("bd."));
+    let produced: Vec<(String, PathBuf)> = ordered
+        .into_iter()
+        .filter(|o| o.error.is_none() && registry_kind(&e, &o.target).is_some_and(|k| relu.contains(&k)))
+        .filter(|o| !already.contains(&o.target) && seen.insert(o.target.clone()))
+        .filter_map(|o| Some((o.target.clone(), o.output.clone()?)))
+        .collect();
+    // Formats que l'on sait écrire sans savoir les relire (AsciiDoc, Typst… : Pandoc ne les lit
+    // pas) : ils doivent au moins être reconnus pour ce qu'ils sont.
+    let (second_sources, write_only): (Vec<_>, Vec<_>) = produced.into_iter().partition(|(fmt, p)| {
+        let det = detect_path(p, e.runner.registry().catalog()).unwrap();
+        assert_eq!(det.format.as_ref().map(|f| f.as_str()), Some(fmt.as_str()), "{} mal reconnu", p.display());
+        let info = e.runner.registry().probe(p, &det.format.unwrap());
+        !e.runner.registry().targets(&fmt.as_str().into(), info.as_ref(), &OptionValues::new()).is_empty()
+    });
+    let second_sources: Vec<PathBuf> = second_sources.into_iter().map(|(_, p)| p).collect();
+    let start = std::time::Instant::now();
+    let second = convert_all(&e, &second_sources);
+    let mut formats: Vec<String> = seen.into_iter().collect();
+    formats.sort();
+    eprintln!("second tour : {} formats relus ({}), {:?}", second_sources.len(), formats.join(" "), start.elapsed());
+    eprintln!("écrits sans relecture possible : {}", write_only.iter().map(|(f, _)| f.as_str()).collect::<Vec<_>>().join(" "));
+    let mut all = first;
+    all.extend(second);
+    report(&all);
 }

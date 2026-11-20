@@ -19,4 +19,5 @@ chud-engines.workspace = true
 chud-enginemgr.workspace = true
 serde_json.workspace = true
 zip.workspace = true
+image.workspace = true
 chud-process.workspace = true

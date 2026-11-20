@@ -205,6 +205,13 @@ pub fn install(
     progress(InstallProgress::Checking);
     let st = EngineManager::new(paths.clone()).map_err(|e| InstallError::Failed(e.to_string()))?.discover_one(m);
     match (&st.state, &st.path) {
+        (EngineState::Ready, Some(_)) if !st.missing.is_empty() => Err(InstallError::Failed(trf!(
+            "{} : toujours absent après l'installation des paquets ({}) : {}",
+            "{}: still missing after installing the packages ({}): {}",
+            m.name,
+            r.packages.join(" "),
+            st.missing.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join(", ")
+        ))),
         (EngineState::Ready | EngineState::NoAdapter, Some(p)) => {
             Ok(Installed { path: p.clone(), version: st.version.unwrap_or_default(), previous: None })
         }

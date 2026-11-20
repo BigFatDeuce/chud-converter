@@ -21,8 +21,8 @@ pub mod registry;
 pub use cancel::CancelToken;
 pub use detect::{Confidence, Detection, DetectionMethod, detect_path};
 pub use engine::{
-    ConversionCap, Engine, EngineError, EngineId, EngineInfo, EngineOrigin, ExecContext, Fidelity, Progress, SourceInfo, StepAssessment,
-    StepOutput, StepQuery, StepTask, StreamInfo, StreamKind, Verification,
+    ConversionCap, Engine, EngineError, EngineId, EngineInfo, EngineOrigin, ExecContext, Fidelity, MissingPart, Progress, SourceInfo,
+    StepAssessment, StepOutput, StepQuery, StepTask, StreamInfo, StreamKind, Verification,
 };
 pub use error::CoreError;
 pub use feature::{Feature, FeatureSet};

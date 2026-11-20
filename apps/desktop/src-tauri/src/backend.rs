@@ -162,6 +162,8 @@ pub struct EngineView {
     pub previous: Option<String>,
     /// Une installation de ce moteur est en cours (une fenêtre rouverte la retrouve).
     pub installing: bool,
+    /// Modules absents d'une installation qui fonctionne (LibreOffice Calc sous Fedora…).
+    pub missing: Vec<chud_core::MissingPart>,
 }
 
 impl From<&EngineStatus> for EngineView {
@@ -190,6 +192,7 @@ impl From<&EngineStatus> for EngineView {
             installable: s.installable.clone(),
             previous: s.previous.clone(),
             installing: false,
+            missing: s.missing.clone(),
         }
     }
 }

@@ -3,28 +3,81 @@
 //! - Profil utilisateur **isolé** (`-env:UserInstallation`), jamais celui de l'utilisateur : une
 //!   fenêtre LibreOffice ouverte n'est pas touchée, aucune macro ni extension n'est chargée.
 //!   Les profils sont réutilisés d'une conversion à l'autre (le premier démarrage est lent),
-//!   un profil par conversion simultanée, supprimés quand le moteur est déchargé.
+//!   un profil par conversion simultanée, supprimés quand le moteur est déchargé. Chaque moteur
+//!   a son propre dossier de profils : l'ancien moteur, déchargé après un rechargement de la
+//!   liste, ne supprime pas les profils du nouveau en pleine conversion (LibreOffice afficherait
+//!   alors « User installation could not be completed » et attendrait un clic).
 //! - La source est placée sous un nom simple (`input.docx`) dans le dossier de travail.
 //! - Le code de retour de LibreOffice ne dit rien de fiable : le fichier produit doit exister,
 //!   puis sa structure est contrôlée (ZIP intact, PDF complet…).
+//! - Seuls les modules installés sont annoncés : les distributions Linux livrent Writer, Calc et
+//!   Impress dans des paquets séparés (voir [`missing_modules`]).
 
 use crate::tool::{self, Stage};
 use chud_core::feature::features;
 use chud_core::{
-    ConversionCap, Engine, EngineError, EngineInfo, EngineOrigin, ExecContext, FeatureSet, Fidelity, FormatId, StepOutput, StepTask,
-    Verification,
+    ConversionCap, Engine, EngineError, EngineInfo, EngineOrigin, ExecContext, FeatureSet, Fidelity, FormatId, MissingPart, StepOutput,
+    StepTask, Verification,
 };
 use chud_core::{tr, trf};
 use chud_process::ProcessSpec;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
+
+/// Numéro du prochain moteur LibreOffice de ce processus (un dossier de profils chacun).
+static INSTANCES: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Family {
     Writer,
     Calc,
     Impress,
+}
+
+const FAMILIES: [Family; 3] = [Family::Writer, Family::Calc, Family::Impress];
+
+impl Family {
+    /// Fichier de configuration déposé par le module dans `share/registry`.
+    fn registry_file(self) -> &'static str {
+        match self {
+            Family::Writer => "writer.xcd",
+            Family::Calc => "calc.xcd",
+            Family::Impress => "impress.xcd",
+        }
+    }
+
+    fn missing(self) -> MissingPart {
+        let (name, category) = match self {
+            Family::Writer => (tr!("Writer (textes)", "Writer (documents)"), "document"),
+            Family::Calc => (tr!("Calc (classeurs)", "Calc (spreadsheets)"), "spreadsheet"),
+            Family::Impress => (tr!("Impress (présentations)", "Impress (presentations)"), "presentation"),
+        };
+        MissingPart { name: name.into(), categories: vec![category.into()] }
+    }
+}
+
+/// Modules présents à côté de `exe`. Chaque module dépose son `share/registry/<module>.xcd`
+/// (Fedora : `libreoffice-calc` apporte `calc.xcd`) ; sans lui, LibreOffice refuse d'ouvrir
+/// les fichiers du module (« source file could not be loaded »). Disposition inconnue (pas de
+/// `main.xcd`, comme sous macOS) : tous les modules sont supposés présents.
+fn installed_families(exe: &Path) -> Vec<Family> {
+    let real = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
+    let Some(registry) = real.parent().and_then(Path::parent).map(|d| d.join("share").join("registry")) else {
+        return FAMILIES.to_vec();
+    };
+    if !registry.join("main.xcd").is_file() {
+        return FAMILIES.to_vec();
+    }
+    FAMILIES.into_iter().filter(|f| registry.join(f.registry_file()).is_file()).collect()
+}
+
+/// Modules de LibreOffice absents de l'installation trouvée en `exe` (paquets de la
+/// distribution non installés).
+pub fn missing_modules(exe: &Path) -> Vec<MissingPart> {
+    let present = installed_families(exe);
+    FAMILIES.into_iter().filter(|f| !present.contains(f)).map(Family::missing).collect()
 }
 
 const INPUTS: &[(&str, Family)] = &[
@@ -111,6 +164,8 @@ pub struct LibreOffice {
     exe: PathBuf,
     caps: Vec<ConversionCap>,
     profiles: Mutex<Vec<PathBuf>>,
+    /// Profils créés jusqu'ici (leur numéro).
+    created: AtomicUsize,
     root: PathBuf,
 }
 
@@ -134,7 +189,8 @@ impl LibreOffice {
             return Err(trf!("introuvable : {}", "not found: {}", exe.display()));
         }
         let mut caps = Vec::new();
-        for (from, fam) in INPUTS {
+        let present = installed_families(&exe);
+        for (from, fam) in INPUTS.iter().filter(|(_, f)| present.contains(f)) {
             for (f, to, _) in OUTPUTS.iter().filter(|o| o.0 == *fam) {
                 debug_assert_eq!(f, fam);
                 if from == to {
@@ -144,7 +200,8 @@ impl LibreOffice {
                 caps.push(ConversionCap::new(from, to, fidelity, &preserved(*fam, to), 3));
             }
         }
-        let root = std::env::temp_dir().join(format!("chud-libreoffice-{}", std::process::id()));
+        let n = INSTANCES.fetch_add(1, Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!("chud-libreoffice-{}-{n}", std::process::id()));
         Ok(Self {
             info: tool::engine_info(
                 "libreoffice",
@@ -162,6 +219,7 @@ impl LibreOffice {
             exe,
             caps,
             profiles: Mutex::new(Vec::new()),
+            created: AtomicUsize::new(0),
             root,
         })
     }
@@ -171,8 +229,8 @@ impl LibreOffice {
         let dir = match reused {
             Some(d) => d,
             None => {
-                let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-                let d = self.root.join(format!("profile-{stamp}"));
+                // Un numéro, pas l'heure : deux conversions simultanées n'ont jamais le même profil.
+                let d = self.root.join(format!("profile-{}", self.created.fetch_add(1, Ordering::Relaxed)));
                 std::fs::create_dir_all(&d)?;
                 d
             }
@@ -299,6 +357,58 @@ mod tests {
     fn urls_are_escaped() {
         assert_eq!(file_url(Path::new("/tmp/a b/p")), "file:///tmp/a%20b/p");
         assert_eq!(file_url(Path::new(r"C:\Users\Élo\p")), "file:///C:/Users/%C3%89lo/p");
+    }
+
+    /// Installation découpée comme sous Fedora : Writer seul. Calc et Impress ne sont pas
+    /// annoncés (ils échoueraient : « source file could not be loaded »).
+    #[test]
+    fn only_installed_modules_are_offered() {
+        let root = std::env::temp_dir().join(format!("chud-lo-modules-{}", std::process::id()));
+        let program = root.join("program");
+        let registry = root.join("share").join("registry");
+        std::fs::create_dir_all(&program).unwrap();
+        std::fs::create_dir_all(&registry).unwrap();
+        let exe = program.join("soffice");
+        std::fs::write(&exe, b"").unwrap();
+        for f in ["main.xcd", "writer.xcd"] {
+            std::fs::write(registry.join(f), b"").unwrap();
+        }
+        let lo = LibreOffice::new(exe.clone(), None, EngineOrigin::System).unwrap();
+        let has = |a: &str, b: &str| lo.caps.iter().any(|c| c.from.as_str() == a && c.to.as_str() == b);
+        assert!(has("docx", "pdf") && has("txt", "odt"));
+        assert!(!has("csv", "xlsx") && !has("xlsx", "pdf") && !has("pptx", "pdf") && !has("odp", "pptx"));
+        let missing = missing_modules(&exe);
+        assert_eq!(missing.len(), 2);
+        assert_eq!(missing[0].categories, ["spreadsheet"]);
+        assert_eq!(missing[1].categories, ["presentation"]);
+        // Les trois modules : rien ne manque.
+        for f in ["calc.xcd", "impress.xcd"] {
+            std::fs::write(registry.join(f), b"").unwrap();
+        }
+        assert!(missing_modules(&exe).is_empty());
+        assert!(LibreOffice::new(exe, None, EngineOrigin::System).unwrap().caps.iter().any(|c| c.from.as_str() == "pptx"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Liste des moteurs rechargée (après une installation) : l'ancien moteur LibreOffice,
+    /// déchargé, ne supprime pas le profil que le nouveau est en train d'utiliser.
+    #[test]
+    fn each_engine_keeps_its_own_profiles() {
+        let exe = std::env::current_exe().unwrap();
+        let old = LibreOffice::new(exe.clone(), None, EngineOrigin::System).unwrap();
+        let new = LibreOffice::new(exe, None, EngineOrigin::System).unwrap();
+        assert_ne!(old.root, new.root);
+        drop(old.profile().unwrap());
+        let busy = new.profile().unwrap();
+        let other = new.profile().unwrap();
+        assert_ne!(busy.dir, other.dir, "deux conversions simultanées, deux profils");
+        let dir = busy.dir.clone().unwrap();
+        let root = new.root.clone();
+        drop(old);
+        assert!(dir.is_dir(), "profil en cours d'utilisation supprimé");
+        drop((busy, other));
+        drop(new);
+        assert!(!root.exists(), "profils supprimés avec leur moteur");
     }
 
     #[test]

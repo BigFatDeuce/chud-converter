@@ -25,7 +25,11 @@ const READ: &[&str] = &[
 ];
 // HEIC en lecture seulement : l'encodeur HEVC (x265) manque aux versions officielles de libvips
 // pour Windows et à la plupart des distributions (« heifsave: Unsupported compression »).
-const WRITE: &[&str] = &["png", "jpeg", "webp", "tiff", "gif", "avif", "jxl", "jp2", "hdr", "pnm"];
+// Radiance HDR en lecture seulement : libvips écrit l'en-tête selon la langue du système
+// (« EXPOSURE=1,000000e+00 » en français), et le fichier devient illisible pour les autres.
+const WRITE: &[&str] = &["png", "jpeg", "webp", "tiff", "gif", "avif", "jxl", "jp2", "pnm"];
+/// Images en virgule flottante : l'enregistreur JPEG 2000 n'accepte que des entiers.
+const FLOAT: &[&str] = &["exr", "hdr"];
 const LOSSY: &[&str] = &["jpeg", "webp", "avif", "jxl", "jp2"];
 const PAGED: &[&str] = &["gif", "webp", "tiff"];
 
@@ -101,7 +105,7 @@ impl Libvips {
         let mut caps = Vec::new();
         for from in &readable {
             for to in &writable {
-                if from != to {
+                if from != to && !(FLOAT.contains(from) && *to == "jp2") {
                     caps.push(ConversionCap::new(from, to, raster_fidelity(from, to), &raster_keep(from, to), 2));
                 }
             }
@@ -220,5 +224,16 @@ mod tests {
         let v = Libvips::with_suffixes(PathBuf::from("/x"), None, EngineOrigin::System, &l, &s);
         let has = |a: &str, b: &str| v.caps.iter().any(|c| c.from.as_str() == a && c.to.as_str() == b);
         assert!(has("heic", "png") && has("avif", "jpeg") && !has("png", "heic"));
+    }
+
+    #[test]
+    fn never_writes_what_others_cannot_read() {
+        let set = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<HashSet<_>>();
+        let all = set(&["png", "hdr", "exr", "jp2", "j2k"]);
+        let v = Libvips::with_suffixes(PathBuf::from("/x"), None, EngineOrigin::System, &all, &all);
+        let has = |a: &str, b: &str| v.caps.iter().any(|c| c.from.as_str() == a && c.to.as_str() == b);
+        assert!(has("hdr", "png") && has("png", "jp2"));
+        assert!(!has("png", "hdr"), "en-tête HDR écrit selon la langue du système");
+        assert!(!has("hdr", "jp2") && !has("exr", "jp2"), "jp2ksave refuse les flottants");
     }
 }

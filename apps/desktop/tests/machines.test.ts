@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   JOB_TRANSITIONS,
+  completesInstall,
   current,
   engineActions,
   engineStep,
@@ -77,6 +78,7 @@ const engine = (over: Partial<EngineView>): EngineView => ({
   installable: { version: "9.0.2", size: 114768076, publisher: "gyan.dev", license: "GPL-3.0-or-later", page: "https://example.org" },
   previous: null,
   installing: false,
+  missing: [],
   ...over,
 });
 
@@ -90,6 +92,20 @@ test("moteurs : actions proposées selon l'état, une installation du système n
   assert.deepEqual(engineActions(engine({ state: "ready", origin: "managed", version: "9.0.2" })), ["uninstall"]);
   assert.deepEqual(engineActions(engine({ state: "ready", origin: "managed", version: "8.0", previous: "7.1" })), ["install", "rollback", "uninstall"]);
   assert.deepEqual(engineActions(engine({ installable: null })), []);
+});
+
+test("moteurs : une installation du système incomplète peut être complétée par ses paquets", () => {
+  const calc = { name: "Calc (classeurs)", categories: ["spreadsheet"] };
+  const sys = { version: "de votre distribution", size: 0, publisher: "Fedora", license: "MPL-2.0", page: "", runtime: false, system: { manager: "dnf", packages: ["libreoffice-calc"] } };
+  const lo = engine({ id: "libreoffice", state: "ready", origin: "system", version: "26.8", categories: ["document", "spreadsheet"], installable: sys, missing: [calc] });
+  assert.equal(completesInstall(lo), true);
+  assert.equal(installsAlongside(lo), false, "les paquets du système ne se posent pas « à côté »");
+  assert.deepEqual(engineActions(lo), ["install"]);
+  assert.equal(missingEngineFor("spreadsheet", [lo])?.id, "libreoffice", "un classeur sans conversion propose d'ajouter Calc");
+  assert.equal(missingEngineFor("document", [lo]), null, "Writer est là : rien à proposer pour un texte");
+  const complete = { ...lo, missing: [], installable: null };
+  assert.equal(completesInstall(complete), false);
+  assert.deepEqual(engineActions(complete), []);
 });
 
 test("moteurs : confirmer avant d'agir, annuler seulement une installation", () => {

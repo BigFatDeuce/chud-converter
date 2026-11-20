@@ -197,6 +197,51 @@ def simple_epub(path: Path) -> None:
         z.writestr("OEBPS/c2.xhtml", chapter.format(t="Second chapitre", p="Ils reviennent à la rentrée, bronzés et reposés."))
 
 
+def png(width: int, height: int, pixel) -> bytes:
+    """PNG RGBA écrit sans aucune bibliothèque ; `pixel(x, y)` renvoie (r, g, b, a)."""
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    rows = b"".join(b"\0" + bytes(c for x in range(width) for c in pixel(x, y)) for y in range(height))
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(rows, 9)) + chunk(b"IEND", b"")
+
+
+def images(dest: Path, made: list[str]) -> None:
+    """Exemples d'images de la 0.3.0 (icône, TGA, PCX, BD), sans aucun outil."""
+    import struct
+    import zipfile
+
+    def disc(x: int, y: int) -> tuple[int, int, int, int]:
+        inside = (x - 512) ** 2 + (y - 256) ** 2 < 200**2
+        return (230, 120, 30, 255) if inside else (40, 90, 200, 0)
+
+    (dest / "grande-image.png").write_bytes(png(1024, 512, disc))
+    w, h = 64, 48
+    pixels = [((x * 4) % 256, (y * 5) % 256, 128) for y in range(h) for x in range(w)]
+    # TGA en couleurs vraies sans palette : commence par 00 00 02 00, comme un curseur Windows.
+    tga = struct.pack("<BBBHHBHHHHBB", 0, 0, 2, 0, 0, 0, 0, 0, w, h, 24, 0x20)
+    tga += bytes(c for (r, g, b) in pixels for c in (b, g, r))
+    (dest / "image.tga").write_bytes(tga)
+    # PCX 24 bits : trois plans par ligne, compression RLE (octets ≥ 0xC0 précédés d'un compte).
+    header = struct.pack("<BBBBHHHHHH", 10, 5, 1, 8, 0, 0, w - 1, h - 1, 72, 72) + bytes(48)
+    header += struct.pack("<BBHHHH", 0, 3, w, 1, 0, 0) + bytes(54)
+    body = bytearray()
+    for y in range(h):
+        for plane in range(3):
+            for x in range(w):
+                v = pixels[y * w + x][plane]
+                body += bytes([0xC1, v]) if v >= 0xC0 else bytes([v])
+    (dest / "image.pcx").write_bytes(header + bytes(body))
+    with zipfile.ZipFile(dest / "bd.cbz", "w") as z:
+        for i, color in enumerate([(200, 60, 60), (60, 160, 90)], start=1):
+            z.writestr(f"page{i:02}.png", png(120, 160, lambda x, y, c=color: (*c, 255)))
+    made += ["grande-image.png", "image.tga", "image.pcx", "bd.cbz"]
+
+
 def documents(dest: Path, made: list[str]) -> None:
     """Exemples pour Pandoc, LibreOffice, Calibre, qpdf, Ghostscript et Tesseract, sans aucun outil."""
     (dest / "notes.md").write_text(
@@ -211,6 +256,29 @@ def documents(dest: Path, made: list[str]) -> None:
     )
     simple_epub(dest / "livre.epub")
     made += ["notes.md", "tableau.csv", "document.pdf", "livre.epub"]
+    # Image liée qui n'existe pas à côté : Pandoc ne lit jamais d'autre fichier que la source.
+    (dest / "notes-image.md").write_text(
+        "# Carnet de voyage\n\nUne photo du départ :\n\n![Le départ](couverture.jpg)\n\nFin du carnet.\n", encoding="utf-8"
+    )
+    made.append("notes-image.md")
+    # ODT avec une image, écrit par LibreOffice lui-même (CHUD_SOFFICE ou soffice du PATH).
+    soffice = os.environ.get("CHUD_SOFFICE") or tool("soffice")
+    if soffice:
+        import base64
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pic = base64.b64encode(png(80, 60, lambda x, y: (x * 3, y * 4, 150, 255))).decode()
+            html = Path(tmp) / "lettre.html"
+            html.write_text(
+                f"<html><body><h1>Lettre</h1><p>Bonjour, voici une image :</p><img src='data:image/png;base64,{pic}'/>"
+                "<p>Cordialement.</p></body></html>",
+                encoding="utf-8",
+            )
+            run([soffice, "--headless", f"-env:UserInstallation=file:///{tmp.replace(os.sep, '/')}/profil",
+                 "--convert-to", "odt:writer8", "--outdir", str(dest), str(html)])
+        if (dest / "lettre.odt").exists():
+            made.append("lettre.odt")
 
 
 def main() -> None:
@@ -223,6 +291,7 @@ def main() -> None:
     (OUT / "portable").write_text("Mode portable : réglages et cache dans le dossier data/ ci-contre.\n", encoding="utf-8")
     shutil.copyfile(ROOT / "docs" / "TESTER.md", OUT / "TESTER.md")
     made = samples(OUT / "Exemples")
+    images(OUT / "Exemples", made)
     print(f"\nPrêt : {OUT}")
     print("Exemples :", ", ".join(made) if made else "aucun (FFmpeg absent)")
 

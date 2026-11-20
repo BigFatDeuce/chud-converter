@@ -109,8 +109,29 @@ impl Registry {
     /// Sonde le fichier avec le premier moteur actif capable de le faire, complétée par les
     /// moteurs d'analyse (voir `Engine::enriches_probe`).
     pub fn probe(&self, path: &Path, format: &FormatId) -> Option<SourceInfo> {
-        let has_primary = self.active().any(|e| !e.enriches_probe() && e.can_probe(format));
-        let mut base = self.active().filter(|e| !e.enriches_probe() && e.can_probe(format)).find_map(|e| e.probe(path, format));
+        let mut has_primary = false;
+        let mut declined: Option<SourceInfo> = None;
+        let mut base = None;
+        for e in self.active().filter(|e| !e.enriches_probe() && e.can_probe(format)) {
+            has_primary = true;
+            match e.probe(path, format) {
+                // Variante que ce moteur ne sait pas décoder : rien ne prouve que le fichier est abîmé.
+                Some(info) if info.unsupported_by.contains(e.id()) => match &mut declined {
+                    Some(d) => d.unsupported_by.extend(info.unsupported_by),
+                    None => declined = Some(SourceInfo { features: None, ..info }),
+                },
+                Some(info) => {
+                    base = Some(info);
+                    break;
+                }
+                None => {}
+            }
+        }
+        match (&mut base, declined) {
+            (Some(b), Some(d)) => b.unsupported_by.extend(d.unsupported_by),
+            (None, Some(d)) => base = Some(d),
+            _ => {}
+        }
         if has_primary && base.is_none() {
             return None;
         }
@@ -235,6 +256,17 @@ impl Registry {
             };
             let specs = engine.options(&step.from, &step.to);
             let resolved = options.resolve(&specs).map_err(|e| PlanError::InvalidOption { key: e.key, message: e.message })?;
+            if i == 0 && info.is_some_and(|s| s.unsupported_by.contains(&step.engine)) {
+                return Err(PlanError::Unavailable {
+                    from: plan.source.to_string(),
+                    to: plan.target.to_string(),
+                    reasons: vec![crate::trf!(
+                        "{} ne sait pas lire cette variante du format",
+                        "{} cannot read this variant of the format",
+                        engine.info().name
+                    )],
+                });
+            }
             let q = StepQuery { from: &step.from, to: &step.to, source: if i == 0 { info } else { None }, options: &resolved };
             let a = engine.assess(&q);
             if let Some(reason) = a.unavailable {
@@ -281,5 +313,88 @@ fn merge_probe(base: &mut SourceInfo, extra: SourceInfo) {
     }
     if let (Some(b), Some(x)) = (base.features.as_mut(), extra.features) {
         b.extend(x);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine::{ConversionCap, EngineError, EngineInfo, EngineOrigin, ExecContext, StepOutput, StepTask};
+    use crate::feature::features;
+
+    /// Moteur factice : `decodes` dit ce que sa sonde répond (`None` : fichier abîmé ;
+    /// `Some(false)` : variante qu'il ne sait pas lire ; `Some(true)` : lu).
+    struct Fake {
+        info: EngineInfo,
+        caps: Vec<ConversionCap>,
+        decodes: Option<Option<bool>>,
+    }
+
+    impl Fake {
+        fn engine(id: &str, to: &str, cost: u32, decodes: Option<Option<bool>>) -> Arc<dyn Engine> {
+            let info = EngineInfo {
+                id: EngineId::new(id),
+                name: id.into(),
+                version: None,
+                license: String::new(),
+                homepage: String::new(),
+                origin: EngineOrigin::Builtin,
+                path: None,
+                description: String::new(),
+            };
+            Arc::new(Fake { info, caps: vec![ConversionCap::new("dds", to, Fidelity::Lossless, &features(&["alpha"]), cost)], decodes })
+        }
+    }
+
+    impl Engine for Fake {
+        fn info(&self) -> &EngineInfo {
+            &self.info
+        }
+        fn conversions(&self) -> &[ConversionCap] {
+            &self.caps
+        }
+        fn can_probe(&self, _format: &FormatId) -> bool {
+            self.decodes.is_some()
+        }
+        fn probe(&self, _path: &Path, _format: &FormatId) -> Option<SourceInfo> {
+            match self.decodes? {
+                None => None,
+                Some(true) => Some(SourceInfo { features: Some(features(&["alpha"])), ..Default::default() }),
+                Some(false) => Some(SourceInfo { unsupported_by: vec![self.info.id.clone()], ..Default::default() }),
+            }
+        }
+        fn execute(&self, _task: &StepTask, _ctx: &ExecContext) -> Result<StepOutput, EngineError> {
+            unreachable!()
+        }
+    }
+
+    fn registry(native: Option<bool>) -> Registry {
+        let mut r = Registry::new(FormatCatalog::builtin());
+        // Le moteur natif, moins cher, sonde le DDS ; ImageMagick (sans sonde) le lit aussi.
+        r.register(Fake::engine("image", "png", 1, Some(native)));
+        r.register(Fake::engine("imagemagick", "png", 3, None));
+        r
+    }
+
+    #[test]
+    fn an_unreadable_variant_is_not_a_damaged_file() {
+        let dds: FormatId = "dds".into();
+        let png: FormatId = "png".into();
+        let path = Path::new("x.dds");
+        // Lu par le moteur natif : il convertit.
+        let r = registry(Some(true));
+        let info = r.probe_checked(path, &dds).unwrap();
+        let t = r.targets(&dds, info.as_ref(), &OptionValues::new());
+        assert_eq!(t.iter().find(|c| c.format == png).unwrap().best.steps[0].engine.as_str(), "image");
+        // Abîmé : refusé d'emblée.
+        assert!(registry(None).probe_checked(path, &dds).is_err());
+        // Variante que le moteur natif ne lit pas : pas « abîmé », ImageMagick prend le relais.
+        let r = registry(Some(false));
+        let info = r.probe_checked(path, &dds).expect("pas abîmé").expect("sonde");
+        assert!(info.features.is_none(), "caractéristiques inconnues");
+        let t = r.targets(&dds, Some(&info), &OptionValues::new());
+        let best = &t.iter().find(|c| c.format == png).expect("PNG proposé").best;
+        assert_eq!(best.steps[0].engine.as_str(), "imagemagick");
+        assert!(t.iter().all(|c| c.best.steps[0].engine.as_str() != "image"));
     }
 }

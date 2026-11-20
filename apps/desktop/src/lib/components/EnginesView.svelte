@@ -6,7 +6,7 @@
   import { store } from "../store.svelte";
   import { api, errorText } from "../api";
   import { formatSize } from "../format";
-  import { engineActions, installsAlongside, type EngineOp } from "../machines";
+  import { completesInstall, engineActions, installsAlongside, type EngineOp } from "../machines";
   import { offerSize, offerSystemNotes } from "../engineText";
   import type { EngineState, EngineView, InstallProgress } from "../types";
 
@@ -126,6 +126,14 @@
             <span class="state">{stateText[e.state]}</span>
           </div>
           <p class="desc">{e.description}</p>
+          {#if e.missing.length}
+            <p class="warn small">
+              {L(
+                `Installation incomplète, absent : ${e.missing.map((p) => p.name).join(", ")}. Ces fichiers ne sont pas proposés à la conversion.`,
+                `Incomplete installation, missing: ${e.missing.map((p) => p.name).join(", ")}. These files are not offered for conversion.`,
+              )}
+            </p>
+          {/if}
           <dl>
             {#if e.version}<dt>{L("Version", "Version")}</dt><dd class="selectable">{e.version}</dd>{/if}
             {#if e.origin}<dt>{L("Origine", "Origin")}</dt><dd>{originText[e.origin] ?? e.origin}</dd>{/if}
@@ -146,7 +154,13 @@
             <div class="op confirm" role="group" aria-label={L("Confirmation", "Confirmation")}>
               {#if op.action === "install" && offer}
                 <p>
-                  <strong>{L(`Installer ${e.name} ${offer.version} ?`, `Install ${e.name} ${offer.version}?`)}</strong>
+                  <strong>
+                    {completesInstall(e)
+                      ? L(`Ajouter ${e.missing.map((p) => p.name).join(", ")} à ${e.name} ?`, `Add ${e.missing.map((p) => p.name).join(", ")} to ${e.name}?`)
+                      : offer.system
+                        ? L(`Installer ${e.name} depuis les paquets de votre distribution ?`, `Install ${e.name} from your distribution's packages?`)
+                        : L(`Installer ${e.name} ${offer.version} ?`, `Install ${e.name} ${offer.version}?`)}
+                  </strong>
                 </p>
                 <ul class="small">
                   {#if installsAlongside(e)}
@@ -226,9 +240,11 @@
                 {:else}
                   <button class="btn primary" onclick={() => store.askEngine(e.id, "install")}>
                     <Icon name="download" size={14} />
-                    {e.origin === "managed"
-                      ? L(`Mettre à jour vers ${offer.version}`, `Update to ${offer.version}`)
-                      : L(`Installer (${offerSize(offer)})`, `Install (${offerSize(offer)})`)}
+                    {completesInstall(e)
+                      ? L(`Ajouter ${e.missing.map((p) => p.name).join(", ")}`, `Add ${e.missing.map((p) => p.name).join(", ")}`)
+                      : e.origin === "managed"
+                        ? L(`Mettre à jour vers ${offer.version}`, `Update to ${offer.version}`)
+                        : L(`Installer (${offerSize(offer)})`, `Install (${offerSize(offer)})`)}
                   </button>
                 {/if}
               {/if}
@@ -522,5 +538,9 @@
   .bad {
     color: var(--lossy);
     font-size: 13px;
+  }
+
+  .warn {
+    color: var(--depends);
   }
 </style>

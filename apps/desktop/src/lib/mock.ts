@@ -99,6 +99,7 @@ const ENGINES: EngineView[] = [
     installable: { version: "9.0.2", size: 114768076, publisher: "gyan.dev (fictif)", license: "GPL-3.0-or-later", page: "https://example.org", runtime: false, system: null },
     previous: null,
     installing: false,
+    missing: [],
   },
   {
     id: "7zip",
@@ -117,6 +118,7 @@ const ENGINES: EngineView[] = [
     installable: { version: "26.06", size: 2259768, publisher: "Igor Pavlov (fictif)", license: "LGPL-2.1-or-later (+ restriction unRAR)", page: "https://example.org", runtime: false, system: null },
     previous: null,
     installing: false,
+    missing: [],
   },
   ...(
     [
@@ -150,13 +152,31 @@ const ENGINES: EngineView[] = [
       // « ?linux » dans l'adresse : paquets du système quand il n'y a pas de version portable.
       installable:
         linux && pkgs
-          ? { version: "celle de votre distribution", size: 0, publisher: "votre distribution Linux (apt)", license, page: "https://example.org", runtime: false, system: { manager: "apt", packages: [...pkgs] } }
+          ? { version: "de votre distribution", size: 0, publisher: "votre distribution Linux (apt)", license, page: "https://example.org", runtime: false, system: { manager: "apt", packages: [...pkgs] } }
           : { version, size, publisher: "publication officielle (fictif)", license, page: "https://example.org", runtime: runtime && !linux, system: null },
       previous: null,
       installing: false,
+    missing: [],
     }),
   ),
 ];
+
+// « ?linux » : LibreOffice du système sans Calc ni Impress (paquets séparés sous Fedora).
+if (linux) {
+  const lo = ENGINES.find((e) => e.id === "libreoffice");
+  if (lo) {
+    Object.assign(lo, {
+      state: "ready",
+      origin: "system",
+      version: "26.8.3.1",
+      path: "/usr/bin/soffice",
+      missing: [
+        { name: "Calc (classeurs)", categories: ["spreadsheet"] },
+        { name: "Impress (présentations)", categories: ["presentation"] },
+      ],
+    });
+  }
+}
 
 const preset = (id: string, name: string, target: string, targetName: string, appliesTo: string[], options = {}): PresetView => ({
   id,
