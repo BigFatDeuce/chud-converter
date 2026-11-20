@@ -146,10 +146,8 @@ function tauriApi(): Api {
       const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
       await revealItemInDir(path);
     },
-    async openUrl(url) {
-      const { openUrl } = await import("@tauri-apps/plugin-opener");
-      await openUrl(url);
-    },
+    // Par l'application : depuis une AppImage, le navigateur doit recevoir l'environnement du système.
+    openUrl: (url) => call("open_url", { url }),
     presets: () => call("presets"),
     savePresets: (presets) => call("save_presets", { presets }),
     resetPresets: () => call("reset_presets"),

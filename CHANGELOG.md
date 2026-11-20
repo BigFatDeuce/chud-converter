@@ -4,6 +4,16 @@ All notable changes to Chud Converter. Versions follow [Semantic Versioning](htt
 
 ## [Unreleased]
 
+### Fixed
+- **Linux AppImage**: LibreOffice, libvips, Tesseract and MediaInfo installed by the system
+  showed "installed, but not responding … symbol lookup error … undefined symbol: nghttp2_…"
+  (seen on Nobara/Fedora). The AppImage put its own, older libraries first for every program it
+  started; engines (and the terminal opened to install them) now get the system's environment.
+- **Linux AppImage**: links (website, licence, engine pages) open with the system's environment
+  too, so the browser starts.
+- **Fedora/Nobara**: installing ExifTool asked dnf for `perl-image-exiftool`, which does not
+  exist; the package is `perl-Image-ExifTool` (dnf is case-sensitive).
+
 ## [0.2.1] — 2026-11-19
 
 Fixes for converting a whole album at once (several files to another drive), and a new

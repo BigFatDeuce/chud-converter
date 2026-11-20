@@ -249,3 +249,44 @@ pub fn update_set_auto(app: Shared<'_>, updates: Upd<'_>, enabled: bool) -> Resu
 pub async fn update_install(handle: AppHandle, app: Shared<'_>, updates: Upd<'_>) -> Result<(), String> {
     updates.install(&handle, app.inner()).await
 }
+
+/// Ouvre un lien web dans le navigateur. Depuis une AppImage, le lanceur (`xdg-open`…) reçoit
+/// l'environnement du système : avec celui de l'AppImage, lui et le navigateur chargeraient les
+/// bibliothèques embarquées et pourraient ne pas démarrer.
+#[tauri::command]
+pub async fn open_url(url: String) -> Result<(), String> {
+    if !is_web_link(&url) {
+        return Err(chud_core::trf!("lien refusé : {}", "link refused: {}", url));
+    }
+    blocking(move || {
+        #[cfg(target_os = "linux")]
+        if chud_process::appimage::active() {
+            return chud_process::appimage::launch_detached(open::commands(&url)).map_err(|e| e.to_string());
+        }
+        tauri_plugin_opener::open_url(&url, None::<&str>).map_err(|e| e.to_string())
+    })
+    .await
+}
+
+/// Seuls les liens `https://` s'ouvrent, comme le permettait l'autorisation du greffon.
+fn is_web_link(url: &str) -> bool {
+    url.len() > "https://".len()
+        && url.len() <= 2048
+        && url.starts_with("https://")
+        && !url.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn only_https_links_open() {
+        for ok in ["https://github.com/BigFatDeuce/chud-converter", "https://exiftool.org"] {
+            assert!(super::is_web_link(ok), "{ok}");
+        }
+        for bad in
+            ["", "https://", "http://exemple.org", "file:///etc/passwd", "javascript:alert(1)", "https://a b", "https://a\nb", "--help"]
+        {
+            assert!(!super::is_web_link(bad), "{bad}");
+        }
+    }
+}

@@ -177,6 +177,7 @@ fn main() {
             commands::update_check,
             commands::update_set_auto,
             commands::update_install,
+            commands::open_url,
         ])
         .build(tauri::generate_context!())
         .expect("impossible de démarrer Chud Converter");

@@ -7,7 +7,11 @@
 //! - limite mémoire optionnelle (Job Object / `RLIMIT_AS`) ;
 //! - lecture ligne à ligne de stdout/stderr (séparateurs `\n`, `\r` et retour arrière),
 //!   capture bornée de stdout et conservation de la fin de stderr pour les rapports d'erreur ;
-//! - aucune fenêtre console ne s'ouvre sous Windows.
+//! - aucune fenêtre console ne s'ouvre sous Windows ;
+//! - depuis une AppImage, le programme lancé reçoit l'environnement du système, pas celui de
+//!   l'AppImage (voir [`appimage`]).
+
+pub mod appimage;
 
 use std::ffi::OsString;
 use std::io::Read;
@@ -195,6 +199,7 @@ pub fn run(
     if let Some(cwd) = &spec.cwd {
         cmd.current_dir(cwd);
     }
+    appimage::host_environment(&mut cmd);
     for (k, v) in &spec.env {
         cmd.env(k, v);
     }

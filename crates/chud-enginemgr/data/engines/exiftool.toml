@@ -40,6 +40,7 @@ renames = [["exiftool(-k).exe", "exiftool.exe"]]
 # par la fenêtre du système ; le paquet appartient ensuite à la distribution).
 [packages]
 apt = ["libimage-exiftool-perl"]
-dnf = ["perl-image-exiftool"]
+# dnf distingue les majuscules : « perl-image-exiftool » n'existe pas sur Fedora.
+dnf = ["perl-Image-ExifTool"]
 pacman = ["perl-image-exiftool"]
 zypper = ["exiftool"]

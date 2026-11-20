@@ -57,13 +57,11 @@ impl Packages {
     }
 }
 
-/// `^[a-z0-9][a-z0-9.+-]*$` : un nom de paquet, jamais une option ni un chemin.
+/// `^[A-Za-z0-9][A-Za-z0-9.+-]*$` : un nom de paquet, jamais une option ni un chemin. Les
+/// majuscules comptent pour dnf et zypper (Fedora : `perl-Image-ExifTool`).
 fn valid_package(p: &str) -> bool {
     let b = p.as_bytes();
-    !b.is_empty()
-        && b.len() <= 100
-        && (b[0].is_ascii_lowercase() || b[0].is_ascii_digit())
-        && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || b".+-".contains(c))
+    !b.is_empty() && b.len() <= 100 && b[0].is_ascii_alphanumeric() && b.iter().all(|c| c.is_ascii_alphanumeric() || b".+-".contains(c))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -271,10 +269,11 @@ mod tests {
 
     #[test]
     fn package_names_are_strict() {
-        for ok in ["ghostscript", "libimage-exiftool-perl", "tesseract-ocr-fra", "g++", "libreoffice-fresh", "7zip"] {
+        for ok in ["ghostscript", "libimage-exiftool-perl", "perl-Image-ExifTool", "tesseract-ocr-fra", "g++", "libreoffice-fresh", "7zip"]
+        {
             assert!(valid_package(ok), "{ok}");
         }
-        for bad in ["", "-y", "--option", "a b", "x;rm", "../x", "Pkg", "$(id)", "a/b"] {
+        for bad in ["", "-y", "--option", "a b", "x;rm", "../x", ".hidden", "$(id)", "a/b", "é"] {
             assert!(!valid_package(bad), "{bad}");
         }
     }

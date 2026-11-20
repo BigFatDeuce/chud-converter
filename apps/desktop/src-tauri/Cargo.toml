@@ -16,6 +16,7 @@ chud-core.workspace = true
 chud-jobs.workspace = true
 chud-enginemgr.workspace = true
 chud-shell.workspace = true
+chud-process.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 # custom-protocol : l'interface intégrée au programme est servie par le programme lui-même
@@ -25,6 +26,11 @@ tauri-plugin-dialog = "2.8"
 tauri-plugin-opener = "2.7"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
+
+# Lanceurs du système (`xdg-open`…) pour les liens, lancés avec l'environnement du système
+# depuis une AppImage (même version que celle de tauri-plugin-opener).
+[target.'cfg(target_os = "linux")'.dependencies]
+open = "5.4"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
