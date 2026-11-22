@@ -4,7 +4,7 @@
 
 import type { Api } from "./api";
 import type { Lang, LangChoice } from "./i18n.svelte";
-import type { EngineView, FileInfo, InstallProgress, FileTargets, PlanView, PresetView, QuickBatch, SettingsView, TargetView, UiEvent, UpdateView } from "./types";
+import type { EngineView, FileInfo, InstallProgress, FileTargets, PlanView, PresetView, QuickBatch, SettingsView, TargetView, ToolView, UiEvent, UpdateView } from "./types";
 
 const video = (format: string, name: string, fidelity: TargetView["fidelity"], headline: string, lost: string[] = []): TargetView => ({
   format,
@@ -79,6 +79,38 @@ const FAKE: Record<string, { info: FileInfo; targets: TargetView[] }> = {
     targets: [{ format: "zip", name: "ZIP", category: "archive", extension: "zip", fidelity: "lossless", headline: "Sans perte", lost: [], engines: ["7zip"] }],
   },
 };
+
+for (const name of ["rapport.pdf", "annexe 10.pdf", "annexe 2.pdf"]) {
+  const path = `D:\\Exemple\\${name}`;
+  FAKE[path] = {
+    info: { path, name, size: 412_000, isDir: false, format: "pdf", formatName: "PDF", category: "pdf", confidence: "certaine", method: "signature", extensionMismatch: false, note: null, error: null },
+    targets: [{ format: "png", name: "PNG", category: "image", extension: "png", fidelity: "lossy", headline: "Avec perte", lost: [], engines: ["image"] }],
+  };
+}
+
+const TOOLS: Omit<ToolView, "ready">[] = [
+  {
+    id: "pdf-merge", name: "Fusionner des PDF", description: "Réunit plusieurs PDF en un seul, dans l'ordre de la liste.", category: "pdf", grouping: "together", minInputs: 2, accepts: ["pdf"], ordered: true, engine: "qpdf",
+    options: [
+      { key: "bookmarks", label: "Signets", kind: { type: "choice", choices: [{ value: "files", label: "Un par fichier, avec les siens" }, { value: "keep", label: "Ceux des fichiers" }, { value: "none", label: "Aucun" }] }, default: "files", advanced: false },
+    ],
+  },
+  {
+    id: "pdf-split", name: "Diviser un PDF", description: "Un PDF par page, toutes les N pages, ou selon vos plages.", category: "pdf", grouping: "each", minInputs: 1, accepts: ["pdf"], ordered: false, engine: "qpdf",
+    options: [
+      { key: "every", label: "Pages par fichier", kind: { type: "int", min: 1, max: 100000 }, default: 1, advanced: false },
+      { key: "ranges", label: "Ou vos plages, une par fichier", help: "Exemple : 1-3; 4-6; 7-z (z = dernière page)", kind: { type: "text", max_len: 2000 }, default: "", advanced: false },
+    ],
+  },
+  {
+    id: "pdf-rotate", name: "Pivoter un PDF", description: "Tourne toutes les pages, ou certaines, sans rien recompresser.", category: "pdf", grouping: "each", minInputs: 1, accepts: ["pdf"], ordered: false, engine: "qpdf",
+    options: [{ key: "angle", label: "Rotation", kind: { type: "choice", choices: [{ value: "90", label: "90° vers la droite" }, { value: "180", label: "Demi-tour" }] }, default: "90", advanced: false }],
+  },
+  {
+    id: "archive-create", name: "Créer une archive", description: "Réunit fichiers et dossiers dans une seule archive (ZIP, 7z, TAR…).", category: "archive", grouping: "together", minInputs: 1, accepts: [], ordered: false, engine: "7zip",
+    options: [{ key: "format", label: "Format de l'archive", kind: { type: "choice", choices: [{ value: "zip", label: "ZIP" }, { value: "7z", label: "7-Zip" }] }, default: "zip", advanced: false }],
+  },
+];
 
 const linux = typeof location !== "undefined" && location.search.includes("linux");
 const ENGINES: EngineView[] = [
@@ -397,6 +429,34 @@ export function mockApi(): Api {
         }, 50);
       }
       return out;
+    },
+    tools: () =>
+      delay(
+        TOOLS.map((t) => {
+          const ready = ENGINES.find((e) => e.id === t.engine)?.state === "ready";
+          return { ...t, ready, options: ready ? t.options : [] };
+        }),
+      ),
+    toolPlan: (req) => {
+      const t = TOOLS.find((x) => x.id === req.tool)!;
+      if (req.files.length < t.minInputs) return Promise.reject(`il faut au moins ${t.minInputs} fichiers (fictif)`);
+      if (req.options.ranges === "x") return Promise.reject("plage « x » illisible (fictif)");
+      const dir = req.outputDir ?? "D:\\Exemple";
+      return delay(
+        {
+          fidelity: "partial" as const,
+          headline: "Contenu sans perte, mais certaines informations ne seront pas conservées",
+          details: [`${req.files.length} fichier(s) (fictif)`, "Non conservé : les balises d'accessibilité (fictif)"],
+          output: `${dir}\\${req.name ?? "rapport - résultat"}${t.accepts.length ? ".pdf" : ".zip"}`,
+          results: t.grouping === "each" ? req.files.length : 1,
+          problems: [],
+        },
+        300,
+      );
+    },
+    async toolRun(req) {
+      const t = TOOLS.find((x) => x.id === req.tool)!;
+      return this.convert({ files: t.grouping === "each" ? req.files : req.files.slice(0, 1), target: "pdf", options: {}, outputDir: null, conflict: "rename", keepDate: false });
     },
     initialPaths: () => delay([]),
     async cancel(id) {

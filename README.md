@@ -110,16 +110,20 @@ installs a missing one, verified the same way as in the app:
 | **Subtitles** | FFmpeg | SRT, VTT, ASS, TTML; extraction from video; legacy encodings (Windows-1252…) detected |
 | **Animations** | FFmpeg | video → GIF (optimized palette), animated WebP and APNG; still frame from a video |
 | **Images** | native (Rust) | PNG, JPEG, WebP, GIF, BMP, TIFF, ICO, TGA, QOI, PNM, HDR, EXR, DDS; EXIF orientation, limits against malicious images |
-| **Archives** | 7-Zip | ZIP, 7z, TAR, TGZ/TXZ/TZST, RAR (read), ISO, CAB, CBZ/CBR…; folder → archive, archive → folder, archive → archive |
+| **Archives** | 7-Zip | ZIP, 7z, TAR, TGZ/TXZ/TZST, RAR (read), ISO, CAB, CBZ/CBR…; folder → archive, archive → folder, archive → archive; several files and folders into one archive |
 | **Data** | native (Rust) | JSON ⇄ YAML ⇄ TOML ⇄ CSV ⇄ TSV ⇄ NDJSON |
 | **Images, more** | libvips, ImageMagick | very large images, AVIF, JPEG XL, JPEG 2000 (libvips); PSD, camera RAW, more than 200 formats (ImageMagick); HEIC read |
 | **Documents** | Pandoc | Markdown, HTML, DOCX, ODT, RTF, LaTeX, reStructuredText, Org, AsciiDoc, Typst, EPUB, Jupyter, FB2, plain text; checked by reading the result back |
 | **Office** | LibreOffice | DOCX/DOC/ODT/RTF, XLSX/XLS/ODS/CSV, PPTX/PPT/ODP, between each other and to PDF |
 | **E-books** | Calibre | EPUB, MOBI, AZW3, FB2, PDF, TXT…; DRM-protected books refused with a clear message |
-| **PDF** | qpdf, Ghostscript | lossless repair, web linearization, compression, page extraction (qpdf); pages to PNG/JPEG/TIFF at a chosen resolution, PostScript/EPS/AI to PDF (Ghostscript) |
+| **PDF** | qpdf, Ghostscript | lossless repair, web linearization, compression, page extraction, **merge, split and rotate** (qpdf); pages to PNG/JPEG/TIFF at a chosen resolution, PostScript/EPS/AI to PDF (Ghostscript) |
 | **OCR** | Tesseract | image to text or searchable PDF, in the installed languages (French and English by default); always marked approximate |
 | **Lossless MKV** | MKVToolNix | every track, chapter and attachment into MKV without re-encoding; a dropped track is reported |
 | **Analysis** | MediaInfo, ExifTool | HDR, Dolby Vision, bitrates, track languages; EXIF, XMP, IPTC, ICC profile, camera and date, in the file details |
+
+**Tools.** Merge PDFs in the order you choose, split one by page, by N pages or by ranges, rotate
+pages, or put several files and folders into one archive. As for a conversion, what will be lost
+is said first, the originals are never modified and the result is read back.
 
 **Original quality.** For each file, the app suggests what gets its content out without losing
 anything: the audio track as it is (an MP3 inside an MKV game rip comes out as an MP3, never
@@ -272,6 +276,7 @@ language is used: French on a French system, English otherwise.
 | `chud plan <file> --to <format>` | plan, fidelity report and options, without writing anything |
 | `chud convert <files> --to <format>` | conversion, verification and report |
 | `chud convert <files> --preset <id>` | conversion with a preset (`chud presets` lists them) |
+| `chud tool` · `chud tool <id> <files>` | merge, split or rotate PDFs, create an archive (without arguments: the list) |
 | `chud shell install` · `uninstall` · `status` | right-click menu of the file manager |
 | `chud language [en\|fr\|system]` | shows or changes the language |
 | `chud formats [search]` | known formats, by category |
@@ -286,6 +291,13 @@ chud convert *.wav --to flac -j 4 --keep-date
 
 # A folder into a 7z archive, maximum compression
 chud convert "My documents" --to 7z -s level=9
+
+# Several files and folders into one archive
+chud tool archive-create report.docx photos -s format=7z --name delivery
+
+# Three PDFs into one, then pages 1-3 and the rest into two files
+chud tool pdf-merge cover.pdf report.pdf annex.pdf --name complete
+chud tool pdf-split complete.pdf -s "ranges=1-3; 4-z"
 
 # Extract an archive (into a folder next to it)
 chud convert backup.zip --to directory
@@ -314,6 +326,7 @@ managed engines then stay in a `data` folder beside it — nothing in your user 
 - [x] Verified installation of every engine from the app, checked weekly on every platform
 - [ ] Engine updates between app releases (signed index)
 - [x] PDF, documents, e-books, OCR, more images, media analysis (Pandoc, LibreOffice, Calibre, qpdf, Ghostscript, Tesseract, libvips, ImageMagick, MKVToolNix, MediaInfo, ExifTool)
+- [x] Tools: merge, split and rotate PDFs, several files into one archive
 - [ ] Universal inspector, duplicate finder, automatic optimization
 - [ ] Visual workflows, watch folders, history, plugins
 - [x] Windows and Linux installers, signed in-app updates

@@ -124,6 +124,8 @@ impl Engine for Calibre {
         for (k, d) in [("CALIBRE_CONFIG_DIRECTORY", "config"), ("CALIBRE_CACHE_DIRECTORY", "cache"), ("CALIBRE_TEMP_DIR", "tmp")] {
             spec = spec.env(k, stage.subdir(d)?);
         }
+        // Messages en anglais quelle que soit la langue du système : ils sont lus plus bas.
+        spec = spec.env("CALIBRE_OVERRIDE_LANG", "en");
         spec = spec.cwd(&stage.dir).timeout(ctx.timeout.or(Some(Duration::from_secs(1800))));
         let (mut drm, mut saved) = (false, false);
         let r = tool::run_ok(spec, ctx, &[], &mut |l| {

@@ -14,9 +14,10 @@
 
 use crate::util::{dir_size, file_size, run_tool, run_tool_with, tail_lines};
 use chud_core::feature::features;
+use chud_core::operation::ARCHIVE_CREATE;
 use chud_core::{
-    ConversionCap, Engine, EngineError, EngineId, EngineInfo, EngineOrigin, ExecContext, Fidelity, FormatId, OptionSpec, OptionValues,
-    Progress, SourceInfo, StepOutput, StepTask, Verification,
+    ConversionCap, Engine, EngineError, EngineId, EngineInfo, EngineOrigin, ExecContext, Fidelity, FormatCatalog, FormatId,
+    OperationReport, OperationTask, OptionSpec, OptionValues, Progress, SourceInfo, StepOutput, StepTask, Verification,
 };
 use chud_core::{tr, trf};
 use chud_process::ProcessSpec;
@@ -88,6 +89,9 @@ fn arc(id: &str) -> Option<&'static ArcFmt> {
 }
 
 const DIR: &str = "directory";
+
+/// Formats proposés pour réunir plusieurs fichiers, le plus répandu d'abord.
+const ARCHIVE_TARGETS: &[&str] = &["zip", "7z", "tar", "tgz", "tbz2", "txz"];
 
 /// Entrée d'archive telle que listée par 7-Zip.
 #[derive(Clone, Debug, Default)]
@@ -309,14 +313,18 @@ pub fn check_entries(entries: &[Entry], archive_size: u64, max_unpacked: u64) ->
 }
 
 pub fn human(n: u64) -> String {
-    const U: [&str; 5] = ["o", "Kio", "Mio", "Gio", "Tio"];
+    // Mêmes unités que le reste de l'application (Ko en français, KB en anglais).
+    let en = chud_core::i18n::lang() == chud_core::i18n::Lang::En;
+    const U: [[&str; 2]; 5] = [["o", "B"], ["Ko", "KB"], ["Mo", "MB"], ["Go", "GB"], ["To", "TB"]];
     let mut v = n as f64;
     let mut i = 0;
     while v >= 1024.0 && i + 1 < U.len() {
         v /= 1024.0;
         i += 1;
     }
-    if i == 0 { format!("{n} o") } else { format!("{v:.1} {}", U[i]) }
+    let unit = U[i][usize::from(en)];
+    let text = if i == 0 { format!("{n} {unit}") } else { format!("{v:.1} {unit}") };
+    if en { text } else { text.replace('.', ",") }
 }
 
 /// Parcourt un dossier extrait sans suivre les liens. Refuse liens et points d'analyse.
@@ -666,13 +674,24 @@ impl SevenZip {
     }
 
     /// Crée l'archive `out` à partir des éléments `names` de `cwd`.
-    fn pack(&self, f: &ArcFmt, cwd: &Path, names: &[OsString], out: &Path, o: &OptionValues, ctx: &ExecContext) -> Result<(), EngineError> {
+    #[allow(clippy::too_many_arguments)]
+    fn pack(
+        &self,
+        f: &ArcFmt,
+        cwd: &Path,
+        names: &[OsString],
+        out: &Path,
+        o: &OptionValues,
+        ctx: &ExecContext,
+        span: (f64, f64),
+    ) -> Result<(), EngineError> {
         let level = o.int_or("level", 5).clamp(0, 9);
         match f.shape {
             Shape::Layered(outer) => {
                 let tmp = TempDir(unique_dir(&ctx.work_dir, "pack")?);
                 let tar_path = tmp.0.join("contenu.tar");
-                self.pack(arc("tar").expect("tar"), cwd, names, &tar_path, o, ctx)?;
+                let middle = span.0 + (span.1 - span.0) * 0.4;
+                self.pack(arc("tar").expect("tar"), cwd, names, &tar_path, o, ctx, (span.0, middle))?;
                 let spec = self
                     .base_write()
                     .args(["a", "-y", "-bb0", "-bso0", "-bsp1", "-bse1"])
@@ -681,7 +700,7 @@ impl SevenZip {
                     .arg(out)
                     .arg(with_prefix("@", &write_list(&tmp.0, &[OsString::from("contenu.tar")])?))
                     .cwd(&tmp.0);
-                self.run_pack(spec, ctx, (0.85, 0.98))
+                self.run_pack(spec, ctx, (middle, span.1))
             }
             Shape::Single => {
                 if names.len() != 1 || !cwd.join(&names[0]).is_file() {
@@ -701,7 +720,7 @@ impl SevenZip {
                     .arg(out)
                     .arg(with_prefix("@", &write_list(&ctx.work_dir, names)?))
                     .cwd(cwd);
-                self.run_pack(spec, ctx, (0.6, 0.98))
+                self.run_pack(spec, ctx, span)
             }
             Shape::Tree => {
                 let mut spec =
@@ -717,7 +736,7 @@ impl SevenZip {
                 }
                 let list = write_list(&ctx.work_dir, names)?;
                 let spec = spec.arg(out).arg(with_prefix("@", &list)).cwd(cwd);
-                let r = self.run_pack(spec, ctx, (0.6, 0.98));
+                let r = self.run_pack(spec, ctx, span);
                 let _ = std::fs::remove_file(&list);
                 r
             }
@@ -771,6 +790,82 @@ fn write_list(dir: &Path, names: &[OsString]) -> Result<PathBuf, EngineError> {
     let path = unique_dir(dir, "list")?.join("liste.txt");
     std::fs::write(&path, text)?;
     Ok(path)
+}
+
+/// Fichier ou dossier à mettre à la racine d'une archive.
+struct Member {
+    path: PathBuf,
+    /// Nom dans l'archive : celui d'origine, sauf homonyme.
+    name: String,
+    renamed: bool,
+    is_dir: bool,
+    /// Fichiers contenus : chemin relatif (vide pour un fichier seul) et taille.
+    files: BTreeMap<String, u64>,
+}
+
+/// Nom libre dans l'archive : « a.txt » puis « a (2).txt ». Comparé sans tenir compte de la casse :
+/// une archive doit pouvoir s'extraire sous Windows.
+fn free_name(name: &str, is_dir: bool, taken: &HashSet<String>) -> String {
+    if !taken.contains(&name.to_lowercase()) {
+        return name.to_owned();
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(i) if i > 0 && !is_dir => name.split_at(i),
+        _ => (name, ""),
+    };
+    (2..).map(|n| format!("{stem} ({n}){ext}")).find(|c| !taken.contains(&c.to_lowercase())).unwrap_or_else(|| name.to_owned())
+}
+
+/// Éléments d'une archive, dans l'ordre donné. Refuse les liens, qui pourraient faire entrer des
+/// fichiers extérieurs.
+fn members(inputs: &[PathBuf]) -> Result<Vec<Member>, EngineError> {
+    let mut taken = HashSet::new();
+    let mut seen = HashSet::new();
+    let mut out: Vec<Member> = Vec::new();
+    for p in inputs {
+        if !seen.insert(std::fs::canonicalize(p)?) {
+            continue; // le même fichier, donné deux fois
+        }
+        let m = std::fs::symlink_metadata(p)?;
+        if m.file_type().is_symlink() || is_reparse_point(&m) {
+            return Err(EngineError::Refused(trf!(
+                "« {} » est un lien : choisissez le fichier lui-même",
+                "“{}” is a link: choose the file itself",
+                p.display()
+            )));
+        }
+        let original = p
+            .file_name()
+            .ok_or_else(|| EngineError::InvalidInput(trf!("« {} » n'a pas de nom", "“{}” has no name", p.display())))?
+            .to_str()
+            .ok_or_else(|| EngineError::InvalidInput(tr!("nom de fichier non Unicode", "non-Unicode file name").into()))?
+            .to_owned();
+        let files = if m.is_dir() {
+            walk_files(p).map_err(|e| EngineError::Refused(trf!("« {original} » : {e}", "“{original}”: {e}")))?
+        } else {
+            BTreeMap::from([(String::new(), m.len())])
+        };
+        let name = free_name(&original, m.is_dir(), &taken);
+        taken.insert(name.to_lowercase());
+        out.push(Member { path: p.clone(), renamed: name != original, name, is_dir: m.is_dir(), files });
+    }
+    Ok(out)
+}
+
+/// Copie un élément sous un autre nom : liens physiques si possible, copie sinon.
+fn link_or_copy(from: &Path, to: &Path) -> std::io::Result<()> {
+    if from.is_dir() {
+        std::fs::create_dir_all(to)?;
+        for e in std::fs::read_dir(from)? {
+            let e = e?;
+            link_or_copy(&e.path(), &to.join(e.file_name()))?;
+        }
+        return Ok(());
+    }
+    if std::fs::hard_link(from, to).is_err() {
+        std::fs::copy(from, to)?;
+    }
+    Ok(())
 }
 
 fn top_level(dir: &Path) -> Result<Vec<OsString>, EngineError> {
@@ -883,7 +978,7 @@ impl Engine for SevenZip {
                     .input
                     .file_name()
                     .ok_or_else(|| EngineError::InvalidInput(tr!("dossier sans nom", "folder without a name").into()))?;
-                self.pack(f, parent, &[name.to_os_string()], &task.output, &task.options, ctx)?;
+                self.pack(f, parent, &[name.to_os_string()], &task.output, &task.options, ctx, (0.0, 0.98))?;
                 notes.push(trf!("{} fichiers compressés ({})", "{} files compressed ({})", files.len(), human(files.values().sum())));
             }
             (_, DIR) => {
@@ -901,7 +996,7 @@ impl Engine for SevenZip {
                 if names.is_empty() {
                     return Err(EngineError::InvalidInput("archive vide".into()));
                 }
-                self.pack(dst, &tmp.0, &names, &task.output, &task.options, ctx)?;
+                self.pack(dst, &tmp.0, &names, &task.output, &task.options, ctx, (0.6, 0.98))?;
                 notes.push(trf!("contenu recompressé au format {to}", "content recompressed as {to}"));
             }
         }
@@ -980,6 +1075,173 @@ impl Engine for SevenZip {
         ))
     }
 
+    fn operations(&self) -> &[&'static str] {
+        &[ARCHIVE_CREATE]
+    }
+
+    fn operation_options(&self, operation: &str) -> Vec<OptionSpec> {
+        if operation != ARCHIVE_CREATE {
+            return Vec::new();
+        }
+        let catalog = FormatCatalog::builtin();
+        let choices: Vec<(&str, String)> = ARCHIVE_TARGETS
+            .iter()
+            .filter_map(|id| arc(id).filter(|f| self.can_write(f)))
+            .map(|f| {
+                let def = catalog.get(f.id);
+                let ext = def.and_then(|d| d.output_extension()).unwrap_or(f.id);
+                (f.id, format!("{} (.{ext})", def.map_or(f.id, |d| d.label())))
+            })
+            .collect();
+        let choices: Vec<(&str, &str)> = choices.iter().map(|(id, l)| (*id, l.as_str())).collect();
+        vec![
+            OptionSpec::choice("format", tr!("Format de l'archive", "Archive format"), &choices, choices.first().map_or("zip", |c| c.0)),
+            OptionSpec::int(
+                "level",
+                tr!("Niveau de compression (0 = stockage, 9 = maximal)", "Compression level (0 = store, 9 = maximum)"),
+                0,
+                9,
+                5,
+            ),
+            OptionSpec::bool("solid", tr!("7z : archive solide (plus compacte)", "7z: solid archive (more compact)"), true).advanced(),
+        ]
+    }
+
+    fn operation_target(&self, operation: &str, options: &OptionValues) -> Result<FormatId, EngineError> {
+        let f = arc(options.str_or("format", "zip")).filter(|f| ARCHIVE_TARGETS.contains(&f.id) && self.can_write(f));
+        match f {
+            Some(f) if operation == ARCHIVE_CREATE => Ok(FormatId::new(f.id)),
+            _ => Err(EngineError::Unsupported(operation.into())),
+        }
+    }
+
+    fn assess_operation(&self, operation: &str, inputs: &[PathBuf], options: &OptionValues) -> Result<OperationReport, EngineError> {
+        self.operation_target(operation, options)?;
+        let list = members(inputs)?;
+        let files: usize = list.iter().map(|m| m.files.len()).sum();
+        let size: u64 = list.iter().flat_map(|m| m.files.values()).sum();
+        if files == 0 {
+            return Err(EngineError::InvalidInput(tr!("aucun fichier à archiver", "no file to archive").into()));
+        }
+        let mut r = OperationReport::default();
+        r.notes.push(trf!("{files} fichier(s), {}", "{files} file(s), {}", human(size)));
+        r.notes.push(
+            tr!(
+                "contenus, noms, dossiers et dates conservés ; les droits d'accès propres à ce système ne sont pas repris",
+                "contents, names, folders and dates are kept; access rights specific to this system are not"
+            )
+            .into(),
+        );
+        let renamed: Vec<&Member> = list.iter().filter(|m| m.renamed).collect();
+        for m in renamed.iter().take(3) {
+            r.notes.push(trf!(
+                "deux éléments portent le même nom : « {} » devient « {} » dans l'archive",
+                "two items have the same name: “{}” becomes “{}” in the archive",
+                m.path.display(),
+                m.name
+            ));
+        }
+        if renamed.len() > 3 {
+            r.notes.push(trf!("… et {} autre(s) renommé(s)", "… and {} more renamed", renamed.len() - 3));
+        }
+        Ok(r)
+    }
+
+    fn execute_operation(&self, task: &OperationTask, ctx: &ExecContext) -> Result<StepOutput, EngineError> {
+        ctx.check_cancelled()?;
+        let target = self.operation_target(&task.operation, &task.options)?;
+        let f = arc(target.as_str()).ok_or_else(|| EngineError::Unsupported(target.to_string()))?;
+        let report = self.assess_operation(&task.operation, &task.inputs, &task.options)?;
+        let tmp = TempDir(unique_dir(&ctx.work_dir, "noms")?);
+        let mut names = Vec::new();
+        for (i, m) in members(&task.inputs)?.iter().enumerate() {
+            ctx.check_cancelled()?;
+            // 7-Zip enregistre le dernier élément d'un chemin absolu ; un homonyme est préparé à
+            // part sous son nouveau nom.
+            let path = if m.renamed {
+                let dir = tmp.0.join(i.to_string());
+                std::fs::create_dir_all(&dir)?;
+                let to = dir.join(&m.name);
+                link_or_copy(&m.path, &to)?;
+                to
+            } else {
+                m.path.clone()
+            };
+            names.push(std::path::absolute(path)?.into_os_string());
+        }
+        self.pack(f, &ctx.work_dir, &names, &task.output, &task.options, ctx, (0.0, 0.98))?;
+        ctx.report(Progress { fraction: Some(1.0), ..Default::default() });
+        Ok(StepOutput { notes: report.notes })
+    }
+
+    fn verify_operation(&self, task: &OperationTask, ctx: &ExecContext) -> Verification {
+        let Some(f) = arc(task.target.as_str()) else { return Verification::SignatureOnly };
+        let expected: BTreeMap<String, u64> = match members(&task.inputs) {
+            Ok(list) => list
+                .into_iter()
+                .flat_map(|m| {
+                    let Member { name, is_dir, files, .. } = m;
+                    files.into_iter().map(move |(rel, n)| (if is_dir { format!("{name}/{rel}") } else { name.clone() }, n))
+                })
+                .collect(),
+            Err(e) => return Verification::Failed(e.to_string()),
+        };
+        // Une archive tar compressée est relue en entier : son index est dans le flux.
+        let _outer;
+        let (file, ty) = match f.shape {
+            Shape::Layered(outer) => {
+                let tmp = match unique_dir(&ctx.work_dir, "relecture") {
+                    Ok(d) => TempDir(d),
+                    Err(e) => return Verification::Failed(e.to_string()),
+                };
+                if let Err(e) = self.extract_raw(&task.output, outer, &tmp.0, u64::MAX, ctx, (0.98, 0.99)) {
+                    return Verification::Failed(e.to_string());
+                }
+                let Ok(files) = walk_files(&tmp.0) else {
+                    return Verification::Failed(tr!("relecture impossible", "cannot read back").into());
+                };
+                let [name] = files.keys().collect::<Vec<_>>()[..] else {
+                    return Verification::Failed(tr!("flux compressé inattendu", "unexpected compressed stream").into());
+                };
+                let p = tmp.0.join(name);
+                _outer = tmp; // gardé jusqu'à la fin de la relecture
+                (p, "tar")
+            }
+            _ => (task.output.clone(), f.ty),
+        };
+        let spec = self.base_read().args(["t", "-bb0", "-bso0", "-bsp0", "-bse1"]).arg(format!("-t{ty}")).arg("--").arg(&file);
+        match run_tool(spec, ctx, &mut |_| {}, &mut |_| {}) {
+            Ok(o) if o.success() => {}
+            Ok(o) => {
+                return Verification::Failed(trf!(
+                    "test d'intégrité échoué : {}",
+                    "integrity test failed: {}",
+                    tail_lines(&o.stderr_tail, 3)
+                ));
+            }
+            Err(e) => return Verification::Failed(trf!("test d'intégrité impossible : {e}", "integrity test impossible: {e}")),
+        }
+        let produced: BTreeMap<String, u64> = match self.list(&file, ty, Some(ctx)) {
+            Ok(entries) => entries.into_iter().filter(|e| !e.is_dir).map(|e| (norm(&e.path), e.size.unwrap_or(0))).collect(),
+            Err(e) => return Verification::Failed(trf!("relecture de l'index impossible : {e}", "cannot read the index back: {e}")),
+        };
+        if produced != expected {
+            let missing: Vec<&String> = expected.keys().filter(|k| !produced.contains_key(*k)).take(3).collect();
+            return Verification::Failed(trf!(
+                "contenu différent des fichiers choisis ({} attendus, {} produits ; absents : {:?})",
+                "content differs from the chosen files ({} expected, {} produced; missing: {:?})",
+                expected.len(),
+                produced.len(),
+                missing
+            ));
+        }
+        Verification::Decoded(trf!(
+            "test d'intégrité réussi et {} fichiers identiques en nom et en taille aux originaux",
+            "integrity test passed and {} files identical in name and size to the originals",
+            produced.len()
+        ))
+    }
+
     fn weight(&self, _from: &FormatId, _to: &FormatId) -> u32 {
         2
     }
@@ -1046,6 +1308,15 @@ mod tests {
         assert!(check_entries(&[d("a.txt"), d("b.txt")], 10, 1 << 30).is_ok());
         let enc = Entry { encrypted: true, ..d("s.txt") };
         assert!(matches!(check_entries(&[enc], 10, 1 << 30), Err(EngineError::Refused(_))));
+    }
+
+    #[test]
+    fn archive_names_never_clash() {
+        let taken: HashSet<String> = ["a.txt", "a (2).txt", "photos"].map(String::from).into();
+        assert_eq!(free_name("b.txt", false, &taken), "b.txt");
+        assert_eq!(free_name("A.TXT", false, &taken), "A (2).TXT".replace("(2)", "(3)"));
+        assert_eq!(free_name("Photos", true, &taken), "Photos (2)");
+        assert_eq!(free_name(".profil", false, &HashSet::from([".profil".to_owned()])), ".profil (2)");
     }
 
     #[test]

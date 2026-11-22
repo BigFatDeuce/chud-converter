@@ -12,6 +12,11 @@ function num(v: number): string {
   return f.format(v);
 }
 
+/** Icône d'un outil. */
+export function toolIcon(id: string): "merge" | "split" | "rotate" | "archive" {
+  return id === "pdf-merge" ? "merge" : id === "pdf-split" ? "split" : id === "pdf-rotate" ? "rotate" : "archive";
+}
+
 export function formatSize(bytes: number): string {
   const en = i18n.lang === "en";
   if (bytes < 1024) return `${bytes} ${en ? "B" : "o"}`;

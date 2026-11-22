@@ -5,14 +5,16 @@
 //! (rapports de fidélité, erreurs) sont produits ici par le cœur, dans la langue choisie.
 
 use chud_core::{
-    Category, Fidelity, FidelityReport, FormatCatalog, FormatId, OptionSpec, OptionValue, OptionValues, SourceInfo, StreamInfo, StreamKind,
-    Verification, detect_path,
+    Category, Fidelity, FidelityReport, FormatCatalog, FormatId, Grouping, OperationReport, OptionSpec, OptionValue, OptionValues,
+    SourceInfo, StreamInfo, StreamKind, Verification, detect_path,
 };
 use chud_core::{Lang, LangChoice};
 use chud_enginemgr::{
     AppPaths, EngineManager, EngineState, EngineStatus, InstallError, InstallOffer, InstallProgress, Settings, UpdateSettings,
 };
-use chud_jobs::{Conflict, JobEvent, JobId, JobQueue, JobRunner, JobSpec, Preset, PresetStore, QueueEvent, QueueListener};
+use chud_jobs::{
+    Conflict, JobEvent, JobId, JobQueue, JobRunner, JobSpec, OperationSpec, Preset, PresetStore, QueueEvent, QueueListener, operation_specs,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -53,6 +55,15 @@ impl FidelityLevel {
     fn of(report: &FidelityReport) -> Self {
         match report.overall {
             Fidelity::Lossless if report.lost_features.is_empty() => Self::Lossless,
+            Fidelity::Lossless => Self::Partial,
+            Fidelity::Depends => Self::Depends,
+            Fidelity::Lossy => Self::Lossy,
+        }
+    }
+
+    fn of_operation(report: &OperationReport) -> Self {
+        match report.fidelity {
+            Fidelity::Lossless if report.lost.is_empty() => Self::Lossless,
             Fidelity::Lossless => Self::Partial,
             Fidelity::Depends => Self::Depends,
             Fidelity::Lossy => Self::Lossy,
@@ -259,6 +270,60 @@ pub struct Submitted {
     pub path: String,
     pub id: JobId,
 }
+
+/// Outil de l'écran « Outils » (fusionner, diviser, pivoter, archiver).
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolView {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub category: Category,
+    pub grouping: Grouping,
+    pub min_inputs: usize,
+    /// Formats acceptés ; vide : tout fichier, et les dossiers.
+    pub accepts: Vec<String>,
+    pub ordered: bool,
+    /// Moteur nécessaire, montré même s'il manque.
+    pub engine: String,
+    pub ready: bool,
+    /// Options (vides tant que le moteur manque).
+    pub options: Vec<OptionSpec>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolRequest {
+    pub tool: String,
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub options: BTreeMap<String, OptionValue>,
+    /// `None` : dossier du premier fichier (ou de chaque fichier, selon l'outil).
+    pub output_dir: Option<String>,
+    /// Nom du résultat, sans extension ; `None` : d'après les fichiers.
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub conflict: Conflict,
+}
+
+/// Aperçu d'un outil : ce qui sera produit, conservé ou perdu. Rien n'est écrit.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolPlan {
+    pub fidelity: FidelityLevel,
+    pub headline: String,
+    /// Rapport du premier fichier (ou de l'ensemble).
+    pub details: Vec<String>,
+    pub output: String,
+    /// Nombre de résultats (un par fichier, ou un seul).
+    pub results: usize,
+    /// Fichiers qui seraient refusés, et pourquoi (outils qui traitent chaque fichier à part).
+    pub problems: Vec<Ignored>,
+}
+
+/// Fichiers examinés par l'aperçu d'un outil qui traite chaque fichier à part.
+const TOOL_PREVIEW: usize = 25;
 
 /// Préréglage tel que l'interface l'affiche et le renvoie.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -490,6 +555,12 @@ impl UiEvent {
                     headline: plan.report.headline().to_owned(),
                     details: plan.report.details(catalog()),
                 },
+                JobEvent::OperationPlanned { report, .. } => UiEvent::Planned {
+                    id,
+                    fidelity: FidelityLevel::of_operation(&report),
+                    headline: report.headline().to_owned(),
+                    details: report.details(),
+                },
                 JobEvent::Step { index, count, engine, from, to } => {
                     UiEvent::Step { id, index, count, engine: engine.to_string(), from: from.to_string(), to: to.to_string() }
                 }
@@ -501,9 +572,18 @@ impl UiEvent {
                 id,
                 skipped: outcome.output.is_none(),
                 output: outcome.output.as_ref().map(|p| p.display().to_string()),
-                fidelity: outcome.plan.as_ref().map(|p| FidelityLevel::of(&p.report)),
-                headline: outcome.plan.as_ref().map(|p| p.report.headline().to_owned()),
-                details: outcome.plan.as_ref().map(|p| p.report.details(catalog())).unwrap_or_default(),
+                fidelity: match (&outcome.plan, &outcome.report) {
+                    (Some(p), _) => Some(FidelityLevel::of(&p.report)),
+                    (None, r) => r.as_ref().map(FidelityLevel::of_operation),
+                },
+                headline: match (&outcome.plan, &outcome.report) {
+                    (Some(p), _) => Some(p.report.headline().to_owned()),
+                    (None, r) => r.as_ref().map(|r| r.headline().to_owned()),
+                },
+                details: match (&outcome.plan, &outcome.report) {
+                    (Some(p), _) => p.report.details(catalog()),
+                    (None, r) => r.as_ref().map(OperationReport::details).unwrap_or_default(),
+                },
                 verifications: outcome.verifications,
                 notes: outcome.notes,
                 duration_ms: outcome.duration_ms as u64,
@@ -615,21 +695,83 @@ impl Engines {
         })
     }
 
-    pub fn job_specs(&self, req: &ConvertRequest) -> Result<Vec<JobSpec>, String> {
-        let output_dir = match &req.output_dir {
-            Some(d) => {
-                let d = absolute(d)?;
-                if !d.is_dir() {
-                    return Err(chud_core::trf!(
-                        "dossier de destination introuvable : {}",
-                        "destination folder not found: {}",
-                        d.display()
-                    ));
+    /// Outils, dans l'ordre d'affichage, prêts ou non.
+    pub fn tools(&self) -> Vec<ToolView> {
+        chud_core::operations()
+            .into_iter()
+            .map(|op| {
+                let options = self.runner.operation_options(op.id);
+                ToolView {
+                    id: op.id,
+                    name: op.name,
+                    description: op.description,
+                    category: op.category,
+                    grouping: op.grouping,
+                    min_inputs: op.min_inputs,
+                    accepts: op.accepts.iter().map(|f| f.to_string()).collect(),
+                    ordered: op.ordered,
+                    engine: op.engine.to_string(),
+                    ready: options.is_some(),
+                    options: options.unwrap_or_default(),
                 }
-                Some(d)
+            })
+            .collect()
+    }
+
+    fn tool_specs(&self, req: &ToolRequest) -> Result<Vec<OperationSpec>, String> {
+        let files = req.files.iter().map(|f| absolute(f)).collect::<Result<_, _>>()?;
+        let mut base = OperationSpec::new(&req.tool, files);
+        base.options = options(&req.options);
+        base.output_dir = destination(req.output_dir.as_deref())?;
+        base.name = req.name.clone().filter(|n| !n.trim().is_empty());
+        base.conflict = req.conflict;
+        operation_specs(&base).map_err(|e| e.to_string())
+    }
+
+    /// Aperçu d'un outil. Plusieurs fichiers traités à part : la fidélité la moins bonne l'emporte,
+    /// et ceux qui seraient refusés sont nommés ; erreur si aucun ne peut être traité.
+    pub fn tool_plan(&self, req: &ToolRequest) -> Result<ToolPlan, String> {
+        let specs = self.tool_specs(req)?;
+        let mut view: Option<ToolPlan> = None;
+        let mut problems = Vec::new();
+        for s in specs.iter().take(TOOL_PREVIEW) {
+            let p = match self.runner.prepare_operation(s) {
+                Ok(p) => p,
+                // Une option refusée vaut souvent pour tous : dite telle quelle s'il n'y a rien d'autre.
+                Err(e) => {
+                    let path = s.inputs.first().map(|p| p.display().to_string()).unwrap_or_default();
+                    problems.push(Ignored { path, reason: e.to_string() });
+                    continue;
+                }
+            };
+            let level = FidelityLevel::of_operation(&p.report);
+            match &mut view {
+                None => {
+                    view = Some(ToolPlan {
+                        fidelity: level,
+                        headline: p.report.headline().to_owned(),
+                        details: p.report.details(),
+                        output: p.output.display().to_string(),
+                        results: specs.len(),
+                        problems: Vec::new(),
+                    });
+                }
+                Some(v) if level > v.fidelity => (v.fidelity, v.headline) = (level, p.report.headline().to_owned()),
+                Some(_) => {}
             }
-            None => None,
-        };
+        }
+        match view {
+            Some(v) => Ok(ToolPlan { problems, ..v }),
+            None => Err(problems
+                .into_iter()
+                .next()
+                .map(|p| p.reason)
+                .unwrap_or_else(|| chud_core::tr!("aucun fichier choisi", "no file chosen").into())),
+        }
+    }
+
+    pub fn job_specs(&self, req: &ConvertRequest) -> Result<Vec<JobSpec>, String> {
+        let output_dir = destination(req.output_dir.as_deref())?;
         let opts = options(&req.options);
         req.files
             .iter()
@@ -643,6 +785,16 @@ impl Engines {
             })
             .collect()
     }
+}
+
+/// Dossier de destination choisi : il doit exister.
+fn destination(dir: Option<&str>) -> Result<Option<PathBuf>, String> {
+    let Some(d) = dir else { return Ok(None) };
+    let d = absolute(d)?;
+    if !d.is_dir() {
+        return Err(chud_core::trf!("dossier de destination introuvable : {}", "destination folder not found: {}", d.display()));
+    }
+    Ok(Some(d))
 }
 
 fn options(map: &BTreeMap<String, OptionValue>) -> OptionValues {
@@ -1134,7 +1286,29 @@ impl App {
         self.submit_specs(&engines, specs)
     }
 
+    /// Lance un outil : une tâche par résultat.
+    pub fn run_tool(&self, req: &ToolRequest) -> Result<Vec<Submitted>, String> {
+        let engines = self.engines()?;
+        let specs = engines.tool_specs(req)?;
+        Ok(self.with_queue(&engines, |queue| {
+            specs
+                .into_iter()
+                .map(|s| Submitted {
+                    path: s.inputs.first().map(|p| p.display().to_string()).unwrap_or_default(),
+                    id: queue.submit_operation(s),
+                })
+                .collect()
+        }))
+    }
+
     fn submit_specs(&self, engines: &Arc<Engines>, specs: Vec<JobSpec>) -> Result<Vec<Submitted>, String> {
+        Ok(self.with_queue(engines, |queue| {
+            specs.into_iter().map(|s| Submitted { path: s.input.display().to_string(), id: queue.submit(s) }).collect()
+        }))
+    }
+
+    /// File de travail, créée au besoin avec les moteurs chargés.
+    fn with_queue<T>(&self, engines: &Arc<Engines>, f: impl FnOnce(&JobQueue) -> T) -> T {
         let mut q = lock(&self.queue);
         // Après une nouvelle détection des moteurs, la file repart avec le nouveau registre dès
         // qu'elle est inactive ; sinon les tâches s'ajoutent à la file existante.
@@ -1157,8 +1331,7 @@ impl App {
             });
             *q = Some(JobQueue::new(engines.runner.clone(), cores.clamp(1, 8), cores as u32, ql));
         }
-        let queue = q.as_ref().expect("file créée ci-dessus");
-        Ok(specs.into_iter().map(|s| Submitted { path: s.input.display().to_string(), id: queue.submit(s) }).collect())
+        f(q.as_ref().expect("file créée ci-dessus"))
     }
 
     // ------------------------------------------------------------------ préréglages
@@ -1745,6 +1918,63 @@ mod tests {
         let b = app.take_quick();
         assert!(b[0].events.iter().any(|e| matches!(e, UiEvent::Started { .. })));
         assert!(b[0].events.iter().any(|e| matches!(e, UiEvent::Done { .. })), "{:?}", b[0].events);
+        drop(app);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn tools_are_listed_previewed_and_run() {
+        let (dir, app, events, _serial) = setup("tools");
+        let engines = app.engines().unwrap();
+        let tools = engines.tools();
+        assert_eq!(tools.iter().map(|t| t.id).collect::<Vec<_>>(), ["pdf-merge", "pdf-split", "pdf-rotate", "archive-create"]);
+        let json = serde_json::to_value(&tools[0]).unwrap();
+        assert_eq!(
+            (json["minInputs"].as_u64(), json["grouping"].as_str(), json["category"].as_str()),
+            (Some(2), Some("together"), Some("pdf"))
+        );
+        for t in &tools {
+            assert_eq!(t.ready, !t.options.is_empty(), "{} : options seulement si le moteur est là", t.id);
+        }
+        let (a, b) = (dir.join("a.txt"), dir.join("b.txt"));
+        std::fs::write(&a, "un").unwrap();
+        std::fs::write(&b, "deux").unwrap();
+        let req = |tool: &str, out: Option<PathBuf>| ToolRequest {
+            tool: tool.into(),
+            files: vec![a.display().to_string(), b.display().to_string()],
+            options: Default::default(),
+            output_dir: out.map(|d| d.display().to_string()),
+            name: Some("tout".into()),
+            conflict: Conflict::Rename,
+        };
+        // Moteur absent ou fichiers refusés : dit en clair, rien n'est lancé.
+        let e = engines.tool_plan(&req("pdf-merge", None)).unwrap_err();
+        assert!(e.contains("qpdf") || e.contains("a.txt"), "{e}");
+        assert!(engines.tool_plan(&req("inconnu", None)).is_err());
+        assert!(app.run_tool(&req("archive-create", Some(dir.join("nulle part")))).unwrap_err().contains("introuvable"));
+        if !tools[3].ready {
+            eprintln!("SKIP : 7-Zip absent");
+            return;
+        }
+        let p = engines.tool_plan(&req("archive-create", None)).unwrap();
+        assert_eq!((p.fidelity, p.results, p.problems.len()), (FidelityLevel::Lossless, 1, 0));
+        assert!(p.output.ends_with("tout.zip"), "{}", p.output);
+        let s = app.run_tool(&req("archive-create", None)).unwrap();
+        assert_eq!(s.len(), 1);
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        while !events.lock().unwrap().iter().any(|e| matches!(e, UiEvent::Done { .. } | UiEvent::Failed { .. })) {
+            assert!(std::time::Instant::now() < deadline, "tâche bloquée");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let ev = events.lock().unwrap();
+        assert!(ev.iter().any(|e| matches!(e, UiEvent::Planned { fidelity: FidelityLevel::Lossless, .. })));
+        let Some(UiEvent::Done { output, fidelity, headline, details, .. }) = ev.iter().find(|e| matches!(e, UiEvent::Done { .. })) else {
+            panic!("{ev:?}")
+        };
+        assert!(output.as_ref().is_some_and(|o| o.ends_with("tout.zip")) && dir.join("tout.zip").is_file());
+        assert_eq!((*fidelity, headline.as_deref()), (Some(FidelityLevel::Lossless), Some("Sans perte")));
+        assert!(!details.is_empty());
+        drop(ev);
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);
     }

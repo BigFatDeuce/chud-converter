@@ -9,6 +9,7 @@
 
   const items: { view: View; label: string; icon: IconName; hint: string }[] = [
     { view: "convert", label: L("Convertir", "Convert"), icon: "convert", hint: L("Fichiers et formats", "Files and formats") },
+    { view: "tools", label: L("Outils", "Tools"), icon: "tools", hint: L("Fusionner, diviser, pivoter, archiver", "Merge, split, rotate, archive") },
     { view: "presets", label: L("Préréglages", "Presets"), icon: "preset", hint: L("Formats enregistrés", "Saved formats") },
     { view: "engines", label: L("Moteurs", "Engines"), icon: "engine", hint: L("Logiciels de conversion", "Conversion software") },
     { view: "settings", label: L("Réglages", "Settings"), icon: "settings", hint: L("Langue, apparence, mises à jour", "Language, appearance, updates") },

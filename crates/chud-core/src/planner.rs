@@ -92,6 +92,19 @@ pub struct FidelityReport {
     pub warnings: Vec<Warning>,
 }
 
+/// Phrase unique qui résume une fidélité, pour une conversion comme pour une opération.
+pub(crate) fn headline(overall: Fidelity, loses_information: bool) -> &'static str {
+    match overall {
+        Fidelity::Lossless if !loses_information => crate::tr!("Sans perte", "Lossless"),
+        Fidelity::Lossless => crate::tr!(
+            "Contenu sans perte, mais certaines informations ne seront pas conservées",
+            "Lossless content, but some information will not be kept"
+        ),
+        Fidelity::Depends => crate::tr!("Selon le contenu du fichier", "Depends on the file's content"),
+        Fidelity::Lossy => crate::tr!("Avec perte", "Lossy"),
+    }
+}
+
 impl FidelityReport {
     /// Vrai uniquement si aucune étape n'est avec perte ou incertaine ET rien n'est perdu.
     pub fn is_fully_lossless(&self) -> bool {
@@ -99,15 +112,7 @@ impl FidelityReport {
     }
 
     pub fn headline(&self) -> &'static str {
-        match self.overall {
-            Fidelity::Lossless if self.lost_features.is_empty() => crate::tr!("Sans perte", "Lossless"),
-            Fidelity::Lossless => crate::tr!(
-                "Contenu sans perte, mais certaines informations ne seront pas conservées",
-                "Lossless content, but some information will not be kept"
-            ),
-            Fidelity::Depends => crate::tr!("Selon le contenu du fichier", "Depends on the file's content"),
-            Fidelity::Lossy => crate::tr!("Avec perte", "Lossy"),
-        }
+        headline(self.overall, !self.lost_features.is_empty())
     }
 
     pub fn details(&self, catalog: &FormatCatalog) -> Vec<String> {

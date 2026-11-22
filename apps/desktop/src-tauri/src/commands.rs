@@ -3,7 +3,7 @@
 
 use crate::backend::{
     App, AppInfo, ConvertRequest, EngineView, FileInfo, FileTargets, PlanRequest, PlanView, PresetView, PresetsView, QuickBatch, RunPreset,
-    SettingsView, ShellView, Submitted,
+    SettingsView, ShellView, Submitted, ToolPlan, ToolRequest, ToolView,
 };
 use chud_core::LangChoice;
 use chud_jobs::JobId;
@@ -106,6 +106,24 @@ pub async fn plan(app: Shared<'_>, request: PlanRequest) -> Result<PlanView, Str
 pub async fn convert(app: Shared<'_>, request: ConvertRequest) -> Result<Vec<Submitted>, String> {
     let app = app.inner().clone();
     blocking(move || app.submit(&request)).await
+}
+
+#[tauri::command]
+pub async fn tools(app: Shared<'_>) -> Result<Vec<ToolView>, String> {
+    let app = app.inner().clone();
+    blocking(move || Ok(app.engines()?.tools())).await
+}
+
+#[tauri::command]
+pub async fn tool_plan(app: Shared<'_>, request: ToolRequest) -> Result<ToolPlan, String> {
+    let app = app.inner().clone();
+    blocking(move || app.engines()?.tool_plan(&request)).await
+}
+
+#[tauri::command]
+pub async fn tool_run(app: Shared<'_>, request: ToolRequest) -> Result<Vec<Submitted>, String> {
+    let app = app.inner().clone();
+    blocking(move || app.run_tool(&request)).await
 }
 
 /// Fichiers donnés sur la ligne de commande ; vide après le premier appel.

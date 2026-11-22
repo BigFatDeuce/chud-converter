@@ -22,6 +22,7 @@ pub mod mediainfo;
 pub mod mkvtoolnix;
 pub mod pandoc;
 pub mod qpdf;
+mod qpdf_ops;
 pub mod sevenzip;
 pub mod tesseract;
 pub mod text;

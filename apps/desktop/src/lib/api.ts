@@ -20,6 +20,9 @@ import type {
   ShellView,
   Submitted,
   SettingsView,
+  ToolPlan,
+  ToolRequest,
+  ToolView,
   UpdateProgress,
   UpdateView,
   UiEvent,
@@ -48,12 +51,16 @@ export interface Api {
   targets(path: string): Promise<FileTargets>;
   plan(request: PlanRequest): Promise<PlanView>;
   convert(request: ConvertRequest): Promise<Submitted[]>;
+  tools(): Promise<ToolView[]>;
+  /** Aperçu d'un outil (rien n'est écrit) ; refusé si aucun fichier ne peut être traité. */
+  toolPlan(request: ToolRequest): Promise<ToolPlan>;
+  toolRun(request: ToolRequest): Promise<Submitted[]>;
   initialPaths(): Promise<string[]>;
   cancel(id: number): Promise<boolean>;
   cancelAll(): Promise<void>;
   onQueue(cb: (e: UiEvent) => void): Promise<() => void>;
   onDrop(drop: (paths: string[]) => void, hover: (over: boolean) => void): Promise<() => void>;
-  pickFiles(): Promise<string[]>;
+  pickFiles(title?: string): Promise<string[]>;
   pickFolder(title: string): Promise<string | null>;
   reveal(path: string): Promise<void>;
   openUrl(url: string): Promise<void>;
@@ -114,6 +121,9 @@ function tauriApi(): Api {
     targets: (path) => call("targets", { path }),
     plan: (request) => call("plan", { request }),
     convert: (request) => call("convert", { request }),
+    tools: () => call("tools"),
+    toolPlan: (request) => call("tool_plan", { request }),
+    toolRun: (request) => call("tool_run", { request }),
     initialPaths: () => call("initial_paths"),
     cancel: (id) => call("cancel", { id }),
     cancelAll: () => call("cancel_all"),
@@ -133,9 +143,9 @@ function tauriApi(): Api {
         }
       });
     },
-    async pickFiles() {
+    async pickFiles(title) {
       const { open } = await import("@tauri-apps/plugin-dialog");
-      const r = await open({ multiple: true, directory: false, title: L("Fichiers à convertir", "Files to convert") });
+      const r = await open({ multiple: true, directory: false, title: title ?? L("Fichiers à convertir", "Files to convert") });
       return r ?? [];
     },
     async pickFolder(title) {

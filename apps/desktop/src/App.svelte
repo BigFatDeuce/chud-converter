@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
   import ConvertView from "./lib/components/ConvertView.svelte";
+  import ToolsView from "./lib/components/ToolsView.svelte";
   import EnginesView from "./lib/components/EnginesView.svelte";
   import PresetsView from "./lib/components/PresetsView.svelte";
   import AboutView from "./lib/components/AboutView.svelte";
@@ -26,8 +27,8 @@
     })().catch((e) => (fatal = errorText(e)));
   });
 
-  // Raccourcis : Ctrl+1 à 5 pour les écrans, Ctrl+O pour ajouter des fichiers.
-  const order: View[] = ["convert", "presets", "engines", "settings", "about"];
+  // Raccourcis : Ctrl+1 à 6 pour les écrans, Ctrl+O pour ajouter des fichiers.
+  const order: View[] = ["convert", "tools", "presets", "engines", "settings", "about"];
   function onkey(ev: KeyboardEvent) {
     if (kind !== "main" || store.welcomeOpen || !(ev.ctrlKey || ev.metaKey) || ev.altKey || ev.shiftKey) return;
     const n = Number(ev.key);
@@ -36,6 +37,10 @@
       store.view = order[n - 1];
     } else if (ev.key.toLowerCase() === "o") {
       ev.preventDefault();
+      if (store.view === "tools") {
+        void store.pickToolFiles();
+        return;
+      }
       store.view = "convert";
       void store.pickFiles();
     }
@@ -76,6 +81,8 @@
         <div class="view enter">
           {#if store.view === "convert"}
             <ConvertView />
+          {:else if store.view === "tools"}
+            <ToolsView />
           {:else if store.view === "presets"}
             <PresetsView />
           {:else if store.view === "engines"}
@@ -100,7 +107,7 @@
         <div class="rings ambient" aria-hidden="true"><span></span><span></span><span></span></div>
         <span class="drop-ico"><Icon name="upload" size={30} stroke={1.7} /></span>
         <p>{L("Déposez pour ajouter à la liste", "Drop to add to the list")}</p>
-        <span class="muted">{L("Rien n'est converti tant que vous n'avez pas choisi un format.", "Nothing is converted until you choose a format.")}</span>
+        <span class="muted">{store.view === "tools" ? (store.tool?.name ?? "") : L("Rien n'est converti tant que vous n'avez pas choisi un format.", "Nothing is converted until you choose a format.")}</span>
       </div>
     </div>
   {/if}

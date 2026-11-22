@@ -1,5 +1,6 @@
 //! Adaptateur qpdf : réécriture sans perte d'un PDF (réparation, linéarisation pour l'affichage
-//! web, compression de la structure, extraction de pages) et analyse des PDF.
+//! web, compression de la structure, extraction de pages) et analyse des PDF. Fusion, division et
+//! rotation : voir `qpdf_ops.rs`.
 //!
 //! - Le contenu des pages n'est jamais recompressé ni modifié : seule la structure est réécrite.
 //! - Un PDF protégé par mot de passe est refusé (aucun mot de passe n'est demandé ni deviné).
@@ -7,9 +8,10 @@
 
 use crate::tool;
 use chud_core::feature::features;
+use chud_core::operation::{PDF_MERGE, PDF_ROTATE, PDF_SPLIT};
 use chud_core::{
-    ConversionCap, Engine, EngineError, EngineInfo, EngineOrigin, ExecContext, Fidelity, FormatId, OptionSpec, OptionValue, SourceInfo,
-    StepOutput, StepTask, Verification,
+    ConversionCap, Engine, EngineError, EngineInfo, EngineOrigin, ExecContext, Fidelity, FormatId, OperationReport, OperationTask,
+    OptionSpec, OptionValue, OptionValues, SourceInfo, StepOutput, StepTask, Verification,
 };
 use chud_core::{tr, trf};
 use chud_process::ProcessSpec;
@@ -18,12 +20,14 @@ use std::time::Duration;
 
 pub struct Qpdf {
     info: EngineInfo,
-    exe: PathBuf,
+    pub(crate) exe: PathBuf,
     caps: Vec<ConversionCap>,
+    /// Analyses déjà faites (opérations sur les pages).
+    pub(crate) docs: crate::qpdf_ops::Cache,
 }
 
 /// Plage de pages au format qpdf (« 1-3,5,8-z »), sans rien d'autre.
-fn valid_range(s: &str) -> bool {
+pub(crate) fn valid_range(s: &str) -> bool {
     !s.is_empty()
         && s.len() <= 200
         && s.split(',').all(|part| {
@@ -35,7 +39,7 @@ fn valid_range(s: &str) -> bool {
 }
 
 /// Plus grand numéro de page écrit dans la plage (« z », la dernière, n'en est pas un).
-fn highest_page(range: &str) -> u32 {
+pub(crate) fn highest_page(range: &str) -> u32 {
     range.split([',', '-']).filter_map(|n| n.trim().parse().ok()).max().unwrap_or(0)
 }
 
@@ -74,10 +78,11 @@ impl Qpdf {
             ),
             caps: vec![ConversionCap::new("pdf", "pdf", Fidelity::Lossless, &keep, 2)],
             exe,
+            docs: Default::default(),
         })
     }
 
-    fn pages(&self, path: &Path) -> Option<u32> {
+    pub(crate) fn pages(&self, path: &Path) -> Option<u32> {
         let spec = ProcessSpec::new(&self.exe).arg("--show-npages").arg(path).timeout(Some(Duration::from_secs(60)));
         let out = chud_process::run_capture(&spec, 4096).ok()?;
         if !out.success() {
@@ -194,6 +199,34 @@ impl Engine for Qpdf {
             notes.push(trf!("pages gardées : {r}", "pages kept: {r}"));
         }
         Ok(StepOutput { notes })
+    }
+
+    fn operations(&self) -> &[&'static str] {
+        &[PDF_MERGE, PDF_SPLIT, PDF_ROTATE]
+    }
+
+    fn operation_options(&self, operation: &str) -> Vec<OptionSpec> {
+        self.op_options(operation)
+    }
+
+    fn operation_target(&self, operation: &str, _options: &OptionValues) -> Result<FormatId, EngineError> {
+        match operation {
+            PDF_MERGE | PDF_ROTATE => Ok(FormatId::new("pdf")),
+            PDF_SPLIT => Ok(FormatId::new("directory")),
+            o => Err(EngineError::Unsupported(o.into())),
+        }
+    }
+
+    fn assess_operation(&self, operation: &str, inputs: &[PathBuf], options: &OptionValues) -> Result<OperationReport, EngineError> {
+        self.op_assess(operation, inputs, options)
+    }
+
+    fn execute_operation(&self, task: &OperationTask, ctx: &ExecContext) -> Result<StepOutput, EngineError> {
+        self.op_execute(task, ctx)
+    }
+
+    fn verify_operation(&self, task: &OperationTask, ctx: &ExecContext) -> Verification {
+        self.op_verify(task, ctx)
     }
 
     fn verify(&self, output: &Path, task: &StepTask, ctx: &ExecContext) -> Verification {

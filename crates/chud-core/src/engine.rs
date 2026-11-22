@@ -3,6 +3,7 @@
 use crate::cancel::CancelToken;
 use crate::feature::FeatureSet;
 use crate::format::FormatId;
+use crate::operation::{OperationReport, OperationTask};
 use crate::options::{OptionSpec, OptionValues};
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -350,6 +351,35 @@ pub trait Engine: Send + Sync {
 
     /// Vérifie un fichier produit par ce moteur.
     fn verify(&self, _output: &Path, _task: &StepTask, _ctx: &ExecContext) -> Verification {
+        Verification::SignatureOnly
+    }
+
+    /// Opérations du catalogue ([`crate::operations`]) que ce moteur sait exécuter.
+    fn operations(&self) -> &[&'static str] {
+        &[]
+    }
+
+    fn operation_options(&self, _operation: &str) -> Vec<OptionSpec> {
+        Vec::new()
+    }
+
+    /// Format produit (`directory` pour un dossier), selon les options choisies.
+    fn operation_target(&self, operation: &str, _options: &OptionValues) -> Result<FormatId, EngineError> {
+        Err(EngineError::Unsupported(operation.to_owned()))
+    }
+
+    /// Ce que l'opération conserve ou perd pour ces fichiers ; une erreur dit pourquoi elle est
+    /// impossible (fichier illisible, protégé, page absente…). N'écrit rien.
+    fn assess_operation(&self, operation: &str, _inputs: &[PathBuf], _options: &OptionValues) -> Result<OperationReport, EngineError> {
+        Err(EngineError::Unsupported(operation.to_owned()))
+    }
+
+    fn execute_operation(&self, task: &OperationTask, _ctx: &ExecContext) -> Result<StepOutput, EngineError> {
+        Err(EngineError::Unsupported(task.operation.clone()))
+    }
+
+    /// Vérifie le résultat d'une opération.
+    fn verify_operation(&self, _task: &OperationTask, _ctx: &ExecContext) -> Verification {
         Verification::SignatureOnly
     }
 

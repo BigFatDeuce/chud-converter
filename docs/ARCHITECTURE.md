@@ -139,6 +139,15 @@ Queued → Preparing (détection, sonde, plan) → Running (étape i/n, progress
 Ordonnancement : pool de `N` ouvriers ; chaque tâche a un poids (vidéo = lourd, image = léger)
 et la somme des poids actifs est bornée pour ne pas saturer CPU/mémoire/disque.
 
+### Opérations (`chud_core::operation`, `chud_jobs::operations`)
+
+Fusionner, diviser, pivoter des PDF et créer une archive ne passent pas par le planificateur : un
+catalogue fixe (`operations()`) dit pour chacune le moteur, les formats acceptés, le nombre de
+fichiers, si l'ordre compte, et si les fichiers donnent **un** résultat (`Together`) ou **un par
+fichier** (`Each`). `JobRunner::prepare_operation` contrôle les fichiers et rend le rapport sans
+rien écrire ; `run_operation` suit les mêmes étapes 1 à 5 que ci-dessus. La file accepte les deux
+(`JobQueue::submit`, `submit_operation`). Voir ADR-024.
+
 ## 7. Gestionnaire de moteurs (`chud-enginemgr`)
 
 Voir [ENGINE-MANAGER.md](ENGINE-MANAGER.md). Résumé : manifestes déclaratifs (détection,

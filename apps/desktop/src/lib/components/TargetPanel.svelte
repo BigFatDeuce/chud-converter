@@ -8,7 +8,8 @@
   import { api, errorText } from "../api";
   import { categoryLabel, categoryOrder, fidelityLabel } from "../format";
   import { offerSize } from "../engineText";
-  import { analysisTargets, missingEngineFor } from "../machines";
+  import { analysisTargets, missingEngineFor, splitForTool } from "../machines";
+  import { toolIcon } from "../format";
   import type { Category, Conflict, EngineView, PlanView, PresetView } from "../types";
 
   let query = $state("");
@@ -40,6 +41,16 @@
     }
     return categoryOrder.filter((c) => by.has(c)).map((c) => ({ category: c, targets: by.get(c)! }));
   });
+
+  // Outils utiles pour la sélection : ceux qui acceptent tous les fichiers cochés. L'archive d'un
+  // seul élément est une conversion ordinaire : elle n'est proposée que pour plusieurs.
+  const links = $derived(
+    store.tools.filter((t) => {
+      const files = store.checked.map((f) => f.info);
+      if (files.length < Math.max(t.minInputs, t.accepts.length ? 1 : 2)) return false;
+      return splitForTool(t.accepts, files).aside.length === 0;
+    }),
+  );
 
   const showPicker = $derived(picking || !store.targetInfo);
 
@@ -132,6 +143,23 @@
   }
 </script>
 
+<!-- Ce qui se fait avec plusieurs fichiers à la fois (ou sur les pages d'un PDF) : écran Outils. -->
+{#snippet together()}
+  {#if links.length}
+    <div class="block">
+      <div class="section-title">{L("Outils", "Tools")}</div>
+      <div class="pchips">
+        {#each links as t (t.id)}
+          <button class="pchip" data-tool={t.id} onclick={() => store.openTool(t.id, store.checked.map((f) => f.info))} title={t.description}>
+            <Icon name={toolIcon(t.id)} size={12} />
+            {t.name}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
+{/snippet}
+
 <aside aria-labelledby="target-title">
   <div class="scroll">
     <header class="head">
@@ -155,6 +183,7 @@
         <p class="hint">{L("Recherche des conversions possibles…", "Looking for possible conversions…")}</p>
       </div>
     {:else if !store.common.length && needs.length}
+      {@render together()}
       <div class="need" data-need={needs.map((e) => e.id).join(" ")}>
         <Callout tone="accent" icon="download">
           <p>
@@ -179,6 +208,7 @@
         </Callout>
       </div>
     {:else if !store.common.length}
+      {@render together()}
       <Callout tone="warn">
         <p>
           {stuck.length && stuck.length === store.checked.length
@@ -210,6 +240,7 @@
           {/each}
         </div>
       {/if}
+      {@render together()}
       {#if store.suggested.length}
         <div class="block">
           <div class="section-title">{L("Préréglages", "Presets")}</div>

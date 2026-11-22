@@ -16,7 +16,6 @@ toml.workspace = true
 serde_norway.workspace = true
 csv.workspace = true
 image.workspace = true
-regex.workspace = true
 encoding_rs = "0.8"
 chardetng = "1"
 zip.workspace = true

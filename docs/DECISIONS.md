@@ -370,3 +370,31 @@ adaptateurs (`CHUD_REQUIRE_TOOLS`) ; le flux hebdomadaire installe chaque source
 **Conséquences.** La clé privée de signature est un secret GitHub (`TAURI_SIGNING_PRIVATE_KEY`)
 et une copie chez le mainteneur ; sa perte oblige les utilisateurs à réinstaller à la main.
 Sans certificat de signature de code, SmartScreen avertit au premier lancement.
+
+## ADR-024 — Opérations : fusionner, diviser, pivoter, archiver
+**Statut : Acceptée**
+
+**Contexte.** Une conversion va d'un fichier vers un format. Fusionner des PDF ou réunir des
+fichiers dans une archive n'entre pas dans ce modèle (plusieurs sources, ordre, plusieurs
+résultats), et l'y forcer aurait faussé le planificateur.
+
+**Décision.**
+- Un **catalogue fixe d'opérations** dans le cœur (`chud_core::operations()`), séparé du graphe des
+  conversions : l'interface montre un outil même si son moteur manque, et propose de l'installer.
+- Chaque moteur déclare les opérations qu'il exécute (`Engine::operations`), annonce ce qui se perd
+  pour ces fichiers précis (`assess_operation`), exécute, puis vérifie (`verify_operation`).
+- `chud-jobs` les exécute comme une conversion : dossier de travail, vérification, contrôle du
+  format produit, finalisation atomique, jamais par-dessus une des sources.
+- **qpdf** pour les PDF, pilotable sans rien recompresser. Les parties d'une division repartent
+  d'un document vide (`--empty`) : un extrait fait à partir de l'original garde, cachés, les titres
+  des signets et les balises des autres pages. Les signets utiles sont ensuite réécrits et relus
+  (`--update-from-json`, qpdf 11 ou plus récent ; avant, l'outil le dit et continue sans signets).
+- **Perdu et annoncé** : balises d'accessibilité, pièces jointes, liens internes nommés, signatures
+  des fichiers fusionnés après le premier (et de toutes les parties d'une division).
+- **PDF protégés** : refusés pour fusionner et diviser (la protection disparaîtrait) ; pivoter garde
+  la protection telle quelle.
+- **7-Zip** pour les archives : chemins absolus dans un fichier liste (seul le nom de l'élément est
+  enregistré, vérifié sous Windows et Linux), homonymes renommés « nom (2) », liens refusés.
+
+**Conséquences.** Une nouvelle opération (filigrane, découpe vidéo, assemblage d'images en PDF…)
+s'ajoute au catalogue et à un moteur, sans toucher au planificateur ni à l'écran Outils.

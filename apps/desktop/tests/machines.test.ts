@@ -15,7 +15,9 @@ import {
   isFinal,
   missingEngineFor,
   missingEngines,
+  moveItem,
   moveJob,
+  splitForTool,
   startLoad,
   updateStep,
   type EngineOp,
@@ -159,4 +161,22 @@ test("animations : le réglage explicite l'emporte, « automatique » suit le sy
   assert.equal(motionLevel("reduced", false), "reduced");
   assert.equal(motionLevel("off", false), "off");
   assert.equal(motionLevel("off", true), "off");
+});
+
+test("outils : les fichiers d'un autre format sont laissés de côté, l'archive prend tout", () => {
+  const pdf = { format: "pdf", isDir: false };
+  const png = { format: "png", isDir: false };
+  const dir = { format: "directory", isDir: true };
+  const unknown = { format: null, isDir: false };
+  const all = [png, pdf, dir, unknown];
+  assert.deepEqual(splitForTool(["pdf"], all), { ok: [pdf], aside: [png, dir, unknown] });
+  assert.deepEqual(splitForTool([], all), { ok: all, aside: [] });
+});
+
+test("outils : l'ordre de la fusion change d'un cran, jamais hors limites", () => {
+  assert.deepEqual(moveItem(["a", "b", "c"], 2, -1), ["a", "c", "b"]);
+  assert.deepEqual(moveItem(["a", "b", "c"], 0, 1), ["b", "a", "c"]);
+  assert.deepEqual(moveItem(["a", "b"], 0, -1), ["a", "b"]);
+  assert.deepEqual(moveItem(["a", "b"], 1, 1), ["a", "b"]);
+  assert.deepEqual(moveItem(["a"], -1, 1), ["a"]);
 });

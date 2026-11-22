@@ -14,8 +14,8 @@
 
 use chud_core::detect::{Confidence, Detection, detect_path};
 use chud_core::{
-    CancelToken, Engine, EngineError, EngineId, ExecContext, FormatCatalog, FormatId, OptionValues, Plan, PlanError, Progress, Registry,
-    StepTask, Verification,
+    CancelToken, Engine, EngineError, EngineId, ExecContext, FormatCatalog, FormatId, OperationReport, OptionValues, Plan, PlanError,
+    Progress, Registry, StepTask, Verification,
 };
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -23,8 +23,10 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
+pub mod operations;
 pub mod presets;
 pub mod queue;
+pub use operations::{OperationSpec, PreparedOperation, operation_specs};
 pub use presets::{Preset, PresetError, PresetStore, kind_of_path};
 pub use queue::{JobFailure, JobId, JobQueue, QueueEvent, QueueListener};
 
@@ -79,13 +81,41 @@ impl JobSpec {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum JobEvent {
-    Detected { format: FormatId, confidence: Confidence, extension_mismatch: bool },
-    Planned { plan: Plan },
-    Step { index: usize, count: usize, engine: EngineId, from: FormatId, to: FormatId },
-    Progress { fraction: Option<f64>, speed: Option<String>, message: Option<String> },
-    Verified { index: usize, verification: Verification },
-    Finished { output: PathBuf },
-    Skipped { reason: String },
+    Detected {
+        format: FormatId,
+        confidence: Confidence,
+        extension_mismatch: bool,
+    },
+    Planned {
+        plan: Plan,
+    },
+    /// Opération (fusion, archive…) : ce qui sera conservé ou perdu.
+    OperationPlanned {
+        operation: String,
+        report: OperationReport,
+    },
+    Step {
+        index: usize,
+        count: usize,
+        engine: EngineId,
+        from: FormatId,
+        to: FormatId,
+    },
+    Progress {
+        fraction: Option<f64>,
+        speed: Option<String>,
+        message: Option<String>,
+    },
+    Verified {
+        index: usize,
+        verification: Verification,
+    },
+    Finished {
+        output: PathBuf,
+    },
+    Skipped {
+        reason: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -93,8 +123,12 @@ pub struct JobOutcome {
     pub input: PathBuf,
     /// `None` si la tâche a été ignorée (conflit « skip »).
     pub output: Option<PathBuf>,
+    /// Format de la source (pour une opération : format produit).
     pub detected: FormatId,
     pub plan: Option<Plan>,
+    /// Rapport d'une opération (fusion, archive…), à la place du plan.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report: Option<OperationReport>,
     pub verifications: Vec<Verification>,
     pub notes: Vec<String>,
     pub duration_ms: u128,
@@ -115,6 +149,10 @@ pub enum JobError {
     Engine { step: usize, engine: EngineId, error: EngineError },
     #[error("{}", chud_core::trf!("vérification échouée à l'étape {} : {detail}", "verification failed at step {}: {detail}", .step + 1))]
     Verification { step: usize, detail: String },
+    #[error("{0}")]
+    BadInput(String),
+    #[error("{}", chud_core::trf!("moteur nécessaire absent ou désactivé : {}", "required engine missing or disabled: {}", .0))]
+    MissingEngine(EngineId),
     #[error("{}", chud_core::trf!("opération annulée", "operation cancelled"))]
     Cancelled,
     #[error("{}", chud_core::trf!("la sortie désignerait le fichier source lui-même", "the output would be the source file itself"))]
@@ -137,6 +175,8 @@ impl JobError {
             JobError::Engine { error: EngineError::Cancelled, .. } | JobError::Cancelled => "cancelled",
             JobError::Engine { error, .. } => error.code(),
             JobError::Verification { .. } => "verification_failed",
+            JobError::BadInput(_) => "bad_input",
+            JobError::MissingEngine(_) => "missing_engine",
             JobError::SameFile => "same_file",
             JobError::Io(_) => "io",
         }
@@ -317,6 +357,7 @@ impl JobRunner {
                 output: None,
                 detected: source,
                 plan: Some(plan),
+                report: None,
                 verifications: vec![],
                 notes,
                 duration_ms: started.elapsed().as_millis(),
@@ -331,7 +372,6 @@ impl JobRunner {
         let count = plan.steps.len();
         let mut current = input.clone();
         let mut verifications = Vec::new();
-        let throttle = Mutex::new(Instant::now() - Duration::from_secs(1));
 
         for (i, step) in plan.steps.iter().enumerate() {
             if cancel.is_cancelled() {
@@ -360,43 +400,21 @@ impl JobRunner {
                 source: source_info,
             };
 
-            let progress = {
-                let throttle = &throttle;
-                move |p: Progress| {
-                    let now = Instant::now();
-                    let mut last = throttle.lock().unwrap_or_else(|e| e.into_inner());
-                    let done = p.fraction.is_some_and(|f| f >= 1.0);
-                    if !done && now.duration_since(*last) < Duration::from_millis(100) {
-                        return;
-                    }
-                    *last = now;
+            let result = run_engine(
+                cancel,
+                &work,
+                spec.timeout,
+                spec.memory_limit,
+                &|p| {
                     let overall = p.fraction.map(|f| (i as f64 + f.clamp(0.0, 1.0)) / count as f64);
                     on_event(JobEvent::Progress { fraction: overall, speed: p.speed, message: p.message });
-                }
-            };
-            // Le contexte exige une fermeture 'static : on relaie par un canal borné à cette étape.
-            let (tx, rx) = crossbeam_channel::unbounded::<Progress>();
-            let ctx = ExecContext {
-                cancel: cancel.clone(),
-                progress: Arc::new(move |p| {
-                    let _ = tx.send(p);
-                }),
-                work_dir: work.clone(),
-                timeout: spec.timeout,
-                memory_limit: spec.memory_limit,
-            };
-            let result = std::thread::scope(|s| {
-                let handle = s.spawn(|| {
-                    let r = engine.execute(&task, &ctx);
-                    let v = r.as_ref().ok().map(|_| engine.verify(&out, &task, &ctx));
-                    drop(ctx);
+                },
+                &|ctx| {
+                    let r = engine.execute(&task, ctx);
+                    let v = r.as_ref().ok().map(|_| engine.verify(&out, &task, ctx));
                     (r, v)
-                });
-                for p in rx.iter() {
-                    progress(p);
-                }
-                handle.join().expect("le moteur a paniqué")
-            });
+                },
+            );
             let (exec, verification) = result;
             let output = match exec {
                 Ok(o) => o,
@@ -411,43 +429,7 @@ impl JobRunner {
             if let Verification::Failed(detail) = &verification {
                 return Err(JobError::Verification { step: i, detail: detail.clone() });
             }
-            // Contrôle indépendant : le fichier existe, n'est pas vide et a bien le format attendu.
-            if step.to.as_str() != "directory" {
-                let meta = std::fs::metadata(&out).map_err(|_| JobError::Verification {
-                    step: i,
-                    detail: chud_core::tr!("aucun fichier produit", "no file produced").into(),
-                })?;
-                if meta.len() == 0 {
-                    return Err(JobError::Verification {
-                        step: i,
-                        detail: chud_core::tr!("fichier produit vide", "empty output file").into(),
-                    });
-                }
-                let d = detect_path(&out, catalog)?;
-                match &d.format {
-                    Some(f) if compatible(catalog, &step.to, f) => {}
-                    Some(f) if d.confidence != Confidence::Low => {
-                        return Err(JobError::Verification {
-                            step: i,
-                            detail: chud_core::trf!(
-                                "le fichier produit est reconnu comme {f} et non comme {}",
-                                "the output file is recognized as {f}, not as {}",
-                                step.to
-                            ),
-                        });
-                    }
-                    _ => notes.push(chud_core::trf!(
-                        "format du résultat non confirmé par la détection indépendante ({})",
-                        "result format not confirmed by independent detection ({})",
-                        step.to
-                    )),
-                }
-            } else if !out.is_dir() {
-                return Err(JobError::Verification {
-                    step: i,
-                    detail: chud_core::tr!("aucun dossier produit", "no folder produced").into(),
-                });
-            }
+            check_produced(catalog, &out, &step.to, &mut notes).map_err(|detail| JobError::Verification { step: i, detail })?;
             on_event(JobEvent::Verified { index: i, verification: verification.clone() });
             verifications.push(verification);
             current = out;
@@ -471,7 +453,7 @@ impl JobRunner {
                 ));
             }
         }
-        let final_path = finalize(&current, &wanted, &input, spec.conflict, is_dir)?;
+        let final_path = finalize(&current, &wanted, std::slice::from_ref(&input), spec.conflict, is_dir)?;
         let Some(final_path) = final_path else {
             let reason = chud_core::trf!("{} existe déjà", "{} already exists", wanted.display());
             on_event(JobEvent::Skipped { reason: reason.clone() });
@@ -481,6 +463,7 @@ impl JobRunner {
                 output: None,
                 detected: source,
                 plan: Some(plan),
+                report: None,
                 verifications,
                 notes,
                 duration_ms: started.elapsed().as_millis(),
@@ -513,6 +496,7 @@ impl JobRunner {
             output: Some(final_path),
             detected: source,
             plan: Some(plan),
+            report: None,
             verifications,
             notes,
             duration_ms: started.elapsed().as_millis(),
@@ -523,6 +507,72 @@ impl JobRunner {
     pub fn weight(&self, plan: &Plan) -> u32 {
         plan.steps.iter().filter_map(|s| self.registry.engine(&s.engine).map(|e| e.weight(&s.from, &s.to))).max().unwrap_or(1)
     }
+}
+
+type Executed<T> = (Result<chud_core::StepOutput, EngineError>, Option<T>);
+
+/// Fait travailler un moteur dans un fil à part et relaie sa progression (au plus dix fois par
+/// seconde, et toujours la fin).
+fn run_engine<T: Send>(
+    cancel: &CancelToken,
+    work_dir: &Path,
+    timeout: Option<Duration>,
+    memory_limit: Option<u64>,
+    on_progress: &dyn Fn(Progress),
+    work: &(dyn Fn(&ExecContext) -> Executed<T> + Sync),
+) -> Executed<T> {
+    // Le contexte exige une fermeture 'static : on relaie par un canal borné à cette étape.
+    let (tx, rx) = crossbeam_channel::unbounded::<Progress>();
+    let ctx = ExecContext {
+        cancel: cancel.clone(),
+        progress: Arc::new(move |p| {
+            let _ = tx.send(p);
+        }),
+        work_dir: work_dir.to_path_buf(),
+        timeout,
+        memory_limit,
+    };
+    std::thread::scope(|s| {
+        let handle = s.spawn(move || work(&ctx));
+        let mut last: Option<Instant> = None;
+        for p in rx.iter() {
+            let done = p.fraction.is_some_and(|f| f >= 1.0);
+            if !done && last.is_some_and(|t| t.elapsed() < Duration::from_millis(100)) {
+                continue;
+            }
+            last = Some(Instant::now());
+            on_progress(p);
+        }
+        handle.join().expect("le moteur a paniqué")
+    })
+}
+
+/// Contrôle indépendant du moteur : le résultat existe, n'est pas vide et a bien le format attendu.
+fn check_produced(catalog: &FormatCatalog, out: &Path, expected: &FormatId, notes: &mut Vec<String>) -> Result<(), String> {
+    if expected.as_str() == "directory" {
+        return if out.is_dir() { Ok(()) } else { Err(chud_core::tr!("aucun dossier produit", "no folder produced").into()) };
+    }
+    let meta = std::fs::metadata(out).map_err(|_| chud_core::tr!("aucun fichier produit", "no file produced").to_owned())?;
+    if meta.len() == 0 {
+        return Err(chud_core::tr!("fichier produit vide", "empty output file").into());
+    }
+    let d = detect_path(out, catalog).map_err(|e| e.to_string())?;
+    match &d.format {
+        Some(f) if compatible(catalog, expected, f) => {}
+        Some(f) if d.confidence != Confidence::Low => {
+            return Err(chud_core::trf!(
+                "le fichier produit est reconnu comme {f} et non comme {}",
+                "the output file is recognized as {f}, not as {}",
+                expected
+            ));
+        }
+        _ => notes.push(chud_core::trf!(
+            "format du résultat non confirmé par la détection indépendante ({})",
+            "result format not confirmed by independent detection ({})",
+            expected
+        )),
+    }
+    Ok(())
 }
 
 fn numbered(wanted: &Path, n: u32) -> PathBuf {
@@ -538,11 +588,11 @@ fn numbered(wanted: &Path, n: u32) -> PathBuf {
 }
 
 /// Déplace le résultat vers sa destination. Renvoie `None` si ignoré (conflit « skip »).
-fn finalize(staged: &Path, wanted: &Path, source: &Path, conflict: Conflict, is_dir: bool) -> Result<Option<PathBuf>, JobError> {
+fn finalize(staged: &Path, wanted: &Path, sources: &[PathBuf], conflict: Conflict, is_dir: bool) -> Result<Option<PathBuf>, JobError> {
     if let Some(parent) = wanted.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let overwrite = conflict == Conflict::Overwrite && !is_dir && !same_file(source, wanted);
+    let overwrite = conflict == Conflict::Overwrite && !is_dir && !sources.iter().any(|s| same_file(s, wanted));
     if overwrite && wanted.exists() && !wanted.is_file() {
         return Err(JobError::Io(std::io::Error::other(chud_core::trf!(
             "{} n'est pas un fichier : remplacement refusé",

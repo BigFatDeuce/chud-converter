@@ -14,7 +14,9 @@ import {
   idle,
   isActive,
   isFinal,
+  moveItem,
   moveJob,
+  splitForTool,
   startLoad,
   updateBusy,
   updateStep,
@@ -44,12 +46,14 @@ import type {
   SettingsView,
   ShellView,
   Submitted,
+  ToolRequest,
+  ToolView,
   UiEvent,
   UpdateView,
   Verification,
 } from "./types";
 
-export type View = "convert" | "presets" | "engines" | "settings" | "about";
+export type View = "convert" | "tools" | "presets" | "engines" | "settings" | "about";
 
 export type { JobStatus } from "./machines";
 
@@ -69,6 +73,8 @@ export interface Job {
   name: string;
   target: string;
   targetName: string;
+  /** Tâche d'un outil (fusion, archive…) et non conversion. */
+  tool: boolean;
   status: JobStatus;
   fraction: number | null;
   speed: string | null;
@@ -181,6 +187,18 @@ class Store {
   keepDate = $state(false);
   dropHover = $state(false);
 
+  /** Outils (fusionner, diviser, pivoter, archiver), prêts ou non. */
+  tools = $state<ToolView[]>([]);
+  toolId = $state<string>("pdf-merge");
+  toolFiles = $state<FileInfo[]>([]);
+  /** Options modifiées, par outil. */
+  toolOptions = $state<Record<string, Record<string, OptionValue>>>({});
+  toolName = $state("");
+  tool = $derived(this.tools.find((t) => t.id === this.toolId) ?? null);
+  toolSplit = $derived(splitForTool(this.tool?.accepts ?? [], this.toolFiles));
+  /** Plusieurs résultats : le nom suit celui de chaque fichier. */
+  toolNamed = $derived(this.tool?.grouping === "together" || this.toolSplit.ok.length === 1);
+
   presets = $state<PresetView[]>([]);
   presetsFile = $state<string | null>(null);
   presetsError = $state<string | null>(null);
@@ -261,6 +279,10 @@ class Store {
     await a.onQueue((e) => this.#onEvent(e));
     await a.onDrop(
       (paths) => {
+        if (this.view === "tools") {
+          void this.addToolPaths(paths);
+          return;
+        }
         this.view = "convert";
         void this.addPaths(paths);
       },
@@ -272,6 +294,7 @@ class Store {
     });
     void this.loadEngines(false).then(() => this.#maybeWelcome());
     void this.loadPresets();
+    void this.loadTools();
     const initial = await a.initialPaths();
     if (initial.length) await this.addPaths(initial);
   }
@@ -486,14 +509,15 @@ class Store {
     }
   }
 
-  #addJobs(submitted: Submitted[], target: string, targetName: string) {
+  #addJobs(submitted: Submitted[], target: string, targetName: string, tool: { name?: string } | null = null) {
     {
       const created: Job[] = submitted.map((s) => ({
         id: s.id,
         path: s.path,
-        name: baseName(s.path),
+        name: tool?.name ?? baseName(s.path),
         target,
         targetName,
+        tool: tool !== null,
         status: "waiting",
         fraction: null,
         speed: null,
@@ -516,6 +540,122 @@ class Store {
         this.#buffered.delete(s.id);
         for (const e of evs ?? []) this.#apply(e);
       }
+    }
+  }
+
+  // ---------------------------------------------------------------- outils
+
+  async loadTools() {
+    try {
+      this.tools = await (await api).tools();
+    } catch (e) {
+      this.say(errorText(e));
+    }
+  }
+
+  /** Ouvre l'écran Outils sur un outil, avec ces fichiers (depuis Convertir). */
+  openTool(id: string, files: FileInfo[]) {
+    this.chooseTool(id);
+    this.toolFiles = files.map((f) => ({ ...f }));
+    this.view = "tools";
+  }
+
+  chooseTool(id: string) {
+    if (this.toolId === id) return;
+    this.toolId = id;
+    this.toolName = "";
+  }
+
+  /** Ajoute des fichiers à l'outil. Les outils PDF prennent les fichiers d'un dossier ; l'archive
+   *  garde le dossier entier. */
+  async addToolPaths(paths: string[]) {
+    if (!paths.length) return;
+    const a = await api;
+    try {
+      if (this.tool?.accepts.length) {
+        const ex = await a.expand(paths);
+        paths = ex.paths;
+        if (ex.folders.length) this.say(ex.folders.map((f) => f.note).join(" "));
+      }
+      const infos = await a.inspect(paths);
+      const known = new Set(this.toolFiles.map((f) => f.path));
+      const fresh = infos.filter((i) => !known.has(i.path));
+      if (!fresh.length && infos.length) this.say(L("Déjà dans la liste.", "Already in the list."));
+      this.toolFiles = [...this.toolFiles, ...fresh];
+    } catch (e) {
+      this.say(errorText(e));
+    }
+  }
+
+  async pickToolFiles() {
+    const a = await api;
+    try {
+      await this.addToolPaths(await a.pickFiles(this.tool?.name));
+    } catch (e) {
+      this.say(errorText(e));
+    }
+  }
+
+  async pickToolFolder() {
+    const a = await api;
+    try {
+      const dir = await a.pickFolder(L("Dossier à ajouter", "Folder to add"));
+      if (dir) await this.addToolPaths([dir]);
+    } catch (e) {
+      this.say(errorText(e));
+    }
+  }
+
+  removeToolFile(path: string) {
+    this.toolFiles = this.toolFiles.filter((f) => f.path !== path);
+  }
+
+  moveToolFile(path: string, delta: number) {
+    // L'ordre est celui des fichiers acceptés : ceux laissés de côté restent à la fin.
+    const { ok, aside } = this.toolSplit;
+    const at = ok.findIndex((f) => f.path === path);
+    this.toolFiles = [...moveItem(ok, at, delta), ...aside];
+  }
+
+  /** Tri naturel : « page 2 » avant « page 10 ». */
+  sortToolFiles() {
+    const c = new Intl.Collator(i18n.lang, { numeric: true, sensitivity: "base" });
+    this.toolFiles = [...this.toolFiles].sort((x, y) => c.compare(x.name, y.name));
+  }
+
+  setToolOption(key: string, value: OptionValue, defaultValue: OptionValue) {
+    const next = { ...(this.toolOptions[this.toolId] ?? {}) };
+    if (value === defaultValue) delete next[key];
+    else next[key] = value;
+    this.toolOptions = { ...this.toolOptions, [this.toolId]: next };
+  }
+
+  /** Demande envoyée au cœur pour l'outil affiché. */
+  toolRequest(): ToolRequest {
+    return {
+      tool: this.toolId,
+      files: this.toolSplit.ok.map((f) => f.path),
+      options: { ...(this.toolOptions[this.toolId] ?? {}) },
+      outputDir: this.outputDir,
+      name: this.toolNamed && this.toolName.trim() ? this.toolName.trim() : null,
+      conflict: this.conflict,
+    };
+  }
+
+  async runTool() {
+    const t = this.tool;
+    if (!t) return;
+    const a = await api;
+    const req = this.toolRequest();
+    const n = req.files.length;
+    const name =
+      t.grouping === "together" && n > 1
+        ? L(`${baseName(req.files[0])} et ${n - 1} autre${n > 2 ? "s" : ""}`, `${baseName(req.files[0])} and ${n - 1} other${n > 2 ? "s" : ""}`)
+        : undefined;
+    try {
+      this.#addJobs(await a.toolRun(req), t.id, t.name, { name });
+    } catch (e) {
+      this.say(errorText(e));
     }
   }
 
@@ -724,7 +864,9 @@ class Store {
     }
     void this.loadPresets();
     await this.loadEngines(false);
+    await this.loadTools();
     await this.#reloadFiles();
+    await this.#reloadToolFiles();
   }
 
   /** Analyse et cibles redemandées, en gardant la sélection, le format et les options. */
@@ -847,7 +989,17 @@ class Store {
     } catch {
       // Affichage seulement.
     }
+    await this.loadTools();
     await this.#reloadFiles();
+  }
+
+  async #reloadToolFiles() {
+    if (!this.toolFiles.length) return;
+    try {
+      this.toolFiles = await (await api).inspect(this.toolFiles.map((f) => f.path));
+    } catch (e) {
+      this.say(errorText(e));
+    }
   }
 
   #engine(id: string, e: EngineOpEvent) {

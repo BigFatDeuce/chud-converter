@@ -2,6 +2,39 @@
 
 All notable changes to Chud Converter. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] — 2026-11-23
+
+A new **Tools** screen: merge, split and rotate PDFs, put several files into one archive.
+
+### Added
+- **Tools** screen (**Ctrl+2**), and `chud tool` on the command line:
+  - **Merge PDFs**: several PDFs into one, in the order you choose (move up or down, sort by
+    name). One bookmark per file with its own bookmarks below, or only the files' bookmarks, or
+    none.
+  - **Split a PDF**: one file per page, every N pages, or your own ranges (`1-3; 4-6; 7-z`). Each
+    part keeps its bookmarks, the title and the language, and nothing of the other pages stays
+    hidden in it.
+  - **Rotate a PDF**: every page or some, by 90°, 180° or 270°, without recompressing anything.
+  - **Create an archive**: several files and folders into one ZIP, 7z, TAR, TGZ, TBZ2 or TXZ.
+    Two files with the same name are both kept (the second becomes `name (2)`).
+- Same rules as conversions: what is lost is said **before** running (accessibility tags,
+  attachments, named links, signatures), originals are never modified, the result is read back
+  (structure, page count, bookmarks, rotation; integrity, names and sizes for archives) and never
+  replaces one of the chosen files. Password-protected, damaged or non-PDF files are refused with
+  a clear reason.
+- The Convert screen offers these tools for the selected files; a missing engine (qpdf, 7-Zip)
+  can be installed from the Tools screen.
+
+### Changed
+- The keyboard shortcuts now go from **Ctrl+1** to **Ctrl+6** (Tools is second).
+
+### Fixed
+- **Calibre could not be installed from the app** (404 Not Found): its author removes the files of a
+  GitHub release as soon as the next one is out. The app now downloads the very same file (same
+  SHA-256) from Calibre's official archive, which keeps every version.
+- **Calibre crashing while closing** (after the book was written and announced) failed the
+  conversion when Windows is not in English; the result is now kept and checked, as intended.
+
 ## [0.4.0] — 2026-11-22
 
 A new interface: the whole desktop app was redesigned around a "deep space" look. Nothing was

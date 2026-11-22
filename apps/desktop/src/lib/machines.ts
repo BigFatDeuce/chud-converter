@@ -208,3 +208,29 @@ export function motionLevel(motion: Motion, systemReduced: boolean): MotionLevel
   if (motion === "reduced" || systemReduced) return "reduced";
   return "full";
 }
+
+// ——— Outils ———
+
+/** Fichiers qu'un outil accepte, et ceux laissés de côté (autre format). Un outil sans format
+ *  imposé (l'archive) prend tout, dossiers et formats inconnus compris. */
+export function splitForTool<T extends { format: string | null; isDir: boolean }>(
+  accepts: readonly string[],
+  files: readonly T[],
+): { ok: T[]; aside: T[] } {
+  const ok: T[] = [];
+  const aside: T[] = [];
+  for (const f of files) {
+    const good = accepts.length === 0 || (!f.isDir && f.format !== null && accepts.includes(f.format));
+    (good ? ok : aside).push(f);
+  }
+  return { ok, aside };
+}
+
+/** Déplace un élément d'un cran (−1 : vers le haut) ; hors limites, rien ne change. */
+export function moveItem<T>(list: readonly T[], from: number, delta: number): T[] {
+  const to = from + delta;
+  const out = [...list];
+  if (from < 0 || from >= out.length || to < 0 || to >= out.length) return out;
+  [out[from], out[to]] = [out[to], out[from]];
+  return out;
+}

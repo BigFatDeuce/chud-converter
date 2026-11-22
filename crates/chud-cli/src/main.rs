@@ -6,7 +6,7 @@ use chud_core::{CancelToken, Category, EngineId, FormatCatalog, FormatId, Option
 use chud_core::{LangChoice, set_lang};
 use chud_core::{tr, trf};
 use chud_enginemgr::{AppPaths, EngineManager, EngineState, EngineStatus, Settings};
-use chud_jobs::{Conflict, JobEvent, JobRunner, JobSpec, PresetStore, run_batch};
+use chud_jobs::{Conflict, JobEvent, JobOutcome, JobRunner, JobSpec, OperationSpec, PresetStore, operation_specs, run_batch};
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::path::PathBuf;
@@ -99,6 +99,28 @@ enum Cmd {
         #[arg(long)]
         timeout: Option<u64>,
     },
+    /// Outils : fusionner, diviser ou pivoter des PDF, créer une archive. Sans argument : la liste.
+    Tool {
+        /// Identifiant de l'outil (voir `chud tool`).
+        id: Option<String>,
+        /// Fichiers, dans l'ordre.
+        files: Vec<PathBuf>,
+        /// Dossier de sortie (par défaut : celui du premier fichier).
+        #[arg(long, short = 'o')]
+        output: Option<PathBuf>,
+        /// Option de l'outil « clé=valeur » (répétable).
+        #[arg(long = "set", short = 's')]
+        set: Vec<String>,
+        /// Nom du résultat, sans extension.
+        #[arg(long)]
+        name: Option<String>,
+        /// Résultat déjà présent : rename (par défaut), skip ou overwrite.
+        #[arg(long = "on-conflict", value_enum)]
+        on_conflict: Option<ConflictArg>,
+        /// Montre ce qui serait fait, sans rien écrire.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Préréglages : tous, ou ceux proposés pour des fichiers donnés (comme le menu clic droit).
     Presets {
         files: Vec<PathBuf>,
@@ -171,6 +193,16 @@ enum ConflictArg {
     Rename,
     Overwrite,
     Skip,
+}
+
+impl From<ConflictArg> for Conflict {
+    fn from(c: ConflictArg) -> Self {
+        match c {
+            ConflictArg::Rename => Conflict::Rename,
+            ConflictArg::Overwrite => Conflict::Overwrite,
+            ConflictArg::Skip => Conflict::Skip,
+        }
+    }
 }
 
 fn main() {
@@ -253,6 +285,17 @@ fn localized_command() -> clap::Command {
                 .mut_arg("engine", help("Engine to prefer (ffmpeg, image, 7zip…)."))
                 .mut_arg("timeout", help("Time limit per step, in seconds."))
         })
+        .mut_subcommand("tool", |c| {
+            c.about("Tools: merge, split or rotate PDFs, create an archive. Without arguments: the list.")
+                .mut_arg("id", help("Tool identifier (see `chud tool`)."))
+                // `mut_arg` replace l'argument en dernier : les fichiers doivent rester après l'outil.
+                .mut_arg("files", help("Files, in order."))
+                .mut_arg("output", help("Output folder (default: the folder of the first file)."))
+                .mut_arg("set", help("Tool option “key=value” (repeatable)."))
+                .mut_arg("name", help("Name of the result, without extension."))
+                .mut_arg("on_conflict", help("Result already there: rename (default), skip or overwrite."))
+                .mut_arg("dry_run", help("Shows what would be done, without writing anything."))
+        })
         .mut_subcommand("presets", |c| {
             c.about("Presets: all of them, or those offered for given files (like the right-click menu).").mut_arg(
                 "write_defaults",
@@ -271,6 +314,120 @@ fn localized_command() -> clap::Command {
         })
         .mut_subcommand("language", |c| c.about("Shows or changes the language, shared with the app (system, fr, en)."))
         .mut_subcommand("matrix", |c| c.about("Matrix of the conversions available per engine.").mut_arg("from", help("Limit to one source format.")))
+}
+
+/// `chud tool` : les outils, leurs options, et ce qui manque.
+fn list_tools(registry: &Registry, json: bool) -> Result<i32> {
+    let tools: Vec<_> = chud_core::operations()
+        .into_iter()
+        .map(|op| {
+            let engine = registry.operation_engine(op.id);
+            let options = engine.map(|e| e.operation_options(op.id)).unwrap_or_default();
+            (op, engine.is_some(), options)
+        })
+        .collect();
+    if json {
+        let v: Vec<_> = tools.iter().map(|(op, ready, o)| serde_json::json!({ "operation": op, "ready": ready, "options": o })).collect();
+        return print_json(&v).map(|_| 0);
+    }
+    for (op, ready, options) in tools {
+        out!("{:<16} {} — {}", op.id, op.name, op.description);
+        if !ready {
+            out!(
+                "{}",
+                trf!(
+                    "                 moteur nécessaire : chud engines install {}",
+                    "                 engine needed: chud engines install {}",
+                    op.engine
+                )
+            );
+        }
+        for o in options {
+            let choices = match &o.kind {
+                chud_core::OptionKind::Choice { choices } => {
+                    format!(" ({})", choices.iter().map(|c| c.value.as_str()).collect::<Vec<_>>().join(", "))
+                }
+                _ => String::new(),
+            };
+            out!("                 --set {}=…  {}{choices}", o.key, o.label);
+        }
+    }
+    Ok(0)
+}
+
+fn print_report(headline: &str, details: &[String]) {
+    out!("{}", trf!("    Fidélité : {headline}", "    Fidelity: {headline}"));
+    for d in details {
+        out!("    • {d}");
+    }
+}
+
+/// Exécute les tâches d'un outil l'une après l'autre.
+fn run_tool(runner: &JobRunner, specs: &[OperationSpec], json: bool) -> Result<i32> {
+    let cancel = CancelToken::new();
+    let mut failed = 0;
+    for (i, spec) in specs.iter().enumerate() {
+        let label = spec.inputs.iter().map(|p| p.display().to_string()).take(3).collect::<Vec<_>>().join(", ");
+        let label =
+            if spec.inputs.len() > 3 { trf!("{label}… ({} fichiers)", "{label}… ({} files)", spec.inputs.len()) } else { label };
+        let bar = (!json).then(|| {
+            let b = ProgressBar::new(1000);
+            b.set_style(ProgressStyle::with_template("[{bar:30}] {percent:>3}% {msg}").expect("modèle").progress_chars("=> "));
+            b
+        });
+        let result = runner.run_operation(spec, &cancel, &|ev| {
+            if json {
+                out!("{}", serde_json::json!({ "job": i, "data": ev }));
+            } else if let (Some(b), JobEvent::Progress { fraction: Some(f), .. }) = (&bar, &ev) {
+                b.set_position((f * 1000.0) as u64);
+            }
+        });
+        if let Some(b) = bar {
+            b.finish_and_clear();
+        }
+        match result {
+            Ok(o) if json => out!("{}", serde_json::json!({ "job": i, "outcome": o })),
+            Ok(o) => print_outcome(&label, &o),
+            Err(e) => {
+                failed += 1;
+                if json {
+                    out!("{}", serde_json::json!({ "job": i, "error": { "code": e.code(), "message": e.to_string() } }));
+                } else {
+                    out!("{}", trf!("✘ {label} : {e}", "✘ {label}: {e}"));
+                }
+            }
+        }
+    }
+    Ok(if failed > 0 { 1 } else { 0 })
+}
+
+fn verification_line(v: &Verification) -> String {
+    match v {
+        Verification::Decoded(d) => trf!("vérifié : {d}", "verified: {d}"),
+        Verification::Structural(d) => trf!("contrôlé : {d}", "checked: {d}"),
+        Verification::SignatureOnly => tr!("signature contrôlée seulement", "signature checked only").into(),
+        Verification::Failed(d) => trf!("ÉCHEC : {d}", "FAILED: {d}"),
+    }
+}
+
+fn print_outcome(label: &str, o: &JobOutcome) {
+    match &o.output {
+        Some(out) => out!("✔ {label} → {}", out.display()),
+        None => out!("{}", trf!("↷ {label} : ignoré", "↷ {label}: skipped")),
+    }
+    if let Some(p) = &o.plan {
+        print_report(p.report.headline(), &p.report.details(catalog()));
+    }
+    if let Some(r) = &o.report {
+        print_report(r.headline(), &r.details());
+    }
+    for v in &o.verifications {
+        out!("    ✓ {}", verification_line(v));
+    }
+    let shown: Vec<&String> = o.plan.iter().flat_map(|p| p.steps.iter().flat_map(|s| s.notes.iter())).collect();
+    for n in o.notes.iter().filter(|n| !shown.contains(n)) {
+        out!("    · {n}");
+    }
 }
 
 /// `chud engines install|uninstall|rollback`.
@@ -806,11 +963,7 @@ fn run(cli: Cli) -> Result<i32> {
                         s.name_template = n.clone();
                     }
                     if let Some(c) = on_conflict {
-                        s.conflict = match c {
-                            ConflictArg::Rename => Conflict::Rename,
-                            ConflictArg::Overwrite => Conflict::Overwrite,
-                            ConflictArg::Skip => Conflict::Skip,
-                        };
+                        s.conflict = c.into();
                     }
                     s.preserve_mtime |= keep_date;
                     s.prefer_engine = engine.clone().map(EngineId::new);
@@ -878,29 +1031,7 @@ fn run(cli: Cli) -> Result<i32> {
                         if json {
                             continue;
                         }
-                        match &o.output {
-                            Some(out) => out!("✔ {input} → {}", out.display()),
-                            None => out!("{}", trf!("↷ {input} : ignoré", "↷ {input}: skipped")),
-                        }
-                        if let Some(p) = &o.plan {
-                            out!("{}", trf!("    Fidélité : {}", "    Fidelity: {}", p.report.headline()));
-                            for d in p.report.details(catalog()) {
-                                out!("    • {d}");
-                            }
-                        }
-                        for v in &o.verifications {
-                            let t = match v {
-                                Verification::Decoded(d) => trf!("vérifié : {d}", "verified: {d}"),
-                                Verification::Structural(d) => trf!("contrôlé : {d}", "checked: {d}"),
-                                Verification::SignatureOnly => tr!("signature contrôlée seulement", "signature checked only").into(),
-                                Verification::Failed(d) => trf!("ÉCHEC : {d}", "FAILED: {d}"),
-                            };
-                            out!("    ✓ {t}");
-                        }
-                        let shown: Vec<&String> = o.plan.iter().flat_map(|p| p.steps.iter().flat_map(|s| s.notes.iter())).collect();
-                        for n in o.notes.iter().filter(|n| !shown.contains(n)) {
-                            out!("    · {n}");
-                        }
+                        print_outcome(&input.to_string(), o);
                     }
                     Err(e) => {
                         failed += 1;
@@ -916,6 +1047,31 @@ fn run(cli: Cli) -> Result<i32> {
                 out!("{}", trf!("\n{} réussie(s), {failed} échec(s).", "\n{} succeeded, {failed} failed.", specs.len() - failed));
             }
             Ok(if failed > 0 { 1 } else { 0 })
+        }
+        Cmd::Tool { id, files, output, set, name, on_conflict, dry_run } => {
+            let env = load_engines()?;
+            let Some(id) = id else { return list_tools(&env.registry, cli.json) };
+            let runner = JobRunner::new(env.registry.clone(), env.manager.paths().cache_dir.clone());
+            runner.cleanup_stale(Duration::from_secs(24 * 3600));
+            // Un motif « *.pdf » sans correspondance est une erreur, comme pour `convert`.
+            let mut base = OperationSpec::new(id, expand_patterns(files)?);
+            base.options = parse_options(&set)?;
+            base.output_dir = output;
+            base.name = name;
+            base.conflict = on_conflict.map(Into::into).unwrap_or_default();
+            let specs = operation_specs(&base)?;
+            if dry_run {
+                let all = specs.iter().map(|s| runner.prepare_operation(s)).collect::<Result<Vec<_>, _>>()?;
+                if cli.json {
+                    return print_json(&all).map(|_| 0);
+                }
+                for p in &all {
+                    print_report(p.report.headline(), &p.report.details());
+                    out!("{}", trf!("Sortie prévue : {}", "Planned output: {}", p.output.display()));
+                }
+                return Ok(0);
+            }
+            run_tool(&runner, &specs, cli.json)
         }
         Cmd::Presets { files, write_defaults } => {
             let paths = AppPaths::detect();
@@ -1150,6 +1306,29 @@ fn print_status(st: &chud_shell::Status, json: bool) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// La traduction de l'aide ne doit jamais changer l'ordre des arguments (`chud tool <id> <fichiers>`).
+    #[test]
+    fn english_help_keeps_the_argument_order() {
+        fn positionals(c: &clap::Command, path: &str, out: &mut Vec<String>) {
+            out.extend(c.get_positionals().map(|a| format!("{path} {}", a.get_id())));
+            for s in c.get_subcommands().filter(|s| s.get_name() != "help") {
+                positionals(s, &format!("{path} {}", s.get_name()), out);
+            }
+        }
+        let order = |lang| {
+            chud_core::i18n::with_lang(lang, || {
+                let mut out = Vec::new();
+                positionals(&localized_command(), "chud", &mut out);
+                out
+            })
+        };
+        assert_eq!(order(chud_core::Lang::En), order(chud_core::Lang::Fr));
+        let args = ["chud", "tool", "pdf-merge", "a.pdf", "b.pdf"];
+        let m = chud_core::i18n::with_lang(chud_core::Lang::En, || localized_command().try_get_matches_from(args)).unwrap();
+        let Cmd::Tool { id, files, .. } = Cli::from_arg_matches(&m).unwrap().cmd else { panic!() };
+        assert_eq!((id.as_deref(), files.len()), (Some("pdf-merge"), 2));
+    }
 
     #[test]
     fn wildcards() {

@@ -76,6 +76,11 @@ impl Registry {
         self.engines.iter().find(|e| e.id() == id)
     }
 
+    /// Moteur actif capable d'exécuter cette opération.
+    pub fn operation_engine(&self, operation: &str) -> Option<&Arc<dyn Engine>> {
+        self.active().find(|e| e.operations().contains(&operation))
+    }
+
     fn active(&self) -> impl Iterator<Item = &Arc<dyn Engine>> {
         self.engines.iter().filter(|e| self.is_enabled(e.id()))
     }

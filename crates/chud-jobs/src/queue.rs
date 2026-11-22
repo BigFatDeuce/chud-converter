@@ -2,7 +2,7 @@
 //! on peut y ajouter des tâches pendant que d'autres tournent, et annuler une tâche précise ou
 //! toutes. Chaque tâche a son propre jeton d'annulation ; la jauge de ressources est partagée.
 
-use crate::{JobError, JobEvent, JobOutcome, JobRunner, JobSpec, ResourceGate};
+use crate::{JobError, JobEvent, JobOutcome, JobRunner, JobSpec, OperationSpec, ResourceGate};
 use chud_core::CancelToken;
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
@@ -32,15 +32,21 @@ impl From<&JobError> for JobFailure {
 pub enum QueueEvent {
     Started { id: JobId },
     Job { id: JobId, event: JobEvent },
-    Done { id: JobId, outcome: JobOutcome },
+    Done { id: JobId, outcome: Box<JobOutcome> },
     Failed { id: JobId, failure: JobFailure },
 }
 
 pub type QueueListener = Arc<dyn Fn(QueueEvent) + Send + Sync>;
 
+/// Travail de la file : une conversion, ou une opération (fusion, archive…).
+enum Work {
+    Convert(JobSpec),
+    Operation(OperationSpec),
+}
+
 #[derive(Default)]
 struct State {
-    pending: VecDeque<(JobId, JobSpec)>,
+    pending: VecDeque<(JobId, Work)>,
     running: HashMap<JobId, CancelToken>,
     next_id: JobId,
     stop: bool,
@@ -84,10 +90,19 @@ impl JobQueue {
 
     /// Ajoute une tâche ; elle démarrera dès qu'un fil et assez de ressources seront libres.
     pub fn submit(&self, spec: JobSpec) -> JobId {
+        self.push(Work::Convert(spec))
+    }
+
+    /// Ajoute une opération (fusion, division, archive…).
+    pub fn submit_operation(&self, spec: OperationSpec) -> JobId {
+        self.push(Work::Operation(spec))
+    }
+
+    fn push(&self, work: Work) -> JobId {
         let mut st = self.shared.lock();
         st.next_id += 1;
         let id = st.next_id;
-        st.pending.push_back((id, spec));
+        st.pending.push_back((id, work));
         drop(st);
         self.shared.wake.notify_one();
         id
@@ -154,33 +169,40 @@ impl Drop for JobQueue {
 
 fn worker(shared: &Shared, runner: &JobRunner, gate: &ResourceGate) {
     loop {
-        let (id, spec, token) = {
+        let (id, work, token) = {
             let mut st = shared.lock();
             loop {
                 if st.stop {
                     return;
                 }
-                if let Some((id, spec)) = st.pending.pop_front() {
+                if let Some((id, work)) = st.pending.pop_front() {
                     let token = CancelToken::new();
                     st.running.insert(id, token.clone());
-                    break (id, spec, token);
+                    break (id, work, token);
                 }
                 st = shared.wake.wait(st).unwrap_or_else(|e| e.into_inner());
             }
         };
-        let weight = runner.prepare(&spec).map(|p| runner.weight(&p.plan)).unwrap_or(1);
+        let weight = match &work {
+            Work::Convert(spec) => runner.prepare(spec).map(|p| runner.weight(&p.plan)).unwrap_or(1),
+            Work::Operation(spec) => runner.operation_weight(spec),
+        };
         let result = {
             let _slot = gate.acquire(weight);
             if token.is_cancelled() {
                 Err(JobError::Cancelled)
             } else {
                 (shared.listener)(QueueEvent::Started { id });
-                runner.run(&spec, &token, &|event| (shared.listener)(QueueEvent::Job { id, event }))
+                let relay = |event| (shared.listener)(QueueEvent::Job { id, event });
+                match &work {
+                    Work::Convert(spec) => runner.run(spec, &token, &relay),
+                    Work::Operation(spec) => runner.run_operation(spec, &token, &relay),
+                }
             }
         };
         shared.lock().running.remove(&id);
         (shared.listener)(match result {
-            Ok(outcome) => QueueEvent::Done { id, outcome },
+            Ok(outcome) => QueueEvent::Done { id, outcome: Box::new(outcome) },
             Err(e) => QueueEvent::Failed { id, failure: (&e).into() },
         });
     }

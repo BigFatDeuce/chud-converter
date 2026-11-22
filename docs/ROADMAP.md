@@ -18,6 +18,7 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [x] Moteurs : image natif, données natif (JSON/YAML/TOML/CSV/TSV/NDJSON), FFmpeg, 7-Zip
 - [x] Adaptateurs Pandoc, LibreOffice, Calibre, ImageMagick, libvips, qpdf, Ghostscript, Tesseract, MKVToolNix ; analyse enrichie par MediaInfo et ExifTool ; chacun vérifie son résultat à sa façon (ADR-023) — 0.2.0
 - [x] Détection des moteurs installés (gérés, emplacements connus, PATH) et sonde de capacités
+- [x] Opérations (plusieurs fichiers vers un, un vers plusieurs) : fusionner, diviser, pivoter des PDF, créer une archive ; `chud tool` ; 8 tests réels avec noms piégés, relus par un chemin indépendant (ADR-024)
 - [x] CLI `chud` : `formats`, `engines`, `detect`, `targets`, `plan`, `convert`, `matrix`, sortie JSON, motifs `*.ext` sous Windows
 - [x] Tests unitaires et d'intégration sur fichiers réels générés (158 tests Rust, dont 8 tests réels des onze nouveaux adaptateurs avec des noms piégés `é [1] %d` ; dont une matrice permanente de 840 conversions réelles vérifiées, et depuis la 0.3.0 une matrice « documents » : chaque document, tableur, présentation, PDF, livre et image avancée converti vers chacune de ses cibles, puis chaque format obtenu relu à son tour (environ 1 800 conversions sous Windows et sous Linux) ; conflits, annulation, fichier tronqué, attaques d'archives, file d'attente, application, préréglages, menu clic droit, langues)
 - [ ] Lecture testée automatiquement pour ARJ, LZH, RAR/CBR, ISO, DMG, VHD, SquashFS, RPM et LZMA : confiée à 7-Zip (test d'intégrité et contrôle de l'index à chaque conversion), mais aucun exemple n'est encore générable localement pour la matrice
@@ -47,6 +48,7 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [x] Écran Moteurs (état, version, origine, licence) et écran À propos ; aucune commande à copier (0.1.2)
 - [x] Testé sous Windows sur de vrais fichiers (pilotage par UI Automation) ; compilation Linux en CI
 - [ ] Liste virtualisée (milliers de fichiers), progression globale, ETA, relance d'une tâche échouée
+- [x] Écran Outils : choix de l'outil, ordre des fichiers, aperçu de ce qui se perd, fichiers laissés de côté, moteur manquant installable ; accès depuis Convertir — 0.5.0
 - [ ] Favoris et formats récents
 - [x] Installation des moteurs à la demande depuis l'écran Moteurs, ou depuis un fichier qui en a besoin — 0.1.2
 - [ ] Préférences complètes (modèle de nom, métadonnées, parallélisme, cache, thème forcé, portable)
@@ -69,9 +71,11 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 - [ ] Audio : conservation des tags (`lofty`), normalisation EBU R128, découpe/fusion
 - [ ] Vidéo : sélection de pistes, accélération matérielle (sonde réelle), sous-titres, découpe/assemblage
 - [ ] Documents : LibreOffice, Pandoc, Typst
-- [ ] PDF : qpdf, pdfium, lopdf (fusion, division, rotation, extraction, filigrane, compression, PDF/A), OCR Tesseract
+- [x] PDF : fusion, division, rotation, extraction de pages, compression (qpdf) ; OCR Tesseract
+- [ ] PDF : filigrane, PDF/A, formulaires et mots de passe
 - [ ] Livres électroniques : Calibre, CBZ/CBR natifs
-- [ ] Archives : compresser un ou plusieurs fichiers (pas seulement un dossier), extraction native sécurisée (zip/tar/gz/xz/bz2/zst/7z), multipartie, test d'intégrité
+- [x] Archives : réunir plusieurs fichiers et dossiers dans une archive (ZIP, 7z, TAR, TGZ, TBZ2, TXZ)
+- [ ] Archives : extraction native sécurisée (zip/tar/gz/xz/bz2/zst/7z), multipartie, test d'intégrité
 - [ ] Données : XML, XLSX/ODS (calamine), Parquet, SQLite, détection et conversion d'encodages
 
 ### 2e. Distribution

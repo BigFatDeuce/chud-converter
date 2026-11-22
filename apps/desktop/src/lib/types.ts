@@ -241,6 +241,42 @@ export interface ConvertRequest {
   keepDate: boolean;
 }
 
+/** Outil : fusionner, diviser, pivoter des PDF, créer une archive. */
+export interface ToolView {
+  id: string;
+  name: string;
+  description: string;
+  category: Category;
+  /** `together` : un seul résultat ; `each` : un résultat par fichier. */
+  grouping: "together" | "each";
+  minInputs: number;
+  /** Formats acceptés ; vide : tout fichier, et les dossiers. */
+  accepts: string[];
+  /** L'ordre des fichiers compte. */
+  ordered: boolean;
+  engine: string;
+  ready: boolean;
+  options: OptionSpec[];
+}
+
+export interface ToolRequest {
+  tool: string;
+  files: string[];
+  options: Record<string, OptionValue>;
+  outputDir: string | null;
+  name: string | null;
+  conflict: Conflict;
+}
+
+export interface ToolPlan {
+  fidelity: FidelityLevel;
+  headline: string;
+  details: string[];
+  output: string;
+  results: number;
+  problems: Ignored[];
+}
+
 export interface Submitted {
   path: string;
   id: number;

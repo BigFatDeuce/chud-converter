@@ -139,15 +139,15 @@ Les moteurs ImageMagick, libvips, Calibre, Pandoc et LibreOffice doivent être i
 | 74 | Linux (Fedora, Nobara) : l'AppImage, écran **Moteurs** | Les moteurs installés par le système sont « prêts » (plus de « symbol lookup error … nghttp2 ») ; **Installer** ExifTool fonctionne (paquet `perl-Image-ExifTool`) |
 | 75 | Linux (Fedora, Nobara) avec LibreOffice sans Calc (`sudo dnf remove libreoffice-calc`) | Écran **Moteurs** : « Installation incomplète, absent : Calc (classeurs) » et un bouton **Ajouter Calc (classeurs)** ; un `.xlsx` propose ce bouton au lieu de formats ; après l'ajout (mot de passe demandé), le `.xlsx` se convertit |
 
-## Nouvelle interface « espace profond » (nouveau, 0.4.0)
+## Nouvelle interface « espace profond » (0.4.0)
 
 Toute l'interface a été redessinée : fond étoilé, panneaux de verre, navigation repensée. Rien
 ne doit avoir disparu : chaque bouton et chaque option d'avant est toujours là.
 
 | # | Action | Résultat attendu |
 |---|---|---|
-| 76 | Parcourir les cinq écrans (**Convertir**, **Préréglages**, **Moteurs**, **Réglages**, **À propos**) | Même style partout ; l'écran actif est marqué d'un trait lumineux à gauche ; aucun texte coupé ou illisible |
-| 77 | **Ctrl+1** à **Ctrl+5**, puis **Ctrl+O** | Les raccourcis ouvrent les écrans dans l'ordre du menu ; **Ctrl+O** ouvre le choix de fichiers |
+| 76 | Parcourir les six écrans (**Convertir**, **Outils**, **Préréglages**, **Moteurs**, **Réglages**, **À propos**) | Même style partout ; l'écran actif est marqué d'un trait lumineux à gauche ; aucun texte coupé ou illisible |
+| 77 | **Ctrl+1** à **Ctrl+6**, puis **Ctrl+O** | Les raccourcis ouvrent les écrans dans l'ordre du menu ; **Ctrl+O** ouvre le choix de fichiers |
 | 78 | Rétrécir la fenêtre au minimum, puis l'agrandir | En dessous d'environ 1100 px de large, le menu ne garde que les icônes (nom au survol) ; rien ne déborde ; tout défile |
 | 79 | **Convertir** : ajouter des fichiers, choisir un format, convertir | Les trois étapes en haut (Fichiers, Format, Conversion) s'allument au fur et à mesure ; barre de progression lumineuse pendant la conversion |
 | 80 | **Réglages → Apparence → Thème** : Système, Sombre, Clair | Le changement est immédiat ; en clair, fond pâle et texte foncé, tout reste lisible ; le choix est gardé au prochain démarrage |
@@ -156,6 +156,31 @@ ne doit avoir disparu : chaque bouton et chaque option d'avant est toujours là.
 | 83 | Menu clic droit (préréglage) pendant que l'application est ouverte, après avoir changé le thème | La fenêtre de conversion rapide a le même thème et les mêmes animations que la fenêtre principale |
 | 84 | Premier démarrage (dossier `data` vidé) | L'accueil s'affiche en fenêtre centrée ; les boutons **Tout installer** et **Plus tard** restent visibles même en faisant défiler la liste des moteurs |
 | 85 | Laisser l'application ouverte quelques minutes sur l'écran **Convertir** | Le processeur reste au repos (Gestionnaire des tâches : près de 0 %) ; l'animation du fond ne ralentit pas l'ordinateur |
+
+## Outils : PDF et archives (nouveau, 0.5.0)
+
+L'écran **Outils** réunit ce qui n'est pas une conversion. Il faut **qpdf** pour les PDF et **7-Zip**
+pour les archives ; s'ils manquent, l'écran propose de les installer.
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 86 | **Outils** sans qpdf, carte **Fusionner des PDF** | « moteur à installer » ; bouton **Installer qpdf** à droite ; une fois installé, retour sur l'écran Outils |
+| 87 | **Fusionner des PDF** : glisser `rapport.pdf`, `annexe 10.pdf` et `annexe 2.pdf` (dossier `Exemples`) sur l'écran | Trois fichiers numérotés ; à droite « 3 fichiers, 8 pages » et le nom du résultat |
+| 88 | **Trier par nom**, puis les flèches pour mettre `rapport.pdf` en premier | `annexe 2` passe avant `annexe 10` ; l'ordre affiché est celui des pages du résultat |
+| 89 | Lancer la fusion, ouvrir le résultat dans un lecteur PDF | `rapport - fusion.pdf`, 8 pages ; panneau des signets : un signet par fichier, et sous « rapport » ses trois chapitres ; chaque signet mène à la bonne page |
+| 90 | Ajouter `photo.png` à la liste de la fusion | Affiché grisé, « laissé de côté — PNG : ce n'est pas un PDF » ; la fusion se fait sans lui |
+| 91 | Option **Signets** sur « aucun », nom « Dossier complet » | Le rapport annonce la perte des signets **avant** de lancer ; le fichier s'appelle `Dossier complet.pdf` |
+| 92 | **Diviser un PDF** : `rapport.pdf` seul, une page par fichier | Dossier `rapport - pages` avec 4 PDF d'une page (`rapport - p1.pdf`…) |
+| 93 | Diviser avec les plages `1-2; 3-z` | Deux fichiers de 2 pages ; chacun ne contient que ses propres signets |
+| 94 | Plage `1-99` | Refusée tout de suite à droite, le bouton reste grisé |
+| 95 | **Pivoter un PDF** : `annexe 2.pdf` (page couchée), 270° | `annexe 2 - pivoté.pdf` à l'endroit ; « Sans perte » ; les signets restent |
+| 96 | Un PDF protégé par mot de passe (à vous) dans Fusionner ou Diviser | Refusé avec la raison ; aucun fichier créé |
+| 97 | **Créer une archive** : plusieurs fichiers et `Dossier à compresser` | Une seule archive ; « test d'intégrité réussi et … fichiers identiques en nom et en taille » dans le rapport détaillé |
+| 98 | Archive avec deux fichiers du même nom venant de dossiers différents | Le rapport annonce « … devient « nom (2) » » ; les deux sont dans l'archive |
+| 99 | **Convertir** : cocher deux PDF | Sous « Outils », à droite : Fusionner, Diviser, Pivoter, Créer une archive ; un clic ouvre l'outil avec ces fichiers |
+| 100 | Relancer la même fusion, puis avec « Remplacer l'ancien résultat » | D'abord « … (1).pdf », puis remplacement ; jamais un des fichiers d'origine |
+| 101 | `chud tool`, puis `chud tool pdf-merge "Exemples\rapport.pdf" "Exemples\annexe 2.pdf" --dry-run` | Liste des outils et de leurs options ; aperçu sans rien écrire |
+| 102 | **Moteurs → Calibre → Installer** | Le téléchargement fonctionne de nouveau (erreur 404 corrigée) |
 
 ## Écrans qui défilent (corrigé)
 

@@ -45,10 +45,12 @@
   // mais il n'a pas passé les contrôles et n'a donc pas été conservé.
   function failLabel(j: Job): string {
     if (j.status !== "failed") return statusText[j.status];
+    if (j.errorCode === "bad_input") return L("Fichier refusé", "File refused");
+    if (j.errorCode === "missing_engine") return L("Moteur manquant", "Missing engine");
     if (j.errorCode === "verification_failed") return L("Vérification échouée, aucun fichier conservé", "Verification failed, no file kept");
     if (j.errorCode === "invalid_input") return L("Source illisible ou endommagée", "Source unreadable or damaged");
     if (j.errorCode === "unavailable" || j.errorCode === "no_path") return L("Conversion impossible pour ce fichier", "Conversion impossible for this file");
-    return L("Échec de la conversion", "Conversion failed");
+    return j.tool ? L("Échec", "Failed") : L("Échec de la conversion", "Conversion failed");
   }
 
   // Niveau de vérification le plus faible atteint : on n'annonce jamais plus que la réalité.
@@ -78,7 +80,7 @@
 
 <section class="panel jobs enter" aria-labelledby="jobs-title">
   <header>
-    <h2 id="jobs-title">Conversions</h2>
+    <h2 id="jobs-title">{store.jobs.some((j) => j.tool) ? L("Tâches", "Tasks") : "Conversions"}</h2>
     <span class="muted summary">
       {#if store.active}{L(`${store.active} en cours ou en attente`, `${store.active} running or waiting`)}{/if}
       {#if store.active && finished}·{/if}

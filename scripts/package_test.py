@@ -126,8 +126,9 @@ def samples(dest: Path) -> list[str]:
     return made
 
 
-def simple_pdf(pages: list[str]) -> bytes:
-    """PDF minimal et valide (Helvetica, une ligne de texte par page), sans dépendance."""
+def simple_pdf(pages: list[str], bookmarks: list[tuple[str, int]] = [], rotate: int = 0) -> bytes:
+    """PDF minimal et valide (Helvetica, une ligne de texte par page), sans dépendance.
+    `bookmarks` : (titre, page à partir de 1)."""
     objs = ["<< /Type /Catalog /Pages 2 0 R >>", "", "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
     kids = []
     for text in pages:
@@ -136,11 +137,19 @@ def simple_pdf(pages: list[str]) -> bytes:
         safe = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
         stream = f"BT /F1 28 Tf 72 700 Td ({safe}) Tj ET"
         objs.append(
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Rotate {rotate} "
             f"/Resources << /Font << /F1 3 0 R >> >> /Contents {content_id} 0 R >>"
         )
         objs.append(f"<< /Length {len(stream)} >>\nstream\n{stream}\nendstream")
     objs[1] = f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(pages)} >>"
+    if bookmarks:
+        root = len(objs) + 1
+        first, last = root + 1, root + len(bookmarks)
+        objs[0] = f"<< /Type /Catalog /Pages 2 0 R /Outlines {root} 0 R /PageMode /UseOutlines >>"
+        objs.append(f"<< /Type /Outlines /First {first} 0 R /Last {last} 0 R /Count {len(bookmarks)} >>")
+        for n, (title, page) in enumerate(bookmarks, first):
+            around = (f" /Prev {n - 1} 0 R" if n > first else "") + (f" /Next {n + 1} 0 R" if n < last else "")
+            objs.append(f"<< /Title ({title}) /Parent {root} 0 R /Dest [{kids[page - 1]} /Fit]{around} >>")
     out = bytearray(b"%PDF-1.4\n")
     offsets = []
     for n, body in enumerate(objs, 1):
@@ -254,6 +263,13 @@ def documents(dest: Path, made: list[str]) -> None:
     (dest / "document.pdf").write_bytes(
         simple_pdf(["Chud Converter : page 1", "Deuxieme page du document", "Troisieme et derniere page"])
     )
+    # Pour les outils PDF : signets, noms à trier (« 2 » avant « 10 »), pages couchées.
+    (dest / "rapport.pdf").write_bytes(
+        simple_pdf([f"Rapport : page {n}" for n in range(1, 5)], [("Introduction", 1), ("Chiffres", 2), ("Conclusion", 4)])
+    )
+    (dest / "annexe 2.pdf").write_bytes(simple_pdf(["Annexe 2 : page 1", "Annexe 2 : page 2"], rotate=90))
+    (dest / "annexe 10.pdf").write_bytes(simple_pdf(["Annexe 10 : page 1", "Annexe 10 : page 2"], [("Plans", 2)]))
+    made += ["rapport.pdf", "annexe 2.pdf", "annexe 10.pdf"]
     simple_epub(dest / "livre.epub")
     made += ["notes.md", "tableau.csv", "document.pdf", "livre.epub"]
     # Image liée qui n'existe pas à côté : Pandoc ne lit jamais d'autre fichier que la source.
