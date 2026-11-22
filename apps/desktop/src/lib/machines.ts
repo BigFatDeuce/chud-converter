@@ -195,3 +195,16 @@ export function engineStep(op: EngineOp | null, e: EngineOpEvent): EngineOp | nu
       return op?.state === "running" ? op : null;
   }
 }
+
+// ——— Animations de l'interface ———
+
+/** Réglage Animations : automatiques (selon le système), réduites ou désactivées. */
+export type Motion = "auto" | "reduced" | "off";
+export type MotionLevel = "full" | "reduced" | "off";
+
+/** Niveau effectif : « automatique » suit prefers-reduced-motion ; un choix explicite l'emporte. */
+export function motionLevel(motion: Motion, systemReduced: boolean): MotionLevel {
+  if (motion === "off") return "off";
+  if (motion === "reduced" || systemReduced) return "reduced";
+  return "full";
+}

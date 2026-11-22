@@ -3,6 +3,7 @@
   import Icon from "./Icon.svelte";
   import FidelityBadge from "./FidelityBadge.svelte";
   import OptionsForm from "./OptionsForm.svelte";
+  import Callout from "./ui/Callout.svelte";
   import { store, type CommonTarget } from "../store.svelte";
   import { api, errorText } from "../api";
   import { categoryLabel, categoryOrder, fidelityLabel } from "../format";
@@ -131,44 +132,60 @@
   }
 </script>
 
-<aside>
+<aside aria-labelledby="target-title">
   <div class="scroll">
-    <h2>{L("Convertir en", "Convert to")}</h2>
+    <header class="head">
+      <span class="eyebrow">{L("Format de sortie", "Output format")}</span>
+      <h2 id="target-title">{L("Convertir en", "Convert to")}</h2>
+    </header>
 
     {#if !store.files.length}
-      <p class="hint">{L("Ajoutez des fichiers : les formats possibles s'afficheront ici, avec ce que chaque conversion conserve ou perd.", "Add files: the possible formats will show here, with what each conversion keeps or loses.")}</p>
+      <div class="idle">
+        <span class="idle-ico" aria-hidden="true"><Icon name="orbit" size={22} stroke={1.6} /></span>
+        <p class="hint">{L("Ajoutez des fichiers : les formats possibles s'afficheront ici, avec ce que chaque conversion conserve ou perd.", "Add files: the possible formats will show here, with what each conversion keeps or loses.")}</p>
+      </div>
     {:else if !store.checked.length}
-      <p class="hint">{L("Cochez au moins un fichier reconnu.", "Check at least one recognized file.")}</p>
+      <div class="idle">
+        <span class="idle-ico" aria-hidden="true"><Icon name="check" size={20} stroke={1.8} /></span>
+        <p class="hint">{L("Cochez au moins un fichier reconnu.", "Check at least one recognized file.")}</p>
+      </div>
     {:else if store.loadingTargets}
-      <p class="hint">{L("Recherche des conversions possibles…", "Looking for possible conversions…")}</p>
+      <div class="idle" aria-busy="true">
+        <span class="idle-ico scanning" aria-hidden="true"><Icon name="search" size={20} stroke={1.8} /></span>
+        <p class="hint">{L("Recherche des conversions possibles…", "Looking for possible conversions…")}</p>
+      </div>
     {:else if !store.common.length && needs.length}
       <div class="need" data-need={needs.map((e) => e.id).join(" ")}>
-        <p>
-          <strong>
-            {stuck.length === 1
-              ? L(`Pour convertir « ${stuck[0].info.name} », il faut ${needs.map((e) => e.name).join(" et ")}.`, `To convert “${stuck[0].info.name}”, you need ${needs.map((e) => e.name).join(" and ")}.`)
-              : L(`Pour convertir ces fichiers, il faut ${needs.map((e) => e.name).join(" et ")}.`, `To convert these files, you need ${needs.map((e) => e.name).join(" and ")}.`)}
-          </strong>
-        </p>
-        <p class="small muted">{L("Un logiciel libre, téléchargé une fois depuis sa publication officielle et vérifié ; rien n'est modifié sur le système.", "Free software, downloaded once from its official release and checked; nothing is changed on the system.")}</p>
-        <div class="need-actions">
-          {#each needs as e (e.id)}
-            <button class="btn primary" onclick={() => store.offerEngine(e.id)}>
-              <Icon name="download" size={14} />
-              {L(`Installer ${e.name}`, `Install ${e.name}`)}{e.installable ? ` (${offerSize(e.installable)})` : ""}
-            </button>
-          {/each}
-          {#if needs.length > 1}
-            <button class="btn" onclick={() => store.askInstallAll()}>{L("Tout installer", "Install all")}</button>
-          {/if}
-        </div>
+        <Callout tone="accent" icon="download">
+          <p>
+            <strong>
+              {stuck.length === 1
+                ? L(`Pour convertir « ${stuck[0].info.name} », il faut ${needs.map((e) => e.name).join(" et ")}.`, `To convert “${stuck[0].info.name}”, you need ${needs.map((e) => e.name).join(" and ")}.`)
+                : L(`Pour convertir ces fichiers, il faut ${needs.map((e) => e.name).join(" et ")}.`, `To convert these files, you need ${needs.map((e) => e.name).join(" and ")}.`)}
+            </strong>
+          </p>
+          <p class="small muted">{L("Un logiciel libre, téléchargé une fois depuis sa publication officielle et vérifié ; rien n'est modifié sur le système.", "Free software, downloaded once from its official release and checked; nothing is changed on the system.")}</p>
+          {#snippet actions()}
+            {#each needs as e (e.id)}
+              <button class="btn primary" onclick={() => store.offerEngine(e.id)}>
+                <Icon name="download" size={14} />
+                {L(`Installer ${e.name}`, `Install ${e.name}`)}{e.installable ? ` (${offerSize(e.installable)})` : ""}
+              </button>
+            {/each}
+            {#if needs.length > 1}
+              <button class="btn" onclick={() => store.askInstallAll()}>{L("Tout installer", "Install all")}</button>
+            {/if}
+          {/snippet}
+        </Callout>
       </div>
     {:else if !store.common.length}
-      <p class="hint warn">
-        {stuck.length && stuck.length === store.checked.length
-          ? L("Aucune conversion possible pour ce fichier avec les moteurs dont Chud Converter dispose aujourd'hui.", "No conversion possible for this file with the engines Chud Converter has today.")
-          : L(`Aucun format de sortie commun à ces ${store.checked.length} fichiers. Décochez-en certains pour les convertir par groupes.`, `No output format is common to these ${store.checked.length} files. Uncheck some to convert them in groups.`)}
-      </p>
+      <Callout tone="warn">
+        <p>
+          {stuck.length && stuck.length === store.checked.length
+            ? L("Aucune conversion possible pour ce fichier avec les moteurs dont Chud Converter dispose aujourd'hui.", "No conversion possible for this file with the engines Chud Converter has today.")
+            : L(`Aucun format de sortie commun à ces ${store.checked.length} fichiers. Décochez-en certains pour les convertir par groupes.`, `No output format is common to these ${store.checked.length} files. Uncheck some to convert them in groups.`)}
+        </p>
+      </Callout>
       {#if kindGroups.length > 1}
         <div class="row-actions">
           {#each kindGroups as g (g.kind)}
@@ -180,22 +197,26 @@
       {/if}
     {:else}
       {#if store.originals.length}
-        <div class="presets originals">
+        <div class="block">
           <div class="section-title">{L("Qualité d'origine", "Original quality")}</div>
           {#each store.originals as o (o.kind)}
             <button class="orig" class:sel={store.target === o.format} onclick={() => store.chooseTarget(o.format)}>
-              <span class="orig-title">{o.title} <span class="ext">.{store.common.find((t) => t.format === o.format)?.extension ?? o.format}</span></span>
-              {#if o.detail}<span class="orig-detail">{o.detail}</span>{/if}
+              <span class="orig-ico" aria-hidden="true"><Icon name="sparkle" size={14} /></span>
+              <span class="orig-text">
+                <span class="orig-title">{o.title} <span class="ext">.{store.common.find((t) => t.format === o.format)?.extension ?? o.format}</span></span>
+                {#if o.detail}<span class="orig-detail">{o.detail}</span>{/if}
+              </span>
             </button>
           {/each}
         </div>
       {/if}
       {#if store.suggested.length}
-        <div class="presets">
+        <div class="block">
           <div class="section-title">{L("Préréglages", "Presets")}</div>
           <div class="pchips">
             {#each store.suggested as p (p.id)}
               <button class="pchip" class:sel={current(p)} onclick={() => usePreset(p)} title="{p.name} → {p.targetName}">
+                <Icon name="preset" size={12} />
                 {p.name}
               </button>
             {/each}
@@ -205,7 +226,7 @@
       {#if showPicker}
         <div class="picker">
           <label class="search">
-            <Icon name="search" size={14} />
+            <Icon name="search" size={15} />
             <input type="search" placeholder={L("Rechercher un format…", "Search for a format…")} bind:value={query} aria-label={L("Rechercher un format", "Search for a format")} />
           </label>
           <div class="formats">
@@ -214,9 +235,11 @@
                 <div class="section-title">{categoryLabel(g.category)}</div>
                 {#each g.targets as t (t.format)}
                   <button class="fmt" class:sel={t.format === store.target} onclick={() => choose(t)} title={t.headline}>
-                    <span class="fmt-name">{t.name}</span>
-                    {#if t.extension}<span class="ext">.{t.extension}</span>{/if}
                     <span class="dot {t.fidelity}" aria-label={fidelityLabel(t.fidelity)}></span>
+                    <span class="fmt-text">
+                      <span class="fmt-name">{t.name}</span>
+                      {#if t.extension}<span class="ext">.{t.extension}</span>{/if}
+                    </span>
                   </button>
                 {/each}
               </div>
@@ -225,24 +248,27 @@
             {/each}
           </div>
           <p class="legend faint">
-            <span class="dot lossless"></span> {L("sans perte", "lossless")} <span class="dot partial"></span> {L("contenu intact", "content intact")}
-            <span class="dot depends"></span> {L("selon le contenu", "depends on content")} <span class="dot lossy"></span> {L("avec perte", "lossy")}
+            <span><span class="dot lossless"></span> {L("sans perte", "lossless")}</span>
+            <span><span class="dot partial"></span> {L("contenu intact", "content intact")}</span>
+            <span><span class="dot depends"></span> {L("selon le contenu", "depends on content")}</span>
+            <span><span class="dot lossy"></span> {L("avec perte", "lossy")}</span>
           </p>
         </div>
       {:else if store.targetInfo}
         {@const t = store.targetInfo}
-        <div class="chosen card">
-          <div>
-            <strong>{t.name}</strong>
-            {#if t.extension}<span class="ext">.{t.extension}</span>{/if}
+        <div class="chosen">
+          <span class="planet" aria-hidden="true"><span class="ring ambient"></span></span>
+          <div class="chosen-text">
+            <span class="faint small">{L("Format choisi", "Chosen format")}</span>
+            <strong>{t.name}{#if t.extension}<span class="ext">.{t.extension}</span>{/if}</strong>
           </div>
           <button class="btn small" onclick={() => (picking = true)}>{L("Changer", "Change")}</button>
         </div>
 
-        <div class="report card">
+        <div class="report">
           <div class="report-head">
             <FidelityBadge level={planFits?.fidelity ?? t.fidelity} />
-            {#if planLoading}<span class="faint small">{L("mise à jour…", "updating…")}</span>{/if}
+            {#if planLoading}<span class="faint small updating">{L("mise à jour…", "updating…")}</span>{/if}
           </div>
           <p class="headline">{planFits?.headline ?? t.headline}</p>
           {#if planError}
@@ -253,11 +279,11 @@
                 {#each planFits.details as d, i (i)}<li>{d}</li>{/each}
               </ul>
             {/if}
-            <div class="steps">
+            <ol class="steps" aria-label={L("Étapes de la conversion", "Conversion steps")}>
               {#each planFits.steps as s, i (i)}
-                <span class="step"><b>{s.engine}</b> {s.from} → {s.to}</span>
+                <li class="step"><b>{s.engine}</b> <span>{s.from} → {s.to}</span></li>
               {/each}
-            </div>
+            </ol>
             <p class="out faint selectable" title={planFits.output}>
               {L(`Aperçu pour ${store.checked[0]?.info.name}${others > 0 ? ` (et ${others} autre${others > 1 ? "s" : ""})` : ""}`, `Preview for ${store.checked[0]?.info.name}${others > 0 ? ` (and ${others} other${others > 1 ? "s" : ""})` : ""}`)}
             </p>
@@ -271,7 +297,7 @@
           <OptionsForm specs={planFits.options} values={store.optionValues} onchange={(k, v, d) => store.setOption(k, v, d)} />
         {/if}
 
-        <div class="dest">
+        <div class="block dest">
           <div class="section-title">Destination</div>
           <label class="radio">
             <input
@@ -300,6 +326,7 @@
           </label>
           {#if store.outputDir}
             <div class="dir">
+              <Icon name="folder" size={14} />
               <span class="mono selectable" title={store.outputDir}>{store.outputDir}</span>
               <button class="btn small" onclick={() => store.pickOutputDir()}>{L("Changer", "Change")}</button>
             </div>
@@ -350,108 +377,135 @@
   </div>
 
   <div class="go">
-    <button class="btn primary big" disabled={!canConvert} onclick={() => store.convert()}>
+    <button class="btn primary big" class:ready={canConvert} disabled={!canConvert} onclick={() => store.convert()}>
       <Icon name="convert" size={17} />
-      {#if store.targetInfo && store.checked.length}
-        {L(`Convertir ${store.checked.length > 1 ? `${store.checked.length} fichiers` : ""} en ${store.targetInfo.name}`, `Convert ${store.checked.length > 1 ? `${store.checked.length} files` : ""} to ${store.targetInfo.name}`)}
-      {:else}
-        {L("Convertir", "Convert")}
-      {/if}
+      <span class="go-label">
+        {#if store.targetInfo && store.checked.length}
+          {L(`Convertir ${store.checked.length > 1 ? `${store.checked.length} fichiers` : ""} en ${store.targetInfo.name}`, `Convert ${store.checked.length > 1 ? `${store.checked.length} files` : ""} to ${store.targetInfo.name}`)}
+        {:else}
+          {L("Convertir", "Convert")}
+        {/if}
+      </span>
     </button>
   </div>
 </aside>
 
 <style>
   aside {
+    position: relative;
     display: flex;
     flex-direction: column;
     min-height: 0;
-    border-left: 1px solid var(--border);
-    background: var(--surface-2);
+    border-left: 1px solid var(--rail-border);
+    background: var(--rail);
   }
 
   .scroll {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 20px 18px;
+    padding: 26px 20px 20px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 16px;
+  }
+
+  .head {
+    display: grid;
+    gap: 2px;
   }
 
   h2 {
-    font-size: 18px;
+    font-size: 20px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
   }
 
-  .need {
+  .idle {
     display: grid;
-    gap: 8px;
-    padding: 12px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-    border-left: 4px solid var(--link);
-    background: var(--surface-2);
+    justify-items: center;
+    gap: 12px;
+    padding: 34px 18px;
+    text-align: center;
+    border-radius: var(--radius);
+    border: 1px dashed var(--border);
   }
 
-  .row-actions {
+  .idle-ico {
     display: grid;
-    gap: 8px;
-    margin-top: 10px;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    color: var(--accent);
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent-soft) 40%, transparent);
   }
 
-  .need-actions {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .need .small {
-    font-size: 12.5px;
+  .scanning {
+    animation: pulse 1.4s ease-in-out infinite;
   }
 
   .hint {
     color: var(--muted);
   }
 
-  .hint.warn {
-    color: var(--depends);
+  .row-actions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
   }
 
   .picker {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
   }
 
   .search {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding-left: 10px;
+    height: 38px;
+    padding-left: 12px;
     border: 1px solid var(--border-strong);
-    border-radius: var(--radius-sm);
-    background: var(--surface);
-    color: var(--muted);
+    border-radius: 12px;
+    background: var(--surface-solid);
+    color: var(--faint);
+    transition:
+      border-color var(--t-fast) var(--ease),
+      box-shadow var(--t-fast) var(--ease);
+  }
+
+  .search:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+    color: var(--accent);
   }
 
   .search input {
     flex: 1;
+    height: 36px;
     border: none;
     background: transparent;
     padding-left: 0;
-    outline: none;
+    box-shadow: none !important;
   }
 
   .formats {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 14px;
   }
 
   .group {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 6px;
   }
 
@@ -462,38 +516,55 @@
   .fmt {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     min-width: 0;
-    height: 34px;
-    padding: 0 10px;
+    min-height: 44px;
+    padding: 5px 10px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: 10px;
     background: var(--surface);
     text-align: left;
+    transition:
+      border-color var(--t-fast) var(--ease),
+      background var(--t-fast) var(--ease),
+      transform var(--t-fast) var(--ease),
+      box-shadow var(--t) var(--ease);
   }
 
   .fmt:hover {
-    border-color: var(--border-strong);
+    border-color: var(--accent);
     background: var(--surface-hover);
+    transform: translateY(-1px);
   }
 
-  .fmt.sel {
+  .fmt.sel,
+  .orig.sel,
+  .pchip.sel {
     border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
+    background: var(--accent-soft);
+    box-shadow:
+      0 0 0 1px var(--accent),
+      0 0 18px -6px var(--accent);
+  }
+
+  .fmt-text {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    line-height: 1.25;
   }
 
   .fmt-name {
-    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-weight: 500;
+    font-weight: 550;
   }
 
   .ext {
     font-family: var(--mono);
-    font-size: 11.5px;
+    font-size: 11px;
     color: var(--faint);
   }
 
@@ -503,55 +574,112 @@
     height: 8px;
     border-radius: 50%;
     flex: none;
+    box-shadow: 0 0 6px currentColor;
   }
 
   .dot.lossless {
     background: var(--ok);
+    color: var(--ok);
   }
 
   .dot.partial {
     background: var(--partial);
+    color: var(--partial);
   }
 
   .dot.depends {
     background: var(--depends);
+    color: var(--depends);
   }
 
   .dot.lossy {
     background: var(--lossy);
+    color: var(--lossy);
   }
 
   .legend {
     font-size: 11.5px;
     display: flex;
     flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+
+  .legend > span {
+    display: inline-flex;
     align-items: center;
-    gap: 4px 6px;
+    gap: 5px;
   }
 
   .chosen {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px;
-    font-size: 15px;
+    gap: 12px;
+    padding: 12px 12px 12px 14px;
+    border-radius: var(--radius);
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+    background: linear-gradient(120deg, var(--accent-soft), transparent 70%), var(--surface);
+    box-shadow: var(--shadow);
+  }
+
+  /* Petite planète à anneau : le format visé. */
+  .planet {
+    position: relative;
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff 0, var(--accent-3) 18%, var(--accent) 55%, var(--accent-2) 100%);
+    box-shadow: 0 0 18px -2px var(--accent);
+  }
+
+  .ring {
+    position: absolute;
+    inset: 9px -8px;
+    border-radius: 50%;
+    border: 1.5px solid color-mix(in srgb, var(--accent-3) 70%, transparent);
+    transform: rotate(-18deg);
+  }
+
+  .chosen-text {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    line-height: 1.3;
+  }
+
+  .chosen strong {
+    font-family: var(--font-display);
+    font-size: 17px;
+    font-weight: 650;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .chosen .ext {
     margin-left: 6px;
+    font-size: 12px;
+    font-weight: 400;
   }
 
   .report {
-    padding: 12px;
+    padding: 14px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 9px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface);
   }
 
   .report-head {
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  .updating {
+    animation: pulse 1.4s ease-in-out infinite;
   }
 
   .headline {
@@ -567,24 +695,42 @@
     gap: 3px;
   }
 
+  /* Étapes reliées par un trait, comme une trajectoire. */
   .steps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 6px;
   }
 
   .step {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-family: var(--mono);
     font-size: 11.5px;
-    padding: 2px 8px;
+    padding: 3px 10px;
     border-radius: 999px;
     background: var(--surface-2);
     border: 1px solid var(--border);
+    color: var(--muted);
+  }
+
+  .step + .step::before {
+    content: "";
+    width: 10px;
+    height: 1px;
+    margin-left: -17px;
+    margin-right: 1px;
+    background: var(--accent-2);
   }
 
   .step b {
-    font-weight: 600;
-    color: var(--primary);
+    font-weight: 650;
+    color: var(--accent);
   }
 
   .out,
@@ -598,16 +744,14 @@
   }
 
   .dest {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    gap: 9px;
   }
 
   .radio,
   .check {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 9px;
     cursor: pointer;
   }
 
@@ -615,7 +759,11 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding-left: 23px;
+    margin-left: 26px;
+    padding: 6px 6px 6px 10px;
+    border-radius: 10px;
+    background: var(--surface-2);
+    color: var(--faint);
   }
 
   .dir .mono {
@@ -629,52 +777,51 @@
 
   .field {
     display: grid;
-    gap: 4px;
-    font-size: 13px;
+    gap: 5px;
+    font-size: 12.5px;
     color: var(--muted);
   }
 
-  .field select {
-    color: var(--text);
-  }
-
-  .presets {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
   .orig {
-    display: grid;
-    gap: 2px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
     text-align: left;
-    padding: 8px 11px;
+    padding: 10px 12px;
     border: 1px solid var(--border);
-    border-left: 3px solid var(--ok);
-    border-radius: var(--radius-sm);
+    border-radius: 12px;
     background: var(--surface);
+    transition:
+      border-color var(--t-fast) var(--ease),
+      background var(--t-fast) var(--ease),
+      box-shadow var(--t) var(--ease);
   }
 
   .orig:hover {
-    border-color: var(--border-strong);
+    border-color: var(--ok);
     background: var(--surface-hover);
   }
 
-  .orig.sel {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
+  .orig-ico {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 8px;
+    color: var(--ok);
+    background: var(--ok-soft);
+  }
+
+  .orig-text {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
   }
 
   .orig-title {
     font-weight: 600;
     font-size: 13px;
-  }
-
-  .orig-title .ext {
-    font-family: var(--mono);
-    font-weight: 400;
-    color: var(--muted);
-    font-size: 12px;
   }
 
   .orig-detail {
@@ -689,23 +836,29 @@
   }
 
   .pchip {
-    height: 28px;
-    padding: 0 11px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 12px;
     border: 1px solid var(--border);
     border-radius: 999px;
     background: var(--surface);
+    color: var(--text);
     font-size: 12.5px;
-    font-weight: 500;
+    font-weight: 550;
+    transition:
+      border-color var(--t-fast) var(--ease),
+      background var(--t-fast) var(--ease);
+  }
+
+  .pchip :global(svg) {
+    color: var(--accent);
   }
 
   .pchip:hover {
-    border-color: var(--border-strong);
-    background: var(--surface-hover);
-  }
-
-  .pchip.sel {
     border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent);
+    background: var(--surface-hover);
   }
 
   .save-as {
@@ -720,14 +873,38 @@
   }
 
   .go {
-    padding: 14px 18px;
-    border-top: 1px solid var(--border);
-    background: var(--surface-2);
+    padding: 14px 20px 18px;
+    border-top: 1px solid var(--hairline);
   }
 
   .big {
     width: 100%;
-    height: 42px;
-    font-size: 15px;
+  }
+
+  .go-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Prêt à partir : un reflet traverse le bouton, une fois. */
+  .big.ready::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 28%) 50%, transparent 65%);
+    background-size: 250% 100%;
+    animation: sheen 1.6s var(--ease) 0.2s both;
+    pointer-events: none;
+  }
+
+  @keyframes sheen {
+    from {
+      background-position: 120% 0;
+    }
+    to {
+      background-position: -60% 0;
+    }
   }
 </style>

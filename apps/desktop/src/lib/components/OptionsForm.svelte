@@ -106,7 +106,7 @@
   }
 
   .label {
-    font-size: 13px;
+    font-size: 12.5px;
     color: var(--muted);
   }
 
@@ -130,11 +130,25 @@
     color: var(--faint);
   }
 
+  details {
+    border-top: 1px solid var(--hairline);
+    padding-top: 10px;
+  }
+
   summary {
     cursor: pointer;
     color: var(--link);
-    font-weight: 500;
+    font-weight: 550;
     font-size: 13px;
+    border-radius: 6px;
+  }
+
+  summary:hover {
+    color: var(--accent);
+  }
+
+  details[open] .adv {
+    animation: rise var(--t) var(--ease-out) both;
   }
 
   .changed {

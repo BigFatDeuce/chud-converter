@@ -33,7 +33,7 @@ Your originals are never touched.
 </p>
 
 > [!NOTE]
-> **Version 0.2 — alpha.** [Download](https://github.com/BigFatDeuce/chud-converter/releases/latest). The conversion engine, the desktop app (Tauri 2 + Svelte 5) and the
+> **Version 0.4 — alpha.** [Download](https://github.com/BigFatDeuce/chud-converter/releases/latest). The conversion engine, the desktop app (Tauri 2 + Svelte 5) and the
 > `chud` command line work and are tested on real files. The app is tested on Windows and built
 > on Linux by the CI. Presets and the File Explorer right-click menu work on Windows. The whole program
 > speaks **English and French**.
@@ -61,8 +61,12 @@ in the terminal screenshots were replaced with neutral ones.
 really a PNG). Every possible output format carries a colored dot for its fidelity: green
 lossless, blue content intact, yellow depends on content, red lossy. With several files
 selected, only the formats they all support are offered, with the worst fidelity among them.
+"Original quality" extracts a track as it is, without re-encoding.
 
-<p align="center"><img src="docs/screenshots/app-formats.png" width="900" alt="Chud Converter desktop app: two files in the list, faux.jpg flagged as a misleading extension, and the format picker grouped by Video, Audio and Images with fidelity dots"></p>
+<p align="center"><img src="docs/screenshots/app-formats.png" width="900" alt="Chud Converter desktop app, deep-space dark theme: two files in the list, faux.jpg flagged as a misleading extension; on the right, original-quality extraction of the audio and subtitles, presets, and the format picker with fidelity dots"></p>
+
+The interface has a deep-space dark theme and a light one (or follows the system), with
+animations that can be reduced or turned off in Settings.
 
 The app also offers options generated from each engine (codec, quality, size, subtitles…),
 the destination (next to the original or another folder), what to do when the file already

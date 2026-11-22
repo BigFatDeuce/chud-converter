@@ -3,6 +3,9 @@
   // par un ou tous d'un coup), d'où ils viennent. Montré une seule fois.
   import { L, locale } from "../i18n.svelte";
   import Icon from "./Icon.svelte";
+  import Dialog from "./ui/Dialog.svelte";
+  import ProgressBar from "./ui/ProgressBar.svelte";
+  import logo from "$branding/svg/logo-small.svg";
   import { store } from "../store.svelte";
   import { categoryLabel, formatSize } from "../format";
   import { engineFraction, engineStatus, offerSize, offerSystemNotes } from "../engineText";
@@ -28,22 +31,23 @@
     return new Intl.ListFormat(locale(), { type: "conjunction" }).format(kinds);
   }
 
-  let dialog: HTMLDivElement;
+  let dialog = $state<HTMLDivElement>();
   $effect(() => {
-    dialog?.querySelector<HTMLButtonElement>(".btn.primary")?.focus();
+    dialog?.querySelector<HTMLButtonElement>(".btn.primary")?.focus({ preventScroll: true });
   });
-
-  function onkey(ev: KeyboardEvent) {
-    if (ev.key === "Escape") store.closeWelcome();
-  }
 </script>
 
-<svelte:window onkeydown={onkey} />
-
-<div class="backdrop">
-  <div class="dialog card" role="dialog" aria-modal="true" aria-labelledby="welcome-title" data-machine="welcome" aria-busy={busy} bind:this={dialog}>
-    <h2 id="welcome-title">{L("Bienvenue dans Chud Converter", "Welcome to Chud Converter")}</h2>
-    <p>
+<Dialog labelledby="welcome-title" onclose={() => store.closeWelcome()} {busy} machine="welcome" width={600} bind:el={dialog}>
+    <div class="hero">
+      <span class="logo" aria-hidden="true">
+        <span class="orbit o1 ambient"><i></i></span>
+        <span class="orbit o2 ambient"><i></i></span>
+        <img src={logo} alt="" width="58" height="58" />
+      </span>
+      <span class="eyebrow">{L("Premier démarrage", "First start")}</span>
+      <h2 id="welcome-title">{L("Bienvenue dans Chud Converter", "Welcome to Chud Converter")}</h2>
+    </div>
+    <p class="intro muted">
       {L(
         "Les images et les données se convertissent tout de suite. Pour le reste, Chud Converter s'appuie sur des logiciels libres reconnus, à télécharger une fois, ici même :",
         "Images and data convert right away. For the rest, Chud Converter relies on well-known free software, downloaded once, right here:",
@@ -78,7 +82,7 @@
             {/if}
           {/if}
           {#if op?.state === "running"}
-            {#if f !== null}<progress max="1" value={f} aria-label={`${e.name} : ${engineStatus(e, op)}`}></progress>{:else}<progress aria-label={`${e.name} : ${engineStatus(e, op)}`}></progress>{/if}
+            <ProgressBar thin value={f} label={`${e.name} : ${engineStatus(e, op)}`} />
           {:else if op?.state === "failed"}
             <span class="bad small selectable">{op.error}</span>
           {/if}
@@ -109,31 +113,76 @@
     {#if pending.length && !busy}
       <p class="faint small">{L("Plus tard : un bouton vous proposera le bon moteur dès qu'un fichier en aura besoin.", "Later: a button will offer the right engine as soon as a file needs it.")}</p>
     {/if}
-  </div>
-</div>
+</Dialog>
 
 <style>
-  .backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 50;
+  .hero {
     display: grid;
-    place-items: center;
-    padding: 16px;
-    background: rgb(0 0 0 / 0.45);
+    justify-items: center;
+    gap: 6px;
+    text-align: center;
+    padding-top: 6px;
   }
 
-  .dialog {
-    width: min(560px, 100%);
-    max-height: calc(100vh - 32px);
-    overflow-y: auto;
-    padding: 20px 22px;
+  .logo {
+    position: relative;
     display: grid;
-    gap: 12px;
+    place-items: center;
+    width: 96px;
+    height: 96px;
+    margin-bottom: 4px;
+  }
+
+  .logo img {
+    position: relative;
+    filter: drop-shadow(0 0 18px rgb(120 110 255 / 55%));
+  }
+
+  .orbit {
+    position: absolute;
+    inset: 6px;
+    border-radius: 50%;
+    border: 1px solid var(--border-strong);
+    animation: spin 18s linear infinite;
+  }
+
+  .o2 {
+    inset: -8px;
+    border-style: dashed;
+    opacity: 0.7;
+    animation-duration: 34s;
+    animation-direction: reverse;
+  }
+
+  .orbit i {
+    position: absolute;
+    top: 50%;
+    left: -3px;
+    width: 6px;
+    height: 6px;
+    margin-top: -3px;
+    border-radius: 50%;
+    background: var(--accent-3);
+    box-shadow: 0 0 10px var(--accent-3);
+  }
+
+  .o2 i {
+    left: auto;
+    right: -3px;
+    background: var(--accent-2);
+    box-shadow: 0 0 10px var(--accent-2);
   }
 
   h2 {
-    font-size: 19px;
+    font-size: 23px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+  }
+
+  .intro {
+    text-align: center;
+    max-width: 500px;
+    justify-self: center;
   }
 
   ul {
@@ -141,17 +190,22 @@
     padding: 0;
     list-style: none;
     display: grid;
-    gap: 10px;
+    gap: 8px;
   }
 
   li {
     display: grid;
     gap: 4px;
-    padding: 10px 12px;
+    padding: 11px 13px;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: 12px;
     background: var(--surface-2);
     min-width: 0;
+    transition: border-color var(--t) var(--ease);
+  }
+
+  li[data-state="ready"] {
+    border-color: color-mix(in srgb, var(--ok) 40%, transparent);
   }
 
   .head {
@@ -167,19 +221,18 @@
     gap: 1px;
   }
 
-  progress {
-    width: 100%;
-  }
-
+  /* Les boutons restent visibles pendant le défilement de la liste. */
   .actions {
+    position: sticky;
+    bottom: -22px;
+    z-index: 1;
+    margin: 0 -26px -8px;
+    padding: 14px 26px 16px;
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
     justify-content: flex-end;
-  }
-
-  .small {
-    font-size: 12.5px;
+    background: linear-gradient(180deg, transparent, var(--surface-solid) 35%);
   }
 
   .ok {
@@ -187,6 +240,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    font-weight: 600;
   }
 
   .bad {

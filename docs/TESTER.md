@@ -121,7 +121,7 @@ possible sur **un autre disque** que celui de l'application.
 | 64 | `Exemples\vacances.mkv` | **Qualité d'origine** : audio d'origine, sous-titres d'origine (ASS) ; pas « Vidéo d'origine » (c'est déjà un MKV) |
 | 65 | Une photo JPEG à vous (pas `faux.jpg`, qui est en réalité un PNG) | **Qualité d'origine → Image sans perte .png** |
 
-## Images, livres et Linux (nouveau, 0.3.0)
+## Images, livres et Linux (0.3.0)
 
 Les moteurs ImageMagick, libvips, Calibre, Pandoc et LibreOffice doivent être installés (écran
 **Moteurs**).
@@ -138,6 +138,24 @@ Les moteurs ImageMagick, libvips, Calibre, Pandoc et LibreOffice doivent être i
 | 73 | `Exemples\notes-image.md` (fait référence à `couverture.jpg`) → **Jupyter (ipynb)** | Réussit ; le rapport dit « images liées non reprises (remplacées par leur légende) » |
 | 74 | Linux (Fedora, Nobara) : l'AppImage, écran **Moteurs** | Les moteurs installés par le système sont « prêts » (plus de « symbol lookup error … nghttp2 ») ; **Installer** ExifTool fonctionne (paquet `perl-Image-ExifTool`) |
 | 75 | Linux (Fedora, Nobara) avec LibreOffice sans Calc (`sudo dnf remove libreoffice-calc`) | Écran **Moteurs** : « Installation incomplète, absent : Calc (classeurs) » et un bouton **Ajouter Calc (classeurs)** ; un `.xlsx` propose ce bouton au lieu de formats ; après l'ajout (mot de passe demandé), le `.xlsx` se convertit |
+
+## Nouvelle interface « espace profond » (nouveau, 0.4.0)
+
+Toute l'interface a été redessinée : fond étoilé, panneaux de verre, navigation repensée. Rien
+ne doit avoir disparu : chaque bouton et chaque option d'avant est toujours là.
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 76 | Parcourir les cinq écrans (**Convertir**, **Préréglages**, **Moteurs**, **Réglages**, **À propos**) | Même style partout ; l'écran actif est marqué d'un trait lumineux à gauche ; aucun texte coupé ou illisible |
+| 77 | **Ctrl+1** à **Ctrl+5**, puis **Ctrl+O** | Les raccourcis ouvrent les écrans dans l'ordre du menu ; **Ctrl+O** ouvre le choix de fichiers |
+| 78 | Rétrécir la fenêtre au minimum, puis l'agrandir | En dessous d'environ 1100 px de large, le menu ne garde que les icônes (nom au survol) ; rien ne déborde ; tout défile |
+| 79 | **Convertir** : ajouter des fichiers, choisir un format, convertir | Les trois étapes en haut (Fichiers, Format, Conversion) s'allument au fur et à mesure ; barre de progression lumineuse pendant la conversion |
+| 80 | **Réglages → Apparence → Thème** : Système, Sombre, Clair | Le changement est immédiat ; en clair, fond pâle et texte foncé, tout reste lisible ; le choix est gardé au prochain démarrage |
+| 81 | **Réglages → Apparence → Animations** : Désactivées | Plus rien ne bouge : ni étoiles, ni orbites, ni transitions, ni reflets ; les barres « en cours » deviennent des hachures fixes |
+| 82 | Animations : **Réduites** ; puis **Automatiques** avec, dans Windows, *Paramètres → Accessibilité → Effets visuels → Effets d'animation* désactivés | Fond immobile, seulement de courts fondus ; en automatique, l'application suit ce réglage de Windows |
+| 83 | Menu clic droit (préréglage) pendant que l'application est ouverte, après avoir changé le thème | La fenêtre de conversion rapide a le même thème et les mêmes animations que la fenêtre principale |
+| 84 | Premier démarrage (dossier `data` vidé) | L'accueil s'affiche en fenêtre centrée ; les boutons **Tout installer** et **Plus tard** restent visibles même en faisant défiler la liste des moteurs |
+| 85 | Laisser l'application ouverte quelques minutes sur l'écran **Convertir** | Le processeur reste au repos (Gestionnaire des tâches : près de 0 %) ; l'animation du fond ne ralentit pas l'ordinateur |
 
 ## Écrans qui défilent (corrigé)
 

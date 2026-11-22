@@ -5,6 +5,8 @@
   import logo from "$branding/svg/logo-small.svg";
   import Icon from "./Icon.svelte";
   import JobList from "./JobList.svelte";
+  import Callout from "./ui/Callout.svelte";
+  import ProgressBar from "./ui/ProgressBar.svelte";
   import { store } from "../store.svelte";
   import { api, errorText } from "../api";
   import { baseName } from "../format";
@@ -57,39 +59,38 @@
 <!-- Survoler la fenêtre suffit à empêcher la fermeture automatique. -->
 <div class="quick" role="presentation" onpointerenter={() => (keepOpen = true)}>
   <header>
-    <img src={logo} alt="" width="28" height="28" />
+    <img src={logo} alt="" width="30" height="30" />
     <div>
+      <span class="eyebrow">{L("Conversion rapide", "Quick conversion")}</span>
       <strong>{names.length ? names.join(", ") : L("Conversion rapide", "Quick conversion")}</strong>
-      <span class="faint">Chud Converter</span>
     </div>
   </header>
 
   <div class="body">
     {#if !store.quick.length}
-      <p class="muted wait">{L("Préparation des conversions…", "Preparing the conversions…")}</p>
+      <div class="wait">
+        <p class="muted">{L("Préparation des conversions…", "Preparing the conversions…")}</p>
+        <ProgressBar thin label={L("Préparation des conversions", "Preparing the conversions")} />
+      </div>
     {/if}
 
     {#each errors as b, i (i)}
-      <div class="card error">
-        <Icon name="alert" size={16} />
-        <div>
-          <p class="selectable">{b.error}</p>
-          {#if b.files.length}
-            <p class="faint small selectable">{b.files.map(baseName).join(", ")}</p>
-          {/if}
-        </div>
-      </div>
+      <Callout tone="danger" role="alert">
+        <p class="selectable">{b.error}</p>
+        {#if b.files.length}
+          <p class="faint small selectable">{b.files.map(baseName).join(", ")}</p>
+        {/if}
+      </Callout>
     {/each}
 
     {#if ignored.length}
-      <div class="card ignored">
-        <Icon name="skip" size={15} />
-        <ul>
+      <Callout tone="warn" icon="skip">
+        <ul class="ignored">
           {#each ignored as g, i (i)}
             <li><span class="selectable" title={g.path}>{baseName(g.path)}</span> <span class="faint">{L(`— ignoré : ${g.reason}`, `— skipped: ${g.reason}`)}</span></li>
           {/each}
         </ul>
-      </div>
+      </Callout>
     {/if}
 
     {#if store.jobs.length}
@@ -99,7 +100,7 @@
 
   <footer>
     {#if succeeded && !keepOpen}
-      <span class="faint small">{L(`Tout est terminé · fermeture dans ${left} s`, `All done · closing in ${left} s`)}</span>
+      <span class="faint small done"><Icon name="check" size={13} /> {L(`Tout est terminé · fermeture dans ${left} s`, `All done · closing in ${left} s`)}</span>
       <button class="btn small ghost" onclick={() => (keepOpen = true)}>{L("Garder ouvert", "Keep open")}</button>
     {:else if store.active}
       <span class="faint small">{L("Fermer la fenêtre annule les conversions en cours.", "Closing the window cancels the running conversions.")}</span>
@@ -118,34 +119,34 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: var(--bg);
   }
 
   header {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 12px 16px;
-    background: var(--sidebar);
-    color: var(--sidebar-text);
+    gap: 12px;
+    padding: 14px 18px;
+    background: var(--rail);
+    border-bottom: 1px solid var(--rail-border);
+  }
+
+  header img {
+    filter: drop-shadow(0 0 10px rgb(120 110 255 / 45%));
   }
 
   header div {
     display: grid;
-    line-height: 1.25;
+    line-height: 1.3;
     min-width: 0;
   }
 
   header strong {
-    color: #fff;
+    font-family: var(--font-display);
+    font-size: 15px;
+    font-weight: 650;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  header .faint {
-    color: #f9c83a;
-    font-size: 11.5px;
   }
 
   .body {
@@ -159,50 +160,39 @@
   }
 
   .wait {
-    padding: 12px 0;
-  }
-
-  .error,
-  .ignored {
-    display: flex;
+    display: grid;
     gap: 10px;
-    padding: 10px 12px;
-  }
-
-  .error {
-    color: var(--lossy);
-  }
-
-  .error p:first-child {
-    color: var(--text);
-    font-weight: 500;
+    padding: 14px 2px;
   }
 
   .ignored {
-    color: var(--muted);
-  }
-
-  .ignored ul {
     margin: 0;
     padding: 0;
     list-style: none;
     display: grid;
     gap: 2px;
-    color: var(--text);
   }
 
   .small {
     font-size: 12px;
   }
 
+  .done {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--ok);
+  }
+
   footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: 8px 10px;
     padding: 10px 16px;
-    border-top: 1px solid var(--border);
-    background: var(--surface-2);
+    border-top: 1px solid var(--rail-border);
+    background: var(--rail);
   }
 
   .buttons {

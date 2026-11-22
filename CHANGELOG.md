@@ -2,6 +2,25 @@
 
 All notable changes to Chud Converter. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.4.0] — 2026-11-22
+
+A new interface: the whole desktop app was redesigned around a "deep space" look. Nothing was
+removed: every button, option and screen of 0.3.0 is still there.
+
+### Added
+- **Deep-space interface**: night-sky background with slow, subtle stars and orbits, glass
+  panels, a new navigation sidebar with a glowing marker on the active screen, three steps
+  shown on the Convert screen (Files, Format, Conversion), new icons and status pills, the same
+  style in every screen, dialog, empty state, loading and error message, and in the quick
+  conversion window.
+- **Settings → Appearance**: theme (system, dark, light) and animations (automatic, reduced,
+  off). "Automatic" follows the system's reduced-motion setting; "off" stops every animation.
+  The choice applies to every Chud Converter window at once.
+- Keyboard shortcuts: **Ctrl+1** to **Ctrl+5** open the screens, **Ctrl+O** adds files.
+- Narrow windows keep only the icons in the sidebar (names on hover).
+- The starry background is drawn once, then only moved by slow CSS animations: no drawing loop
+  runs while the app sits open.
+
 ## [0.3.0] — 2026-11-20
 
 Linux works for real (AppImage, Fedora, Nobara), and every document, spreadsheet, presentation,

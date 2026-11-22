@@ -28,6 +28,7 @@
     height: 7px;
     border-radius: 50%;
     background: currentColor;
+    box-shadow: 0 0 8px currentColor;
   }
 
   .lossless {

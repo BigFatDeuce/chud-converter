@@ -2,6 +2,10 @@
   import { L } from "../i18n.svelte";
   import { onMount } from "svelte";
   import Icon from "./Icon.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
+  import Callout from "./ui/Callout.svelte";
+  import Switch from "./ui/Switch.svelte";
+  import StatusPill from "./ui/StatusPill.svelte";
   import { store } from "../store.svelte";
   import { api, errorText } from "../api";
   import { categoryLabel } from "../format";
@@ -117,32 +121,41 @@
 </script>
 
 <div class="page">
-  <header>
-    <div>
-      <h1>{L("Préréglages", "Presets")}</h1>
-      <p class="muted">
-        {L("Un format, des options et une destination, enregistrés sous un nom. Ils sont proposés dans l'écran Convertir, par la commande", "A format, options and a destination, saved under a name. They are offered in the Convert screen, by the command")} <code>chud convert --preset</code> {L("et dans le menu clic droit de l'Explorateur.", "and in the File Explorer right-click menu.")}
-      </p>
-    </div>
-    <div class="head-actions">
-      {#if confirmReset}
-        <span class="small">{L("Rétablir les préréglages fournis ? Votre fichier actuel sera gardé en copie.", "Restore the provided presets? A copy of your current file will be kept.")}</span>
-        <button class="btn primary small" onclick={reset} disabled={busy}>{L("Rétablir", "Restore")}</button>
-        <button class="btn small" onclick={() => (confirmReset = false)}>{L("Annuler", "Cancel")}</button>
-      {:else}
+  <div class="page-inner">
+  <PageHeader title={L("Préréglages", "Presets")} eyebrow={L("Raccourcis", "Shortcuts")} icon="preset">
+    {L("Un format, des options et une destination, enregistrés sous un nom. Ils sont proposés dans l'écran Convertir, par la commande", "A format, options and a destination, saved under a name. They are offered in the Convert screen, by the command")} <code>chud convert --preset</code> {L("et dans le menu clic droit de l'Explorateur.", "and in the File Explorer right-click menu.")}
+    {#snippet actions()}
+      {#if !confirmReset}
         <button class="btn" onclick={() => (confirmReset = true)} disabled={busy}>
           <Icon name="refresh" size={14} /> {L("Rétablir les préréglages fournis", "Restore the provided presets")}
         </button>
       {/if}
-    </div>
-  </header>
+    {/snippet}
+  </PageHeader>
+
+  {#if confirmReset}
+    <Callout tone="warn" icon="refresh" role="group" label={L("Confirmation", "Confirmation")} title={L("Rétablir les préréglages fournis ?", "Restore the provided presets?")}>
+      <p class="small muted">{L("Votre fichier actuel sera gardé en copie.", "A copy of your current file will be kept.")}</p>
+      {#snippet actions()}
+        <button class="btn primary small" onclick={reset} disabled={busy}>{L("Rétablir", "Restore")}</button>
+        <button class="btn small" onclick={() => (confirmReset = false)}>{L("Annuler", "Cancel")}</button>
+      {/snippet}
+    </Callout>
+  {/if}
 
   {#if store.shell?.supported}
     {@const sh = store.shell}
-    <section class="card menu" class:on={sh.installed && sh.current && !sh.exeMissing}>
+    <section class="panel menu enter" class:on={sh.installed && sh.current && !sh.exeMissing}>
       <div class="menu-icon"><Icon name="bolt" size={18} /></div>
       <div class="menu-text">
-        <h2>{L("Menu clic droit", "Right-click menu")}</h2>
+        <div class="menu-title">
+          <h2>{L("Menu clic droit", "Right-click menu")}</h2>
+          {#if sh.installed && sh.current && !sh.exeMissing}
+            <StatusPill tone="ok">{L("Installé", "Installed")}</StatusPill>
+          {:else if sh.installed}
+            <StatusPill tone="warn">{L("À réparer", "Needs repair")}</StatusPill>
+          {/if}
+        </div>
         {#if !sh.installed}
           <p class="muted">
             {L(`Ajoute « Chud Converter » au menu clic droit ${windows ? "de l'Explorateur" : "du gestionnaire de fichiers"}, avec vos préréglages actifs. Pour votre compte seulement, sans droits d'administrateur, et retirable à tout moment.`, `Adds “Chud Converter” to the right-click menu of ${windows ? "File Explorer" : "the file manager"}, with your active presets. For your account only, without administrator rights, and removable at any time.`)}
@@ -184,13 +197,10 @@
   {/if}
 
   {#if store.presetsError}
-    <div class="card broken">
-      <Icon name="alert" size={18} />
-      <div>
-        <p><b>{L("Le fichier des préréglages est illisible.", "The presets file cannot be read.")}</b> {L("Il n'est pas modifié tant que vous ne l'avez pas corrigé ou rétabli.", "It is not changed until you fix or restore it.")}</p>
-        <p class="selectable small">{store.presetsError}</p>
-      </div>
-    </div>
+    <Callout tone="danger" role="alert">
+      <p><b>{L("Le fichier des préréglages est illisible.", "The presets file cannot be read.")}</b> {L("Il n'est pas modifié tant que vous ne l'avez pas corrigé ou rétabli.", "It is not changed until you fix or restore it.")}</p>
+      <p class="selectable small">{store.presetsError}</p>
+    </Callout>
   {/if}
 
   {#if store.presetsFile}
@@ -203,22 +213,20 @@
     </p>
   {/if}
 
-  <div class="list card">
+  <div class="list panel rows enter">
     {#each store.presets as p, i (p.id)}
       <div class="preset" class:off={!p.enabled}>
         <div class="row">
-          <label class="switch" title={p.enabled ? L("Proposé", "Offered") : L("Masqué", "Hidden")}>
-            <input type="checkbox" checked={p.enabled} onchange={() => toggle(p)} disabled={busy} aria-label={L(`Proposer « ${p.name} »`, `Offer “${p.name}”`)} />
-          </label>
+          <Switch checked={p.enabled} onchange={() => toggle(p)} disabled={busy} title={p.enabled ? L("Proposé", "Offered") : L("Masqué", "Hidden")} label={L(`Proposer « ${p.name} »`, `Offer “${p.name}”`)} />
           <div class="main">
             <div class="name">
               <strong>{p.name}</strong>
               <span class="to"><Icon name="chevron" size={12} /> {p.targetName}</span>
-              {#if !p.builtin}<span class="tag">{L("personnel", "custom")}</span>{/if}
+              {#if !p.builtin}<span class="tag accent">{L("personnel", "custom")}</span>{/if}
             </div>
             <div class="meta">
-              {#each p.appliesTo as k (k)}<span class="kind">{kindLabel(k)}</span>{/each}
-              {#each Object.entries(p.options) as [k, v] (k)}<span class="opt mono">{k} = {String(v)}</span>{/each}
+              {#each p.appliesTo as k (k)}<span class="tag">{kindLabel(k)}</span>{/each}
+              {#each Object.entries(p.options) as [k, v] (k)}<span class="tag mono opt">{k} = {String(v)}</span>{/each}
               {#if p.outputDir}<span class="faint mono" title={p.outputDir}>→ {p.outputDir}</span>{/if}
             </div>
           </div>
@@ -235,7 +243,7 @@
             >
               <Icon name="down" size={14} />
             </button>
-            <button class="btn small" onclick={() => (editing === p.id ? (editing = null) : edit(p))}>{L("Modifier", "Edit")}</button>
+            <button class="btn small" class:on={editing === p.id} aria-expanded={editing === p.id} onclick={() => (editing === p.id ? (editing = null) : edit(p))}>{L("Modifier", "Edit")}</button>
             {#if deleting === p.id}
               <button class="btn small danger" onclick={() => remove(p)} disabled={busy}>{L("Supprimer", "Delete")}</button>
               <button class="btn small" onclick={() => (deleting = null)}>{L("Garder", "Keep")}</button>
@@ -248,7 +256,7 @@
         </div>
 
         {#if editing === p.id && draft}
-          <div class="editor">
+          <div class="editor pop">
             <label class="field">
               <span>{L("Nom", "Name")}</span>
               <input type="text" bind:value={draft.name} maxlength="60" />
@@ -273,7 +281,7 @@
                 <span>{L("Options", "Options")}</span>
                 <div class="kinds">
                   {#each Object.entries(draft.options) as [k, v] (k)}
-                    <span class="opt mono">
+                    <span class="tag mono opt">
                       {k} = {String(v)}
                       <button class="icon-btn tiny" title={L("Retirer", "Remove")} aria-label={L(`Retirer l'option ${k}`, `Remove the ${k} option`)} onclick={() => dropOption(k)}>
                         <Icon name="x" size={11} />
@@ -314,82 +322,62 @@
         {/if}
       </div>
     {:else}
-      <p class="empty muted">{L("Aucun préréglage. Choisissez un format dans l'écran Convertir puis « Enregistrer comme préréglage ».", "No presets. Choose a format in the Convert screen, then “Save as preset”.")}</p>
+      <div class="empty">
+        <span class="empty-ico" aria-hidden="true"><Icon name="preset" size={22} /></span>
+        <p class="muted">{L("Aucun préréglage. Choisissez un format dans l'écran Convertir puis « Enregistrer comme préréglage ».", "No presets. Choose a format in the Convert screen, then “Save as preset”.")}</p>
+      </div>
     {/each}
+  </div>
   </div>
 </div>
 
 <style>
-  .page {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-
-  header {
-    display: flex;
-    align-items: flex-start;
-    gap: 20px;
-    justify-content: space-between;
-  }
-
-  h1 {
-    font-size: 22px;
-    margin-bottom: 4px;
-  }
-
-  header p {
-    max-width: 640px;
-  }
-
-  .head-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    max-width: 420px;
-  }
-
   .small {
     font-size: 12.5px;
   }
 
   .menu {
+    position: relative;
     display: flex;
     align-items: center;
-    gap: 14px;
-    padding: 14px 16px;
+    flex-wrap: wrap;
+    gap: 14px 16px;
+    padding: 16px 18px;
+    overflow: hidden;
   }
 
   .menu.on {
-    border-color: var(--ok);
+    border-color: color-mix(in srgb, var(--ok) 35%, transparent);
   }
 
   .menu-icon {
     flex: none;
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    background: var(--accent);
-    color: var(--accent-text);
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    color: #fff;
+    background: var(--grad);
+    box-shadow: var(--glow);
   }
 
   .menu-text {
-    flex: 1;
+    flex: 1 1 320px;
     min-width: 0;
     display: grid;
-    gap: 3px;
+    gap: 4px;
+  }
+
+  .menu-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
   }
 
   .menu-text h2 {
-    font-size: 15px;
+    font-size: 16px;
   }
 
   .menu .warn {
@@ -401,55 +389,44 @@
     gap: 8px;
     flex-wrap: wrap;
     justify-content: flex-end;
-  }
-
-  .broken {
-    display: flex;
-    gap: 10px;
-    padding: 12px 14px;
-    color: var(--lossy);
-  }
-
-  .broken p {
-    color: var(--text);
+    margin-left: auto;
   }
 
   .file {
     display: flex;
     align-items: center;
     gap: 6px;
+    margin-bottom: -8px;
   }
 
   .list {
     overflow: hidden;
   }
 
-  .preset + .preset {
-    border-top: 1px solid var(--border);
+  .preset {
+    transition: background var(--t-fast) var(--ease);
+  }
+
+  .preset:hover {
+    background: var(--surface-hover);
   }
 
   .preset.off .main {
-    opacity: 0.55;
+    opacity: 0.5;
   }
 
   .row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-  }
-
-  .switch {
-    display: grid;
-    place-items: center;
-    cursor: pointer;
+    gap: 14px;
+    padding: 12px 12px 12px 18px;
   }
 
   .main {
     flex: 1;
     min-width: 0;
     display: grid;
-    gap: 4px;
+    gap: 6px;
   }
 
   .name {
@@ -459,21 +436,16 @@
     flex-wrap: wrap;
   }
 
+  .name strong {
+    font-weight: 600;
+  }
+
   .to {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    color: var(--muted);
-    font-weight: 500;
-  }
-
-  .tag {
-    font-size: 11px;
+    gap: 3px;
+    color: var(--accent);
     font-weight: 600;
-    padding: 1px 7px;
-    border-radius: 999px;
-    background: var(--primary-soft);
-    color: var(--primary);
   }
 
   .meta,
@@ -485,41 +457,41 @@
     font-size: 12px;
   }
 
-  .kind,
-  .opt,
+  .opt {
+    font-size: 11px;
+  }
+
   .chip {
-    padding: 1px 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 11px;
     border-radius: 999px;
     border: 1px solid var(--border);
     background: var(--surface-2);
     color: var(--muted);
-  }
-
-  .opt {
-    font-size: 11.5px;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 3px 10px;
     cursor: pointer;
     font-size: 12.5px;
+    transition:
+      border-color var(--t-fast) var(--ease),
+      background var(--t-fast) var(--ease),
+      color var(--t-fast) var(--ease);
+  }
+
+  .chip:hover {
+    border-color: var(--accent);
   }
 
   .chip input {
-    width: 13px;
-    height: 13px;
+    width: 14px;
+    height: 14px;
   }
 
   .chip.on {
-    border-color: var(--primary);
+    border-color: var(--accent);
     color: var(--text);
-    background: var(--primary-soft);
+    background: var(--accent-soft);
   }
 
   .actions {
@@ -528,28 +500,31 @@
     gap: 4px;
   }
 
-  .danger {
-    color: var(--lossy);
-    border-color: var(--lossy);
+  .btn.on {
+    border-color: var(--accent);
+    background: var(--accent-soft);
   }
 
   .editor {
     display: grid;
-    gap: 12px;
-    padding: 4px 16px 16px 48px;
+    gap: 14px;
+    margin: 0 16px 16px 68px;
+    padding: 16px 18px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
   }
 
   .field {
     display: grid;
-    gap: 5px;
-    font-size: 13px;
+    gap: 6px;
+    font-size: 12.5px;
     color: var(--muted);
   }
 
   .field input[type="text"],
   .field select {
     max-width: 420px;
-    color: var(--text);
   }
 
   .dest {
@@ -563,7 +538,7 @@
   .check {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 9px;
     cursor: pointer;
   }
 
@@ -572,6 +547,7 @@
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+    padding-top: 4px;
   }
 
   .tiny {
@@ -580,6 +556,26 @@
   }
 
   .empty {
-    padding: 16px;
+    display: grid;
+    justify-items: center;
+    gap: 10px;
+    padding: 36px 20px;
+    text-align: center;
+  }
+
+  .empty-ico {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  @media (max-width: 1100px) {
+    .editor {
+      margin-left: 16px;
+    }
   }
 </style>

@@ -151,3 +151,12 @@ test("tout installer : seulement les moteurs utilisés, absents ou en panne, ins
   assert.deepEqual(missingEngines(list).map((e) => e.id), ["ffmpeg", "7zip"]);
   assert.deepEqual(missingEngines(null), []);
 });
+
+test("animations : le réglage explicite l'emporte, « automatique » suit le système", async () => {
+  const { motionLevel } = await import("../src/lib/machines.ts");
+  assert.equal(motionLevel("auto", false), "full");
+  assert.equal(motionLevel("auto", true), "reduced");
+  assert.equal(motionLevel("reduced", false), "reduced");
+  assert.equal(motionLevel("off", false), "off");
+  assert.equal(motionLevel("off", true), "off");
+});

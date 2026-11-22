@@ -1,6 +1,10 @@
 <script lang="ts">
   import { L } from "../i18n.svelte";
   import Icon from "./Icon.svelte";
+  import PageHeader from "./ui/PageHeader.svelte";
+  import Callout from "./ui/Callout.svelte";
+  import ProgressBar from "./ui/ProgressBar.svelte";
+  import StatusPill from "./ui/StatusPill.svelte";
   import EngineSetup from "./EngineSetup.svelte";
   import { tick } from "svelte";
   import { store } from "../store.svelte";
@@ -23,6 +27,14 @@
     system: L("installé sur le système (jamais modifié par Chud Converter)", "installed on the system (never changed by Chud Converter)"),
     managed: L("installé par Chud Converter", "installed by Chud Converter"),
     custom: L("chemin choisi par vous", "path chosen by you"),
+  };
+
+  const stateTone: Record<EngineState, "ok" | "partial" | "danger" | "neutral"> = {
+    ready: "ok",
+    no_adapter: "partial",
+    broken: "danger",
+    missing: "neutral",
+    disabled: "neutral",
   };
 
   const order: EngineState[] = ["ready", "no_adapter", "broken", "disabled", "missing"];
@@ -95,35 +107,36 @@
 </script>
 
 <div class="page">
-  <header>
-    <div>
-      <h1>{L("Moteurs", "Engines")}</h1>
-      <p class="muted">
+  <div class="page-inner">
+  <PageHeader title={L("Moteurs", "Engines")} eyebrow={L("Logiciels de conversion", "Conversion software")} icon="engine">
         {L("Chud Converter s'appuie sur des logiciels reconnus. Il détecte ceux déjà présents sur votre ordinateur et ne les modifie jamais ; chacun peut aussi être installé ici en un clic, depuis sa source officielle, et essayé avant d'être utilisé.", "Chud Converter relies on well-known software. It detects the ones already on your computer and never changes them; each one can also be installed here in one click, from its official source, and tried before being used.")}
-      </p>
-    </div>
-    <button class="btn" onclick={() => store.loadEngines(true)} disabled={store.enginesLoad.state === "loading"}>
-      <Icon name="refresh" size={14} />
-      {store.enginesLoad.state === "loading" ? L("Recherche…", "Searching…") : L("Rechercher à nouveau", "Search again")}
-    </button>
-  </header>
+    {#snippet actions()}
+      <button class="btn" onclick={() => store.loadEngines(true)} disabled={store.enginesLoad.state === "loading"}>
+        <span class:turning={store.enginesLoad.state === "loading"}><Icon name="refresh" size={14} /></span>
+        {store.enginesLoad.state === "loading" ? L("Recherche…", "Searching…") : L("Rechercher à nouveau", "Search again")}
+      </button>
+    {/snippet}
+  </PageHeader>
 
   {#if store.enginesLoad.state === "failed"}
-    <p class="bad selectable">{store.enginesLoad.error}</p>
+    <Callout tone="danger" role="alert"><p class="selectable">{store.enginesLoad.error}</p></Callout>
   {/if}
 
   {#if store.engines}
     <EngineSetup place="engines" />
-    <p class="muted small">{L(`${ready} moteur${ready > 1 ? "s" : ""} prêt${ready > 1 ? "s" : ""} sur ${used.length}.`, `${ready} of ${used.length} engines ready.`)}</p>
+    <div class="summary">
+      <span class="meter" style:--p={used.length ? ready / used.length : 0} aria-hidden="true"></span>
+      <p class="muted small">{L(`${ready} moteur${ready > 1 ? "s" : ""} prêt${ready > 1 ? "s" : ""} sur ${used.length}.`, `${ready} of ${used.length} engines ready.`)}</p>
+    </div>
     <div class="grid">
       {#each used as e (e.id)}
         {@const op = store.engineOps[e.id] ?? null}
         {@const actions = engineActions(e)}
         {@const offer = e.installable}
-        <article class="card {e.state}" data-engine={e.id} data-state={e.state} data-op={op?.state ?? "idle"} aria-busy={op?.state === "running"}>
+        <article class="panel engine enter {e.state}" data-engine={e.id} data-state={e.state} data-op={op?.state ?? "idle"} aria-busy={op?.state === "running"}>
           <div class="top">
             <h2>{e.name}</h2>
-            <span class="state">{stateText[e.state]}</span>
+            <StatusPill tone={stateTone[e.state]} pulse={op?.state === "running"}>{stateText[e.state]}</StatusPill>
           </div>
           <p class="desc">{e.description}</p>
           {#if e.missing.length}
@@ -211,9 +224,9 @@
             <div class="op running" aria-live="polite">
               <span class="small">{runningText(e, op)}</span>
               {#if fraction !== null}
-                <progress max="1" value={fraction} aria-label={runningText(e, op)}></progress>
+                <ProgressBar value={fraction} label={runningText(e, op)} />
               {:else}
-                <progress aria-label={L(`${e.name} : opération en cours`, `${e.name}: operation in progress`)}></progress>
+                <ProgressBar label={L(`${e.name} : opération en cours`, `${e.name}: operation in progress`)} />
               {/if}
               {#if op.action === "install" && !offer?.system}
                 <button class="btn ghost small small-btn" onclick={() => store.cancelEngine(e.id)} disabled={op.cancelling}>{L("Annuler l'installation", "Cancel the installation")}</button>
@@ -271,7 +284,7 @@
       {/each}
     </div>
     {#if soon.length}
-      <section class="soon" aria-labelledby="soon-title">
+      <section class="soon panel enter" aria-labelledby="soon-title">
         <h2 id="soon-title">{L("Bientôt pris en charge", "Coming soon")}</h2>
         <p class="muted small">
           {L(
@@ -296,36 +309,35 @@
       </section>
     {/if}
   {:else if store.enginesLoad.state === "loading"}
-    <p class="muted">{L("Recherche des moteurs installés…", "Looking for installed engines…")}</p>
+    <div class="loading panel" aria-busy="true">
+      <p class="muted">{L("Recherche des moteurs installés…", "Looking for installed engines…")}</p>
+      <ProgressBar thin label={L("Recherche des moteurs installés", "Looking for installed engines")} />
+    </div>
   {/if}
+  </div>
 </div>
 
 
 <style>
-  .page {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: 24px;
+  .summary {
     display: flex;
-    flex-direction: column;
-    gap: 14px;
+    align-items: center;
+    gap: 10px;
   }
 
-  header {
-    display: flex;
-    align-items: flex-start;
-    gap: 20px;
-    justify-content: space-between;
+  .meter {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background:
+      radial-gradient(circle, var(--bg) 0 5.5px, transparent 6px),
+      conic-gradient(var(--accent-3), var(--accent-2) calc(var(--p) * 360deg), var(--surface-3) 0);
   }
 
-  h1 {
-    font-size: 22px;
-    margin-bottom: 4px;
-  }
-
-  header p {
-    max-width: 640px;
+  .turning {
+    display: inline-grid;
+    animation: spin 1s linear infinite;
   }
 
   .grid {
@@ -334,25 +346,44 @@
     gap: 14px;
   }
 
-  article {
-    padding: 14px 16px;
+  .engine {
+    position: relative;
+    padding: 16px 18px;
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    border-left: 4px solid var(--border-strong);
+    gap: 10px;
+    overflow: hidden;
+    transition:
+      border-color var(--t) var(--ease),
+      transform var(--t) var(--ease),
+      box-shadow var(--t) var(--ease);
   }
 
-  article.ready {
-    border-left-color: var(--ok);
+  .engine:hover {
+    border-color: var(--border-strong);
   }
 
-  article.no_adapter {
-    border-left-color: var(--partial);
+  /* Liseré d'état en haut de la carte. */
+  .engine::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 2px;
+    background: var(--border-strong);
+    opacity: 0.7;
   }
 
-  article.broken {
-    border-left-color: var(--lossy);
+  .engine.ready::before {
+    background: linear-gradient(90deg, transparent, var(--ok), transparent);
+  }
+
+  .engine.no_adapter::before {
+    background: linear-gradient(90deg, transparent, var(--partial), transparent);
+  }
+
+  .engine.broken::before {
+    background: linear-gradient(90deg, transparent, var(--lossy), transparent);
   }
 
   .top {
@@ -366,31 +397,6 @@
     font-size: 16px;
   }
 
-  .state {
-    font-size: 12px;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: var(--surface-2);
-    color: var(--muted);
-    white-space: nowrap;
-  }
-
-  .ready .state {
-    background: var(--ok-soft);
-    color: var(--ok);
-  }
-
-  .no_adapter .state {
-    background: var(--partial-soft);
-    color: var(--partial);
-  }
-
-  .broken .state {
-    background: var(--lossy-soft);
-    color: var(--lossy);
-  }
-
   .desc {
     color: var(--muted);
     font-size: 13px;
@@ -400,8 +406,11 @@
     margin: 0;
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 3px 12px;
+    gap: 4px 12px;
     font-size: 12.5px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--surface-2);
   }
 
   dt {
@@ -441,11 +450,17 @@
 
   .op {
     display: grid;
-    gap: 8px;
-    padding: 10px 12px;
-    border-radius: var(--radius-sm);
+    gap: 9px;
+    padding: 12px 14px;
+    border-radius: 12px;
     background: var(--surface-2);
     border: 1px solid var(--border);
+    animation: pop var(--t-slow) var(--ease-out) both;
+  }
+
+  .op.confirm {
+    border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+    background: linear-gradient(135deg, var(--accent-soft), transparent 80%), var(--surface-2);
   }
 
   .op li.strong {
@@ -460,22 +475,30 @@
     color: var(--muted);
   }
 
-  .op progress {
-    width: 100%;
-  }
-
   .op.failed {
-    border-color: var(--lossy);
+    border-color: color-mix(in srgb, var(--lossy) 45%, transparent);
+    background: linear-gradient(135deg, var(--lossy-soft), transparent 80%), var(--surface-2);
   }
 
   .small-btn {
     justify-self: start;
   }
 
+  .loading {
+    display: grid;
+    gap: 12px;
+    padding: 20px;
+  }
+
   .soon {
     display: grid;
-    gap: 6px;
+    gap: 8px;
     margin-top: 6px;
+    padding: 18px 20px;
+  }
+
+  .soon h2 {
+    font-size: 15px;
   }
 
   .soon ul {
@@ -483,7 +506,6 @@
     padding: 0;
     list-style: none;
     display: grid;
-    gap: 2px;
   }
 
   .soon li {
@@ -491,8 +513,8 @@
     flex-wrap: wrap;
     align-items: baseline;
     gap: 4px 10px;
-    padding: 6px 2px;
-    border-bottom: 1px solid var(--border);
+    padding: 9px 2px;
+    border-top: 1px solid var(--hairline);
     min-width: 0;
   }
 
@@ -510,25 +532,14 @@
     color: var(--partial);
   }
 
-  .soon .link {
-    margin-top: 0;
-  }
-
   .link {
     align-self: flex-start;
     margin-top: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    border: none;
-    background: none;
-    padding: 0;
-    color: var(--link);
     font-size: 13px;
   }
 
-  .link:hover {
-    text-decoration: underline;
+  .soon .link {
+    margin-top: 0;
   }
 
   .small {

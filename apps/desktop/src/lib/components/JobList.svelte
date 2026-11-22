@@ -2,6 +2,7 @@
   import { L } from "../i18n.svelte";
   import Icon, { type IconName } from "./Icon.svelte";
   import FidelityBadge from "./FidelityBadge.svelte";
+  import ProgressBar from "./ui/ProgressBar.svelte";
   import { store, type Job, type JobStatus } from "../store.svelte";
   import { api, errorText } from "../api";
   import { baseName, formatDuration, verificationText } from "../format";
@@ -75,9 +76,9 @@
   }
 </script>
 
-<section>
+<section class="panel jobs enter" aria-labelledby="jobs-title">
   <header>
-    <h2>Conversions</h2>
+    <h2 id="jobs-title">Conversions</h2>
     <span class="muted summary">
       {#if store.active}{L(`${store.active} en cours ou en attente`, `${store.active} running or waiting`)}{/if}
       {#if store.active && finished}·{/if}
@@ -87,15 +88,15 @@
     </span>
     <div class="actions">
       {#if store.active}
-        <button class="btn" onclick={() => store.cancelAll()}><Icon name="stop" size={13} /> {L("Tout annuler", "Cancel all")}</button>
+        <button class="btn small" onclick={() => store.cancelAll()}><Icon name="stop" size={13} /> {L("Tout annuler", "Cancel all")}</button>
       {/if}
       {#if finished}
-        <button class="btn ghost" onclick={() => store.clearFinished()}>{L("Effacer les terminées", "Clear finished")}</button>
+        <button class="btn small ghost" onclick={() => store.clearFinished()}>{L("Effacer les terminées", "Clear finished")}</button>
       {/if}
     </div>
   </header>
 
-  <div class="list card">
+  <div class="list rows">
     {#each store.jobs as j (j.id)}
       {@const expandable = j.status !== "waiting"}
       <div class="job {j.status}" data-state={j.status} data-job={j.id} aria-busy={j.status === "running"}>
@@ -108,9 +109,7 @@
               <b>{j.targetName}</b>
             </div>
             {#if j.status === "running"}
-              <div class="bar" class:indeterminate={j.fraction == null}>
-                <span style:width={j.fraction != null ? `${Math.max(2, j.fraction * 100)}%` : undefined}></span>
-              </div>
+              <ProgressBar value={j.fraction ?? null} label={L(`Progression de ${j.name}`, `Progress of ${j.name}`)} />
               <div class="sub faint">{progressLabel(j) || L("démarrage…", "starting…")}</div>
             {:else}
               <div class="sub">
@@ -184,71 +183,80 @@
 </section>
 
 <style>
-  section {
+  .jobs {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    overflow: hidden;
   }
 
   header {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 6px 12px;
     flex-wrap: wrap;
+    padding: 14px 14px 14px 18px;
+    border-bottom: 1px solid var(--hairline);
   }
 
   h2 {
-    font-size: 18px;
+    font-size: 16px;
   }
 
   .summary {
-    font-size: 13px;
+    font-size: 12.5px;
   }
 
   .actions {
     margin-left: auto;
     display: flex;
-    gap: 8px;
-  }
-
-  .list {
-    overflow: hidden;
+    gap: 6px;
   }
 
   .job {
-    border-top: 1px solid var(--border);
-  }
-
-  .job:first-child {
-    border-top: none;
+    transition: background var(--t-fast) var(--ease);
+    animation: fade var(--t-slow) var(--ease) both;
   }
 
   .row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 10px 10px 14px;
+    gap: 12px;
+    padding: 11px 10px 11px 18px;
   }
 
   .st {
     display: grid;
     place-items: center;
-    width: 28px;
-    height: 28px;
+    width: 30px;
+    height: 30px;
     border-radius: 50%;
     flex: none;
-    background: var(--surface-2);
+    background: var(--surface-3);
     color: var(--muted);
+    transition:
+      background var(--t) var(--ease),
+      color var(--t) var(--ease),
+      box-shadow var(--t) var(--ease);
   }
 
   .running .st {
-    background: var(--primary-soft);
-    color: var(--primary);
+    color: #fff;
+    background: var(--grad);
+    box-shadow: 0 0 14px -2px var(--accent);
+  }
+
+  .running .st :global(svg) {
+    animation: spin 2.4s linear infinite;
+  }
+
+  :global([data-motion="reduced"]) .running .st :global(svg) {
+    animation: none;
   }
 
   .done .st {
     background: var(--ok-soft);
     color: var(--ok);
+    box-shadow: 0 0 12px -4px var(--ok);
   }
 
   .failed .st {
@@ -260,7 +268,7 @@
     flex: 1;
     min-width: 0;
     display: grid;
-    gap: 4px;
+    gap: 5px;
   }
 
   .name {
@@ -268,20 +276,20 @@
     align-items: center;
     gap: 6px;
     min-width: 0;
-    color: var(--muted);
+    color: var(--faint);
   }
 
   .name span {
     color: var(--text);
-    font-weight: 500;
+    font-weight: 550;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .name b {
-    color: var(--text);
-    font-weight: 600;
+    color: var(--accent);
+    font-weight: 650;
     white-space: nowrap;
   }
 
@@ -321,35 +329,8 @@
     color: var(--lossy);
   }
 
-  .bar {
-    height: 6px;
-    border-radius: 3px;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    overflow: hidden;
-    position: relative;
-  }
-
-  .bar span {
-    display: block;
-    height: 100%;
-    background: linear-gradient(90deg, var(--primary), var(--focus));
-    transition: width 0.25s;
-  }
-
-  .bar.indeterminate span {
-    width: 30%;
-    position: absolute;
-    animation: slide 1.2s ease-in-out infinite;
-  }
-
-  @keyframes slide {
-    from {
-      left: -30%;
-    }
-    to {
-      left: 100%;
-    }
+  .icon-btn :global(svg) {
+    transition: transform var(--t) var(--ease);
   }
 
   .turned :global(svg) {
@@ -357,10 +338,15 @@
   }
 
   .report {
-    padding: 0 16px 14px 52px;
+    margin: 0 14px 14px 60px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--hairline);
+    background: var(--surface-2);
     display: grid;
     gap: 6px;
     font-size: 13px;
+    animation: rise var(--t) var(--ease-out) both;
   }
 
   .report ul {
