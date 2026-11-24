@@ -363,6 +363,9 @@ never in a public issue.
 
 ## License
 
+© 2026 BigFatDeuce. Free software under the GPL-3.0-or-later, see [LICENSE](LICENSE).
+Third-party components keep their own licences.
+
 Chud Converter is free software, released under the
 [GNU General Public License, version 3 or later](LICENSE).
 

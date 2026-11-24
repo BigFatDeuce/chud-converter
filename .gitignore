@@ -23,5 +23,11 @@ desktop.ini
 # Tauri : schémas générés à la compilation
 apps/desktop/src-tauri/gen/
 
-# Réglages locaux de Claude Code
+# Fichiers d'assistants et notes de travail : jamais dans le dépôt public
 .claude/
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
+.cursor/
+.aider*
+*.prompt.md
