@@ -319,7 +319,10 @@ impl Engine for LibreOffice {
 pub(crate) fn verify_office(output: &Path, to: &str) -> Verification {
     let r = match to {
         "pdf" => tool::check_pdf(output),
-        "docx" | "xlsx" | "pptx" => tool::check_zip(output, &["[Content_Types].xml"]),
+        // La partie principale doit exister : un paquet vide ou d'un autre type est refusé.
+        "docx" => tool::check_zip(output, &["[Content_Types].xml", "word/document.xml"]),
+        "xlsx" => tool::check_zip(output, &["[Content_Types].xml", "xl/workbook.xml"]),
+        "pptx" => tool::check_zip(output, &["[Content_Types].xml", "ppt/presentation.xml"]),
         "odt" | "ods" | "odp" => tool::check_zip(output, &["mimetype", "content.xml"]),
         "doc" | "xls" | "ppt" => starts_with(output, &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1])
             .map(|_| tr!("document OLE (format binaire Microsoft) reconnu", "OLE document (Microsoft binary format) recognized").into()),
@@ -352,6 +355,32 @@ fn starts_with(p: &Path, sig: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Un paquet Office sans sa partie principale (vide, ou d'un autre type) est refusé.
+    #[test]
+    fn office_packages_need_their_main_part() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("chud-office-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pack = |name: &str, parts: &[&str]| {
+            let p = dir.join(name);
+            let mut z = zip::ZipWriter::new(std::fs::File::create(&p).unwrap());
+            for part in parts {
+                z.start_file(*part, zip::write::SimpleFileOptions::default()).unwrap();
+                z.write_all(b"<x/>").unwrap();
+            }
+            z.finish().unwrap();
+            p
+        };
+        let empty = pack("vide.docx", &["[Content_Types].xml"]);
+        let sheet = pack("classeur.docx", &["[Content_Types].xml", "xl/workbook.xml"]);
+        let doc = pack("lettre.docx", &["[Content_Types].xml", "word/document.xml"]);
+        assert!(matches!(verify_office(&empty, "docx"), Verification::Failed(_)));
+        assert!(matches!(verify_office(&sheet, "docx"), Verification::Failed(_)));
+        assert!(matches!(verify_office(&sheet, "xlsx"), Verification::Structural(_)));
+        assert!(matches!(verify_office(&doc, "docx"), Verification::Structural(_)));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn urls_are_escaped() {

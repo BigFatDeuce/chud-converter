@@ -626,7 +626,7 @@ fn finalize(staged: &Path, wanted: &Path, sources: &[PathBuf], conflict: Conflic
             Err(e) => return Err(e.into()),
         }
     };
-    let res = if is_dir { move_dir_contents(staged, &target) } else { move_file(staged, &target) };
+    let res = if is_dir { place_dir(staged, &target) } else { move_file(staged, &target) };
     if let Err(e) = res {
         // On libère la réservation (fichier vide ou dossier créé par nous).
         if !overwrite {
@@ -668,13 +668,18 @@ fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Volumes différents : copie vers un fichier temporaire voisin, propre à cette tâche (les
-/// conversions simultanées ne doivent jamais partager ce nom), puis renommage.
-fn copy_then_rename(from: &Path, to: &Path) -> std::io::Result<()> {
+/// Nom temporaire voisin de `to`, propre à cette tâche : les conversions simultanées ne doivent
+/// jamais le partager.
+fn part_path(to: &Path) -> PathBuf {
     static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = to.parent().unwrap_or(Path::new("."));
-    let tmp = dir.join(format!(".~chud-{}-{n}.part", std::process::id()));
+    dir.join(format!(".~chud-{}-{n}.part", std::process::id()))
+}
+
+/// Volumes différents : copie vers un fichier temporaire voisin, puis renommage.
+fn copy_then_rename(from: &Path, to: &Path) -> std::io::Result<()> {
+    let tmp = part_path(to);
     let r = retry_busy(|| std::fs::copy(from, &tmp)).and_then(|_| retry_busy(|| std::fs::rename(&tmp, to)));
     if r.is_err() {
         let _ = std::fs::remove_file(&tmp);
@@ -682,6 +687,36 @@ fn copy_then_rename(from: &Path, to: &Path) -> std::io::Result<()> {
         let _ = std::fs::remove_file(from);
     }
     r
+}
+
+/// Place un dossier résultat sous le nom réservé `target` (dossier vide créé par nous) d'un seul
+/// renommage : le dossier est d'abord assemblé sous un nom temporaire voisin, sur le même volume,
+/// pour qu'on ne voie jamais un résultat à moitié copié sous son vrai nom.
+fn place_dir(staged: &Path, target: &Path) -> std::io::Result<()> {
+    place_dir_via(staged, target, true)
+}
+
+/// `try_rename` à faux force la copie (essai du cas « autre volume »).
+fn place_dir_via(staged: &Path, target: &Path, try_rename: bool) -> std::io::Result<()> {
+    let tmp = part_path(target);
+    if !try_rename || retry_busy(|| std::fs::rename(staged, &tmp)).is_err() {
+        // Autre volume : copie complète sous le nom temporaire.
+        let copied = std::fs::create_dir(&tmp).and_then(|_| move_dir_contents(staged, &tmp));
+        if let Err(e) = copied {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(e);
+        }
+    }
+    // Sous Linux, renommer sur un dossier vide le remplace d'un coup ; Windows refuse, on retire
+    // alors la réservation vide juste avant.
+    let placed = std::fs::rename(&tmp, target).or_else(|_| {
+        std::fs::remove_dir(target)?;
+        retry_busy(|| std::fs::rename(&tmp, target))
+    });
+    if placed.is_err() {
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+    placed
 }
 
 fn move_dir_contents(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -831,6 +866,38 @@ mod tests {
             .collect();
         assert!(left.is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Un dossier résultat arrive complet, d'un seul renommage, sans reste temporaire, même quand
+    /// il faut le copier (autre volume) ou numéroter le nom.
+    #[test]
+    fn folder_results_are_placed_whole_and_leave_nothing_behind() {
+        let dir = std::env::temp_dir().join(format!("chud-place-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let make = |name: &str| {
+            let staged = dir.join(name);
+            std::fs::create_dir_all(staged.join("sous dossier")).unwrap();
+            std::fs::write(staged.join("a.txt"), b"a").unwrap();
+            std::fs::write(staged.join("sous dossier").join("b.txt"), b"b").unwrap();
+            staged
+        };
+        let out = dir.join("sortie");
+        std::fs::create_dir_all(&out).unwrap();
+        let wanted = out.join("pages");
+        let first = super::finalize(&make("s1"), &wanted, &[], super::Conflict::Rename, true).unwrap().unwrap();
+        let second = super::finalize(&make("s2"), &wanted, &[], super::Conflict::Rename, true).unwrap().unwrap();
+        assert_eq!(first, wanted);
+        assert_eq!(second, out.join("pages (1)"));
+        // Chemin « autre volume » : le dossier préparé est copié puis renommé.
+        std::fs::create_dir(out.join("copie")).unwrap();
+        super::place_dir_via(&make("s3"), &out.join("copie"), false).unwrap();
+        for d in [&first, &second, &out.join("copie")] {
+            assert_eq!(std::fs::read(d.join("sous dossier").join("b.txt")).unwrap(), b"b");
+            assert_eq!(std::fs::read(d.join("a.txt")).unwrap(), b"a");
+        }
+        let left: Vec<_> = std::fs::read_dir(&out).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name()).collect();
+        assert!(!left.iter().any(|n| n.to_string_lossy().ends_with(".part")), "{left:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

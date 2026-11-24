@@ -16,7 +16,8 @@ use crate::feature::{Feature, FeatureSet};
 use crate::format::{Category, Compression, FormatCatalog, FormatId};
 use serde::Serialize;
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::hash_map::Entry;
+use std::collections::{BinaryHeap, HashMap};
 
 /// Nombre maximal d'étapes d'un plan (au-delà, la qualité et la lisibilité se dégradent).
 pub const DEFAULT_MAX_STEPS: usize = 3;
@@ -360,7 +361,10 @@ impl<'a> Planner<'a> {
         let mut nodes = vec![Node { format: source.clone(), path: Vec::new(), remaining: initial.clone() }];
         let mut heap = BinaryHeap::new();
         heap.push(Reverse((PlanCost::default(), 0usize)));
-        let mut settled: HashSet<(FormatId, FeatureSet)> = HashSet::new();
+        // État exploré → plus petite profondeur à laquelle il l'a été. Un état déjà atteint par un
+        // chemin moins coûteux mais plus long doit encore être exploré depuis un chemin plus court :
+        // il lui reste plus d'étapes pour atteindre d'autres cibles.
+        let mut settled: HashMap<(FormatId, FeatureSet), usize> = HashMap::new();
         let mut candidates: HashMap<FormatId, Vec<(PlanCost, Vec<usize>)>> = HashMap::new();
 
         while let Some(Reverse((_, idx))) = heap.pop() {
@@ -368,8 +372,17 @@ impl<'a> Planner<'a> {
                 let n = &nodes[idx];
                 (n.format.clone(), n.path.clone(), n.remaining.clone())
             };
-            if !settled.insert((format.clone(), remaining)) || path.len() >= self.max_steps {
+            if path.len() >= self.max_steps {
                 continue;
+            }
+            match settled.entry((format.clone(), remaining)) {
+                Entry::Occupied(e) if *e.get() <= path.len() => continue,
+                Entry::Occupied(mut e) => {
+                    e.insert(path.len());
+                }
+                Entry::Vacant(e) => {
+                    e.insert(path.len());
+                }
             }
             for &ei in self.out.get(&format).map(Vec::as_slice).unwrap_or(&[]) {
                 let e = &self.edges[ei];
@@ -441,6 +454,90 @@ mod tests {
 
     fn cap(from: &str, to: &str, f: Fidelity, keep: &[&str], cost: u32) -> ConversionCap {
         ConversionCap::new(from, to, f, &features(keep), cost)
+    }
+
+    #[test]
+    fn a_cheaper_but_longer_path_does_not_hide_targets_of_a_shorter_one() {
+        // PNG → TIFF → WebP (sans perte, 2 étapes) arrive avant PNG → WebP (avec perte, 1 étape)
+        // au même état. Avec 3 étapes au plus, seul le chemin court peut aller jusqu'à l'ICO.
+        let mut p = Planner::new(cat());
+        p.add_engine(
+            &EngineId::new("a"),
+            &[
+                cap("png", "tiff", Fidelity::Lossless, &["alpha"], 1),
+                cap("tiff", "webp", Fidelity::Lossless, &["alpha"], 1),
+                cap("png", "webp", Fidelity::Lossy, &["alpha"], 1),
+                cap("webp", "gif", Fidelity::Lossless, &["alpha"], 1),
+                cap("gif", "ico", Fidelity::Lossless, &["alpha"], 1),
+            ],
+        );
+        let all = p.plan_all(&"png".into(), None);
+        let ico = all.get(&FormatId::new("ico")).expect("l'ICO est atteignable en 3 étapes");
+        assert_eq!(ico[0].steps.len(), 3);
+    }
+
+    /// Cibles atteignables par énumération de tous les chemins, avec les mêmes règles que
+    /// `plan_all` (pas de retour sur un format déjà produit, intermédiaires autorisés seulement).
+    fn exhaustive_targets(p: &Planner, source: &FormatId) -> std::collections::BTreeSet<String> {
+        fn walk(
+            p: &Planner,
+            source: &FormatId,
+            initial: &FeatureSet,
+            path: &mut Vec<usize>,
+            found: &mut std::collections::BTreeSet<String>,
+        ) {
+            let format = path.last().map_or(source.clone(), |&i| p.edges[i].to.clone());
+            if path.len() >= p.max_steps {
+                return;
+            }
+            for &ei in p.out.get(&format).map(Vec::as_slice).unwrap_or(&[]) {
+                let e = &p.edges[ei];
+                if e.to == *source || e.from == e.to || path.iter().any(|&q| p.edges[q].to == e.to) {
+                    continue;
+                }
+                path.push(ei);
+                let steps: Vec<PlanStep> = path.iter().map(|&i| p.step(i)).collect();
+                let (_, _, rem) = evaluate(p.catalog, source, initial, false, &steps);
+                if has_essential_content(p.catalog, &e.to, &rem) {
+                    found.insert(e.to.as_str().to_owned());
+                }
+                if p.catalog.get(e.to.as_str()).is_some_and(|f| f.can_be_intermediate()) {
+                    walk(p, source, initial, path, found);
+                }
+                path.pop();
+            }
+        }
+        let initial = p.catalog.get(source.as_str()).unwrap().features.clone();
+        let mut found = std::collections::BTreeSet::new();
+        walk(p, source, &initial, &mut Vec::new(), &mut found);
+        found
+    }
+
+    #[test]
+    fn finds_every_target_an_exhaustive_search_finds() {
+        // Petits graphes pseudo-aléatoires (reproductibles) : fidélités, coûts et caractéristiques
+        // conservées varient, pour que des chemins différents arrivent au même état.
+        let formats = ["png", "tiff", "webp", "gif", "ico", "bmp", "jpg", "mkv"];
+        let keeps: [&[&str]; 4] = [&["alpha"], &["alpha", "animation"], &[], &["animation", "audio", "video"]];
+        let fids = [Fidelity::Lossless, Fidelity::Lossy, Fidelity::Depends];
+        let mut seed: u64 = 0x5eed;
+        let mut next = |n: usize| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((seed >> 33) as usize) % n
+        };
+        for round in 0..3000 {
+            let mut p = Planner::new(cat());
+            let caps: Vec<ConversionCap> = (0..6 + next(10))
+                .map(|_| cap(formats[next(formats.len())], formats[next(formats.len())], fids[next(3)], keeps[next(4)], 1 + next(5) as u32))
+                .collect();
+            p.add_engine(&EngineId::new("e"), &caps);
+            for src in ["png", "gif", "mkv"] {
+                let source = FormatId::new(src);
+                let planned: std::collections::BTreeSet<String> =
+                    p.plan_all(&source, None).into_keys().filter(|t| *t != source).map(|t| t.as_str().to_owned()).collect();
+                assert_eq!(planned, exhaustive_targets(&p, &source), "graphe n°{round}, source {src} : {caps:?}");
+            }
+        }
     }
 
     #[test]

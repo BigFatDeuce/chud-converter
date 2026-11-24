@@ -2,6 +2,23 @@
 
 All notable changes to Chud Converter. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Fixes from an independent code review.
+
+### Fixed
+- **Missing targets**: a cheaper but longer route could hide a shorter one that leads further,
+  so some reachable formats were not offered. The planner now checks it against an exhaustive
+  search on thousands of small graphs.
+- **Stuck conversions** (Linux): a helper program left running by an engine could keep the
+  conversion waiting until it ended. The conversion now ends as soon as the engine does.
+- An engine writing very fast can no longer pile up its output in memory.
+- **Folder results** (extracted archives, split PDFs) appear in one go, complete, instead of
+  file by file.
+- Windows: if process containment cannot be set up, Chud no longer keeps an unusable one.
+- Office results (DOCX, XLSX, PPTX) must contain their main part (text, workbook or slides) to
+  pass the check.
+
 ## [0.5.0] — 2026-11-23
 
 A new **Tools** screen: merge, split and rotate PDFs, put several files into one archive.

@@ -100,6 +100,8 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 
 ## Phase 4 — Finition et extensions
 - [ ] Performance (gros fichiers, milliers de fichiers), fuzzing, tests d'interface
+- [ ] Vérification du contenu des documents (texte, tableaux, images retrouvés dans le résultat), au-delà du contrôle de structure actuel
+- [ ] Windows : processus créé suspendu puis placé dans son Job Object avant de démarrer (aujourd'hui un descendant lancé dans les toutes premières millisecondes peut y échapper)
 - [ ] 3D, polices, sous-titres avancés, géo, scientifique, formats anciens
 - [ ] Moteurs IA locaux optionnels (sous-titres whisper.cpp, agrandissement, détourage)
 - [ ] macOS

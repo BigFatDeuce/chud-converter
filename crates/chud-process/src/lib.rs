@@ -209,7 +209,9 @@ pub fn run(
     let mut child = cmd.spawn().map_err(|source| ProcessError::Spawn { program: spec.program.clone(), source })?;
     let guard = platform::contain(&child, spec.memory_limit);
 
-    let (tx, rx) = mpsc::channel::<Msg>();
+    // Canal borné (au plus ~1 Mo en attente) : si l'interface traite moins vite que le programme
+    // n'écrit, le programme attend au lieu de remplir la mémoire.
+    let (tx, rx) = mpsc::sync_channel::<Msg>(64);
     let mut stdout = child.stdout.take().expect("stdout est capturé");
     let mut stderr = child.stderr.take().expect("stderr est capturé");
     let tx_out = tx.clone();
@@ -295,8 +297,15 @@ pub fn run(
     out_split.flush(on_stdout);
     err_split.flush(on_stderr);
     drop(guard);
-    let _ = t_out.join();
-    let _ = t_err.join();
+    // Un descendant sorti du confinement peut garder les tubes ouverts : on n'attend que les
+    // lecteurs déjà terminés. Les autres s'arrêteront seuls à la fermeture des tubes (le canal
+    // fermé les empêche de bloquer en écriture), sans retenir la conversion.
+    drop(rx);
+    for t in [t_out, t_err] {
+        if t.is_finished() {
+            let _ = t.join();
+        }
+    }
 
     let stderr_tail = String::from_utf8_lossy(&tail[tail.len().saturating_sub(spec.stderr_tail)..]).into_owned();
     match failure {
@@ -319,7 +328,7 @@ pub fn run_capture(spec: &ProcessSpec, max_stdout: usize) -> Result<ProcessOutpu
     run(&spec, &|| false, &mut |_| {}, &mut |_| {})
 }
 
-fn pump(r: &mut dyn Read, tx: &mpsc::Sender<Msg>, wrap: fn(Vec<u8>) -> Msg, eof: Msg) {
+fn pump(r: &mut dyn Read, tx: &mpsc::SyncSender<Msg>, wrap: fn(Vec<u8>) -> Msg, eof: Msg) {
     let mut buf = vec![0u8; 16 * 1024];
     loop {
         match r.read(&mut buf) {
@@ -372,13 +381,18 @@ mod platform {
                 info.BasicLimitInformation.LimitFlags |= JOB_OBJECT_LIMIT_PROCESS_MEMORY;
                 info.ProcessMemoryLimit = limit as usize;
             }
-            SetInformationJobObject(
+            let configured = SetInformationJobObject(
                 job,
                 JobObjectExtendedLimitInformation,
                 &info as *const _ as *const core::ffi::c_void,
                 std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            );
-            AssignProcessToJobObject(job, child.as_raw_handle() as HANDLE);
+            ) != 0;
+            // Sans limites ou sans le processus, le job ne protège rien : on le referme et
+            // l'arrêt se replie sur `Child::kill` (le programme principal seulement).
+            if !configured || AssignProcessToJobObject(job, child.as_raw_handle() as HANDLE) == 0 {
+                CloseHandle(job);
+                return Guard { job: std::ptr::null_mut() };
+            }
             Guard { job }
         }
     }
@@ -503,6 +517,28 @@ mod tests {
     fn rejects_relative_program() {
         let e = run_capture(&ProcessSpec::new("ffmpeg"), 0).unwrap_err();
         assert!(matches!(e, ProcessError::NotAbsolute(_)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_descendant_keeping_the_pipes_open_does_not_block() {
+        // `setsid` sort du groupe de processus : le descendant survit et garde stdout ouvert.
+        let start = Instant::now();
+        let out = run_capture(&shell("setsid sleep 30 & echo fini"), 1024).unwrap();
+        assert!(out.stdout_text().contains("fini"));
+        assert!(start.elapsed() < Duration::from_secs(15), "{:?}", start.elapsed());
+    }
+
+    #[test]
+    fn a_fast_writer_is_fully_read_through_the_bounded_channel() {
+        #[cfg(windows)]
+        let script = "for /l %i in (1,1,20000) do @echo ligne %i";
+        #[cfg(unix)]
+        let script = "i=1; while [ $i -le 20000 ]; do echo ligne $i; i=$((i+1)); done";
+        let mut n = 0;
+        let out = run(&shell(script), &|| false, &mut |_| n += 1, &mut |_| {}).unwrap();
+        assert_eq!(out.code, Some(0));
+        assert_eq!(n, 20000);
     }
 
     #[test]
