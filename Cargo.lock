@@ -597,7 +597,7 @@ dependencies = [
 
 [[package]]
 name = "chud-cli"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "chud-core",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "chud-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "file-format",
  "serde",
@@ -628,7 +628,7 @@ dependencies = [
 
 [[package]]
 name = "chud-desktop"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "chud-core",
  "chud-enginemgr",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "chud-enginemgr"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "chud-core",
  "chud-engines",
@@ -670,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "chud-engines"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "chardetng",
  "chud-core",
@@ -687,7 +687,7 @@ dependencies = [
 
 [[package]]
 name = "chud-jobs"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "chud-core",
  "chud-enginemgr",
@@ -704,7 +704,7 @@ dependencies = [
 
 [[package]]
 name = "chud-process"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "chud-core",
  "libc",
@@ -714,7 +714,7 @@ dependencies = [
 
 [[package]]
 name = "chud-shell"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "chud-core",
  "chud-jobs",

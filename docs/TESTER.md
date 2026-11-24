@@ -157,7 +157,7 @@ ne doit avoir disparu : chaque bouton et chaque option d'avant est toujours là.
 | 84 | Premier démarrage (dossier `data` vidé) | L'accueil s'affiche en fenêtre centrée ; les boutons **Tout installer** et **Plus tard** restent visibles même en faisant défiler la liste des moteurs |
 | 85 | Laisser l'application ouverte quelques minutes sur l'écran **Convertir** | Le processeur reste au repos (Gestionnaire des tâches : près de 0 %) ; l'animation du fond ne ralentit pas l'ordinateur |
 
-## Outils : PDF et archives (nouveau, 0.5.0)
+## Outils : PDF et archives (0.5.0)
 
 L'écran **Outils** réunit ce qui n'est pas une conversion. Il faut **qpdf** pour les PDF et **7-Zip**
 pour les archives ; s'ils manquent, l'écran propose de les installer.
@@ -181,6 +181,18 @@ pour les archives ; s'ils manquent, l'écran propose de les installer.
 | 100 | Relancer la même fusion, puis avec « Remplacer l'ancien résultat » | D'abord « … (1).pdf », puis remplacement ; jamais un des fichiers d'origine |
 | 101 | `chud tool`, puis `chud tool pdf-merge "Exemples\rapport.pdf" "Exemples\annexe 2.pdf" --dry-run` | Liste des outils et de leurs options ; aperçu sans rien écrire |
 | 102 | **Moteurs → Calibre → Installer** | Le téléchargement fonctionne de nouveau (erreur 404 corrigée) |
+
+## Corrections après relecture (nouveau, 0.5.1)
+
+Une relecture indépendante du code a trouvé quelques défauts, corrigés ici. Rien ne change à
+l'écran : ces essais vérifient que tout se passe comme avant, en plus sûr.
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 103 | **Diviser un PDF** : `rapport.pdf`, une page par fichier, en gardant l'Explorateur ouvert sur le dossier de sortie | Le dossier `rapport - pages` apparaît d'un coup avec ses 4 PDF, jamais à moitié rempli |
+| 104 | **Convertir** une archive (`bd.cbz` ou un ZIP à vous) en **Dossier** | Même chose : le dossier apparaît complet ; aucun dossier `.~chud-….part` ne reste à côté |
+| 105 | **Convertir** `lettre.odt` en DOCX, puis en XLSX si proposé ; ouvrir le résultat | Le DOCX s'ouvre dans Word ou LibreOffice avec le texte ; le rapport détaillé dit « conteneur ZIP intact » |
+| 106 | Lancer une longue conversion vidéo, puis **Annuler** | Arrêt en une seconde environ ; aucun fichier partiel ; `ffmpeg.exe` disparaît du Gestionnaire des tâches |
 
 ## Écrans qui défilent (corrigé)
 

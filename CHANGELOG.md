@@ -2,7 +2,7 @@
 
 All notable changes to Chud Converter. Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.1] — 2026-11-24
 
 Fixes from an independent code review.
 

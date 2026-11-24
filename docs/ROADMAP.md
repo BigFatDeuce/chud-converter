@@ -100,6 +100,7 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 
 ## Phase 4 — Finition et extensions
 - [ ] Performance (gros fichiers, milliers de fichiers), fuzzing, tests d'interface
+- [x] Relecture indépendante du code : planificateur comparé à une recherche exhaustive, fin des processus bornée, sortie des moteurs bornée, dossiers résultats placés d'un coup — 0.5.1
 - [ ] Vérification du contenu des documents (texte, tableaux, images retrouvés dans le résultat), au-delà du contrôle de structure actuel
 - [ ] Windows : processus créé suspendu puis placé dans son Job Object avant de démarrer (aujourd'hui un descendant lancé dans les toutes premières millisecondes peut y échapper)
 - [ ] 3D, polices, sous-titres avancés, géo, scientifique, formats anciens
