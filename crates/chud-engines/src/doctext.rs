@@ -55,35 +55,43 @@ enum Part {
 fn text_of(path: &Path, format: &str, part: Part) -> Option<String> {
     let main = part == Part::Main;
     match format {
-        "docx" => zip_text(path, |n| {
+        "docx" => zip_text(path, OOXML, |n| {
             if main { n == "word/document.xml" } else { (n.starts_with("word/") && n.ends_with(".xml")) || n == "docProps/core.xml" }
         }),
-        "xlsx" => zip_text(path, |n| {
+        "xlsx" => zip_text(path, OOXML, |n| {
             if main {
                 n == "xl/sharedStrings.xml" || (n.starts_with("xl/worksheets/") && n.ends_with(".xml"))
             } else {
                 (n.starts_with("xl/") && n.ends_with(".xml")) || n == "docProps/core.xml"
             }
         }),
-        "pptx" => zip_text(path, |n| {
+        "pptx" => zip_text(path, OOXML, |n| {
             if main {
                 n.starts_with("ppt/slides/slide") && n.ends_with(".xml")
             } else {
                 (n.starts_with("ppt/") && n.ends_with(".xml")) || n == "docProps/core.xml"
             }
         }),
-        "odt" | "ods" | "odp" => zip_text(path, |n| n == "content.xml" || (!main && (n == "styles.xml" || n == "meta.xml"))),
-        "epub" if main => zip_text(path, |n| {
+        "odt" | "ods" | "odp" => zip_text(path, ALL, |n| n == "content.xml" || (!main && (n == "styles.xml" || n == "meta.xml"))),
+        "epub" if main => zip_text(path, ALL, |n| {
             let n = n.to_ascii_lowercase();
             n.ends_with(".xhtml") || n.ends_with(".html") || n.ends_with(".htm")
         }),
-        "html" if main => read_limited(std::fs::File::open(path).ok()?).map(|b| markup_text(&b)),
+        "html" if main => read_limited(std::fs::File::open(path).ok()?).map(|b| markup_text(&b, ALL)),
         "txt" | "md" | "csv" if main => read_limited(std::fs::File::open(path).ok()?).map(|b| String::from_utf8_lossy(&b).into_owned()),
         _ => None,
     }
 }
 
-fn zip_text(path: &Path, wanted: impl Fn(&str) -> bool) -> Option<String> {
+/// Éléments dont le contenu est du texte du document. `ALL` : tout le contenu hors balises (ODF,
+/// HTML) ; `OOXML` : Word, Excel et PowerPoint rangent le texte dans des éléments `<t>` (`w:t`,
+/// `a:t`…) et y mêlent des réglages écrits en clair (`<wp:align>center</wp:align>`) qu'il ne faut
+/// pas prendre pour des mots ; le titre des métadonnées (`dc:title`) compte aussi.
+type TextElements = Option<&'static [&'static str]>;
+const ALL: TextElements = None;
+const OOXML: TextElements = Some(&["t", "v", "title", "subject", "description"]);
+
+fn zip_text(path: &Path, only: TextElements, wanted: impl Fn(&str) -> bool) -> Option<String> {
     let mut z = zip::ZipArchive::new(std::fs::File::open(path).ok()?).ok()?;
     let mut text = String::new();
     let mut budget = MAX_READ;
@@ -96,7 +104,7 @@ fn zip_text(path: &Path, wanted: impl Fn(&str) -> bool) -> Option<String> {
         let mut buf = Vec::new();
         m.take(budget).read_to_end(&mut buf).ok()?;
         budget = budget.saturating_sub(buf.len() as u64);
-        text.push_str(&markup_text(&buf));
+        text.push_str(&markup_text(&buf, only));
         text.push(' ');
         if budget == 0 {
             break;
@@ -147,12 +155,16 @@ fn separates(local: &str) -> bool {
 
 /// Texte d'un document XML ou HTML : balises retirées, entités décodées ; contenu des éléments
 /// `style`, `script` et `head` (titre technique d'une page, jamais affiché) ignoré.
-fn markup_text(bytes: &[u8]) -> String {
+fn markup_text(bytes: &[u8], only: TextElements) -> String {
     let s = String::from_utf8_lossy(bytes);
     let mut out = String::with_capacity(s.len() / 2);
     let mut rest: &str = &s;
+    // Profondeur dans les éléments retenus (mode `OOXML`).
+    let mut inside = 0usize;
     while let Some(lt) = rest.find('<') {
-        push_decoded(&mut out, &rest[..lt]);
+        if only.is_none() || inside > 0 {
+            push_decoded(&mut out, &rest[..lt]);
+        }
         let Some(gt) = rest[lt..].find('>') else { break };
         let tag = &rest[lt + 1..lt + gt];
         rest = &rest[lt + gt + 1..];
@@ -166,11 +178,23 @@ fn markup_text(bytes: &[u8]) -> String {
             }
             continue;
         }
+        if let Some(names) = only
+            && names.contains(&local.as_str())
+            && !tag.ends_with('/')
+        {
+            if tag.starts_with('/') {
+                inside = inside.saturating_sub(1);
+            } else {
+                inside += 1;
+            }
+        }
         if separates(&local) {
             out.push(' ');
         }
     }
-    push_decoded(&mut out, rest);
+    if only.is_none() {
+        push_decoded(&mut out, rest);
+    }
     out
 }
 
@@ -233,10 +257,18 @@ mod tests {
         // Mot découpé en morceaux de mise en forme, paragraphes, entités, CSS ignorée.
         let t = markup_text(
             br#"<html><head><title>input</title><style>p { margin: 0 }</style></head><w:p><w:r><w:t>Bon</w:t></w:r><w:r><w:t>jour</w:t></w:r></w:p><w:p><w:t>caf&#233; &amp; th&eacute;</w:t></w:p></html>"#,
+            ALL,
         );
         assert!(t.contains("Bonjour"), "{t}");
         assert!(t.contains("café &"), "{t}");
         assert!(!t.contains("margin") && !t.contains("input"), "{t}");
+        // Word : seuls les éléments <t> sont du texte ; les réglages de position ne le sont pas.
+        let t = markup_text(
+            br#"<w:p><w:r><w:drawing><wp:positionH><wp:align>center</wp:align></wp:positionH><wp:positionV><wp:align>top</wp:align></wp:positionV></w:drawing><w:t xml:space="preserve">Bon</w:t><w:t>jour</w:t></w:r></w:p><dc:title>Rapport</dc:title>"#,
+            OOXML,
+        );
+        assert!(t.contains("Bonjour") && t.contains("Rapport"), "{t}");
+        assert!(!t.contains("center") && !t.contains("top"), "{t}");
         let w = words("Le Café, 3.5 kg — les cafés : CAFÉ 2026 x1y2");
         assert_eq!(w, ["café", "cafés"].into_iter().map(String::from).collect());
     }
