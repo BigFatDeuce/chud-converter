@@ -11,6 +11,7 @@
 
 pub mod calibre;
 pub mod data_native;
+mod doctext;
 pub mod exiftool;
 pub mod ffmpeg;
 pub mod ghostscript;

@@ -114,7 +114,10 @@ impl Engine for Calibre {
             return Err(EngineError::Unsupported(format!("{from} → {to}")));
         }
         let stage = Stage::new(ctx, "calibre")?;
-        let input = stage.input(&task.input, &format!("input.{}", tool::ext(from)))?;
+        // Calibre tire le titre d'un document qui n'en a pas du nom du fichier : on lui donne le
+        // nom d'origine (caractères sûrs seulement), pas le nom de travail « input ».
+        let stem = task.name.as_deref().map(safe_stem).filter(|s| !s.is_empty()).unwrap_or_else(|| "input".into());
+        let input = stage.input(&task.input, &format!("{stem}.{}", tool::ext(from)))?;
         let out = stage.path(&format!("output.{}", tool::ext(to)));
         let mut spec = ProcessSpec::new(&self.exe).arg(&input).arg(&out);
         if COMICS.contains(&from) {
@@ -194,7 +197,7 @@ impl Engine for Calibre {
                     Err(tr!("élément FictionBook absent", "FictionBook element missing").into())
                 }
             }),
-            other => return crate::libreoffice::verify_office(output, other),
+            _ => return crate::libreoffice::verify_document(output, task),
         };
         match r {
             Ok(s) => Verification::Structural(s),
@@ -215,9 +218,24 @@ fn mobi_header(p: &Path) -> Result<String, String> {
     }
 }
 
+/// Nom de fichier sûr tiré du nom d'origine : lettres, chiffres, espaces, « - » et « _ »,
+/// 60 caractères au plus. Le titre du livre en est déduit quand le document n'en a pas.
+fn safe_stem(name: &str) -> String {
+    let s: String = name.chars().filter(|c| c.is_alphanumeric() || matches!(c, ' ' | '-' | '_')).take(60).collect();
+    s.trim().to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn working_file_keeps_a_safe_original_name() {
+        assert_eq!(safe_stem("diapos é"), "diapos é");
+        assert_eq!(safe_stem("../a:b*c?\"d<e>|f"), "abcdef");
+        assert_eq!(safe_stem("  .  "), "");
+        assert_eq!(safe_stem(&"x".repeat(100)).len(), 60);
+    }
 
     #[test]
     fn capabilities() {

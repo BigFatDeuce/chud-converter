@@ -101,8 +101,10 @@ fichiers réels. Ce qui est seulement déclaré ou prévu reste décoché.
 ## Phase 4 — Finition et extensions
 - [ ] Performance (gros fichiers, milliers de fichiers), fuzzing, tests d'interface
 - [x] Relecture indépendante du code : planificateur comparé à une recherche exhaustive, fin des processus bornée, sortie des moteurs bornée, dossiers résultats placés d'un coup — 0.5.1
-- [ ] Vérification du contenu des documents (texte, tableaux, images retrouvés dans le résultat), au-delà du contrôle de structure actuel
-- [ ] Windows : processus créé suspendu puis placé dans son Job Object avant de démarrer (aujourd'hui un descendant lancé dans les toutes premières millisecondes peut y échapper)
+- [x] Vérification du texte des documents bureautiques : les mots de l'original retrouvés dans le résultat (LibreOffice, Calibre)
+- [ ] Vérification des tableaux, images et formules des documents (aujourd'hui : structure seulement)
+- [x] Linux : descendants sortis du groupe de processus (`setsid`) arrêtés aussi ; Windows : descendants confinés vérifiés (démarrage suspendu écarté : 0,1 à 0,2 s de plus par lancement pour une fenêtre de quelques microsecondes)
+- [x] Nettoyage : jamais les fichiers d'un autre programme, ni les dossiers de travail d'une autre instance en cours
 - [ ] 3D, polices, sous-titres avancés, géo, scientifique, formats anciens
 - [ ] Moteurs IA locaux optionnels (sous-titres whisper.cpp, agrandissement, détourage)
 - [ ] macOS

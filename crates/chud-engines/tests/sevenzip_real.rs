@@ -47,7 +47,7 @@ fn run(e: &SevenZip, input: &Path, from: &str, to: &str, out: &Path) -> Result<V
     let (from, to) = (FormatId::from(from), FormatId::from(to));
     let options = OptionValues::new().resolve(&e.options(&from, &to)).unwrap();
     let source = e.probe(input, &from);
-    let task = StepTask { input: input.into(), output: out.into(), from, to, options, source };
+    let task = StepTask { input: input.into(), output: out.into(), from, to, options, source, name: None };
     let ctx = ExecContext::new(out.parent().unwrap().into());
     e.execute(&task, &ctx)?;
     Ok(e.verify(out, &task, &ctx))

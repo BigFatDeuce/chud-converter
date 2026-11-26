@@ -207,6 +207,16 @@ impl Drop for Staging {
     }
 }
 
+/// Répertoire de travail « job-<pid>-… » dont le processus n'existe plus. Notre propre numéro
+/// vient d'une instance précédente (numéro réutilisé) : le nettoyage a lieu avant nos tâches.
+fn abandoned(name: &str) -> bool {
+    let Some(rest) = name.strip_prefix("job-") else { return false };
+    match rest.split('-').next().and_then(|p| p.parse::<u32>().ok()) {
+        Some(pid) => pid == std::process::id() || !chud_process::process_alive(pid),
+        None => false,
+    }
+}
+
 fn unique_dir(base: &Path, prefix: &str) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(base)?;
     for i in 0..10_000u32 {
@@ -274,11 +284,13 @@ impl JobRunner {
     }
 
     /// Supprime les répertoires de travail abandonnés (arrêt brutal) plus vieux que `max_age`.
+    /// Ceux d'une autre instance encore en marche (la commande `chud` pendant que l'application
+    /// est ouverte, une très longue conversion…) ne sont jamais touchés.
     pub fn cleanup_stale(&self, max_age: Duration) {
         let Ok(rd) = std::fs::read_dir(self.cache_dir.join("jobs")) else { return };
         for e in rd.flatten() {
             let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > max_age);
-            if old && e.file_name().to_string_lossy().starts_with("job-") {
+            if old && abandoned(&e.file_name().to_string_lossy()) {
                 let _ = std::fs::remove_dir_all(e.path());
             }
         }
@@ -398,6 +410,7 @@ impl JobRunner {
                 to: step.to.clone(),
                 options,
                 source: source_info,
+                name: input.file_stem().map(|s| s.to_string_lossy().into_owned()),
             };
 
             let result = run_engine(
@@ -628,17 +641,24 @@ fn finalize(staged: &Path, wanted: &Path, sources: &[PathBuf], conflict: Conflic
     };
     let res = if is_dir { place_dir(staged, &target) } else { move_file(staged, &target) };
     if let Err(e) = res {
-        // On libère la réservation (fichier vide ou dossier créé par nous).
+        // On libère la réservation, et seulement elle : un dossier n'est retiré que s'il est
+        // resté vide (`place_dir` n'y met rien avant le renommage final), un fichier que s'il
+        // est resté vide. Ce qu'un autre programme y aurait mis entre-temps reste en place.
         if !overwrite {
-            if is_dir {
-                let _ = std::fs::remove_dir_all(&target);
-            } else if std::fs::metadata(&target).map(|m| m.len() == 0).unwrap_or(false) {
-                let _ = std::fs::remove_file(&target);
-            }
+            release_reservation(&target, is_dir);
         }
         return Err(e.into());
     }
     Ok(Some(target))
+}
+
+/// Retire un nom réservé resté vide ; jamais ce qu'un autre programme y aurait mis.
+fn release_reservation(target: &Path, is_dir: bool) {
+    if is_dir {
+        let _ = std::fs::remove_dir(target);
+    } else if std::fs::metadata(target).map(|m| m.is_file() && m.len() == 0).unwrap_or(false) {
+        let _ = std::fs::remove_file(target);
+    }
 }
 
 /// Fichier tenu un instant par un autre programme (aperçu de l'Explorateur, indexation,
@@ -700,15 +720,16 @@ fn place_dir(staged: &Path, target: &Path) -> std::io::Result<()> {
 fn place_dir_via(staged: &Path, target: &Path, try_rename: bool) -> std::io::Result<()> {
     let tmp = part_path(target);
     if !try_rename || retry_busy(|| std::fs::rename(staged, &tmp)).is_err() {
-        // Autre volume : copie complète sous le nom temporaire.
-        let copied = std::fs::create_dir(&tmp).and_then(|_| move_dir_contents(staged, &tmp));
-        if let Err(e) = copied {
+        // Autre volume : copie complète sous le nom temporaire. Ce nom n'est effacé que si c'est
+        // nous qui l'avons créé.
+        std::fs::create_dir(&tmp)?;
+        if let Err(e) = move_dir_contents(staged, &tmp) {
             let _ = std::fs::remove_dir_all(&tmp);
             return Err(e);
         }
     }
     // Sous Linux, renommer sur un dossier vide le remplace d'un coup ; Windows refuse, on retire
-    // alors la réservation vide juste avant.
+    // alors la réservation vide juste avant (`remove_dir` échoue si quelqu'un y a mis quelque chose).
     let placed = std::fs::rename(&tmp, target).or_else(|_| {
         std::fs::remove_dir(target)?;
         retry_busy(|| std::fs::rename(&tmp, target))
@@ -898,6 +919,46 @@ mod tests {
         let left: Vec<_> = std::fs::read_dir(&out).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name()).collect();
         assert!(!left.iter().any(|n| n.to_string_lossy().ends_with(".part")), "{left:?}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Un échec ne retire jamais ce qu'un autre programme a mis dans le dossier réservé.
+    #[test]
+    fn a_failed_result_never_removes_foreign_files() {
+        let dir = std::env::temp_dir().join(format!("chud-foreign-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("pris")).unwrap();
+        std::fs::create_dir_all(dir.join("vide")).unwrap();
+        std::fs::write(dir.join("pris").join("a moi.txt"), b"autre programme").unwrap();
+        std::fs::write(dir.join("rempli.pdf"), b"autre programme").unwrap();
+        std::fs::write(dir.join("reserve.pdf"), b"").unwrap();
+        // Le placement d'un dossier préparé absent échoue sans rien laisser.
+        assert!(super::place_dir(&dir.join("absent"), &dir.join("pris")).is_err());
+        for (name, is_dir) in [("pris", true), ("vide", true), ("rempli.pdf", false), ("reserve.pdf", false)] {
+            super::release_reservation(&dir.join(name), is_dir);
+        }
+        assert_eq!(std::fs::read(dir.join("pris").join("a moi.txt")).unwrap(), b"autre programme");
+        assert_eq!(std::fs::read(dir.join("rempli.pdf")).unwrap(), b"autre programme");
+        assert!(!dir.join("vide").exists() && !dir.join("reserve.pdf").exists());
+        let left: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).map(|e| e.file_name()).collect();
+        assert!(!left.iter().any(|n| n.to_string_lossy().ends_with(".part")), "{left:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_abandoned_working_folders_are_cleaned() {
+        assert!(!super::abandoned("autre-chose"));
+        assert!(!super::abandoned("job-pasunnombre-1-2"));
+        assert!(super::abandoned(&format!("job-{}-000000001-0", std::process::id())));
+        assert!(super::abandoned(&format!("job-{}-000000001-0", u32::MAX - 1)));
+        // Un processus vivant (ici le lanceur de tests sous Windows/Linux : notre parent).
+        let parent = std::process::Command::new(if cfg!(windows) { "cmd" } else { "sh" })
+            .args(if cfg!(windows) { ["/d", "/c", "ping -n 5 127.0.0.1 >nul"] } else { ["-c", "sleep 5", ""] })
+            .spawn()
+            .unwrap();
+        assert!(!super::abandoned(&format!("job-{}-000000001-0", parent.id())));
+        let mut parent = parent;
+        let _ = parent.kill();
+        let _ = parent.wait();
     }
 
     #[test]

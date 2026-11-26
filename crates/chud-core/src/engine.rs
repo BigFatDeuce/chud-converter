@@ -225,6 +225,9 @@ pub struct StepTask {
     /// Options déjà validées et complétées par les valeurs par défaut.
     pub options: OptionValues,
     pub source: Option<SourceInfo>,
+    /// Nom du fichier d'origine, sans extension. Les moteurs qui tirent un titre du nom du
+    /// fichier (Calibre) le reçoivent ainsi, au lieu du nom de travail.
+    pub name: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]

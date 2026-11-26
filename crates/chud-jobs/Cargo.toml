@@ -9,6 +9,7 @@ repository.workspace = true
 
 [dependencies]
 chud-core.workspace = true
+chud-process.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 toml.workspace = true
@@ -20,4 +21,3 @@ chud-enginemgr.workspace = true
 serde_json.workspace = true
 zip.workspace = true
 image.workspace = true
-chud-process.workspace = true

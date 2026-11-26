@@ -651,6 +651,8 @@ mod tests {
             to: to.into(),
             options: opts.resolve(&specs).unwrap(),
             source: None,
+
+            name: None,
         };
         let out = e.execute(&task, &ctx(out.parent().unwrap())).unwrap();
         let v = e.verify(&task.output, &task, &ctx(out_dir(&task)));
@@ -785,6 +787,8 @@ mod tests {
             to: "bmp".into(),
             options: OptionValues::new(),
             source: None,
+
+            name: None,
         };
         e.execute(&task, &ctx(&d)).unwrap();
         assert!(matches!(e.verify(&task.output, &task, &ctx(&d)), Verification::Decoded(ref s) if s.contains("identi")));
@@ -817,6 +821,8 @@ mod tests {
             to: "bmp".into(),
             options: OptionValues::new(),
             source: None,
+
+            name: None,
         };
         let err = e.execute(&task, &ctx(&d)).unwrap_err();
         assert!(matches!(err, EngineError::Refused(_) | EngineError::InvalidInput(_)), "{err:?}");

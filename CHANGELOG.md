@@ -2,6 +2,24 @@
 
 All notable changes to Chud Converter. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Office documents are now checked for their text**: when Chud can read both the original
+  and the result (DOCX, XLSX, PPTX, ODT, ODS, ODP, EPUB, HTML, TXT, Markdown, CSV), the words of
+  the original must be found in the result, otherwise the conversion is reported as failed. The
+  report says how much of the text was found. Layout, images and formulas are still only
+  checked for their structure.
+- **Engines stop reliably** on Linux: stopping a conversion also stops the helper programs an
+  engine moved out of its process group. (On Windows, everything an engine launches already
+  stays in its containment and is stopped with it.)
+- E-books made from a document without a title (by Calibre) were titled “input”; they now take
+  the name of the original file.
+- **Cleanup never touches other files**: after a failure, Chud only removes the empty name it
+  had reserved, never what another program may have put there. Old working folders are only
+  removed when the Chud instance that made them is gone (the `chud` command and the app can run
+  side by side).
+
 ## [0.5.1] — 2026-11-24
 
 Fixes from an independent code review.

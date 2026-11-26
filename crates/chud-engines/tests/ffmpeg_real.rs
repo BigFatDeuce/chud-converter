@@ -55,7 +55,7 @@ fn convert(e: &Ffmpeg, input: &Path, from: &str, to: &str, out: &Path, opts: Opt
     let options = opts.resolve(&specs).expect("options valides");
     let a = e.assess(&StepQuery { from: &from, to: &to, source: source.as_ref(), options: &options });
     assert!(a.unavailable.is_none(), "indisponible : {:?}", a.unavailable);
-    let task = StepTask { input: input.into(), output: out.into(), from, to, options, source };
+    let task = StepTask { input: input.into(), output: out.into(), from, to, options, source, name: None };
     let ctx = ExecContext::new(out.parent().unwrap().into());
     e.execute(&task, &ctx).unwrap_or_else(|err| panic!("échec {} → {} : {err}", task.from, task.to));
     let verification = e.verify(out, &task, &ctx);

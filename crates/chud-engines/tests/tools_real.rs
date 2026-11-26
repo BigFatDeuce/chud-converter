@@ -44,7 +44,7 @@ fn convert(e: &dyn Engine, input: &Path, from: &str, to: &str, out: &Path, opts:
         values.set(k, v.clone());
     }
     let options = values.resolve(&e.options(&from, &to)).unwrap();
-    let task = StepTask { input: input.into(), output: out.into(), from, to, options, source: None };
+    let task = StepTask { input: input.into(), output: out.into(), from, to, options, source: None, name: None };
     let ctx = ExecContext::new(out.parent().unwrap().join("work"));
     let r = e.execute(&task, &ctx).unwrap_or_else(|err| panic!("{} : {err}", e.id()));
     eprintln!("{} {} → {} : {:?}", e.id(), task.from, task.to, r.notes);

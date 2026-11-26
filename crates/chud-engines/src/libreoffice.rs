@@ -311,7 +311,20 @@ impl Engine for LibreOffice {
     }
 
     fn verify(&self, output: &Path, task: &StepTask, _ctx: &ExecContext) -> Verification {
-        verify_office(output, task.to.as_str())
+        verify_document(output, task)
+    }
+}
+
+/// Contrôle de structure, puis relecture du texte quand l'original et le résultat sont lisibles :
+/// les mots de l'original doivent se retrouver dans le résultat.
+pub(crate) fn verify_document(output: &Path, task: &StepTask) -> Verification {
+    match verify_office(output, task.to.as_str()) {
+        Verification::Structural(s) => match crate::doctext::compare(&task.input, task.from.as_str(), output, task.to.as_str()) {
+            Some(Ok(text)) => Verification::Decoded(format!("{s} ; {text}")),
+            Some(Err(e)) => Verification::Failed(e),
+            None => Verification::Structural(s),
+        },
+        other => other,
     }
 }
 

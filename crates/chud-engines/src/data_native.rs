@@ -704,6 +704,8 @@ mod tests {
             to: to.into(),
             options: opts.resolve(&specs).unwrap(),
             source: None,
+
+            name: None,
         };
         let ctx = ExecContext::new(dir.clone());
         let r = e.execute(&task, &ctx).map(|r| {

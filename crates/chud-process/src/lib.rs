@@ -207,7 +207,14 @@ pub fn run(
 
     let start = Instant::now();
     let mut child = cmd.spawn().map_err(|source| ProcessError::Spawn { program: spec.program.clone(), source })?;
-    let guard = platform::contain(&child, spec.memory_limit);
+    let guard = match platform::contain(&child, spec.memory_limit) {
+        Ok(g) => g,
+        Err(source) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(ProcessError::Spawn { program: spec.program.clone(), source });
+        }
+    };
 
     // Canal borné (au plus ~1 Mo en attente) : si l'interface traite moins vite que le programme
     // n'écrit, le programme attend au lieu de remplir la mémoire.
@@ -322,6 +329,12 @@ pub fn run(
     }
 }
 
+/// Le processus `pid` existe-t-il encore ? Sert à ne pas toucher aux fichiers de travail d'une
+/// autre instance de Chud en cours. Un numéro réutilisé répond « oui » : on garde alors un peu trop.
+pub fn process_alive(pid: u32) -> bool {
+    platform::alive(pid)
+}
+
 /// Variante simple : capture stdout (jusqu'à `max_stdout`) sans rappel ligne à ligne.
 pub fn run_capture(spec: &ProcessSpec, max_stdout: usize) -> Result<ProcessOutput, ProcessError> {
     let spec = spec.clone().capture_stdout(max_stdout);
@@ -348,16 +361,38 @@ mod platform {
     use std::os::windows::io::AsRawHandle;
     use std::os::windows::process::CommandExt;
     use std::process::{Child, Command};
-    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, STILL_ACTIVE};
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
     };
+    use windows_sys::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+    /// Le programme est placé dans son Job Object dès sa création, avant d'avoir pu charger ses
+    /// bibliothèques ; ses descendants y naissent ensuite et ne peuvent pas en sortir (le job
+    /// n'autorise pas `CREATE_BREAKAWAY_FROM_JOB`). Un démarrage suspendu fermerait la fenêtre de
+    /// quelques microsecondes restante, mais coûtait 0,1 à 0,2 s par lancement (relevé des fils
+    /// d'exécution) : écarté.
     pub fn configure(cmd: &mut Command, _memory_limit: Option<u64>) {
         cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    /// Le processus existe-t-il encore ? (Un numéro réutilisé répond « oui » : sans danger.)
+    pub fn alive(pid: u32) -> bool {
+        // SAFETY : handle refermé ; `code` valide pendant l'appel.
+        unsafe {
+            let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if h.is_null() {
+                // Accès refusé : le processus existe mais appartient à un autre compte.
+                return std::io::Error::last_os_error().raw_os_error() == Some(5);
+            }
+            let mut code = 0u32;
+            let ok = GetExitCodeProcess(h, &mut code) != 0;
+            CloseHandle(h);
+            ok && code == STILL_ACTIVE as u32
+        }
     }
 
     /// Job Object possédant l'arbre de processus ; sa fermeture tue tous les membres.
@@ -368,7 +403,11 @@ mod platform {
     // SAFETY : un HANDLE de Job Object peut être utilisé depuis n'importe quel thread.
     unsafe impl Send for Guard {}
 
-    pub fn contain(child: &Child, memory_limit: Option<u64>) -> Guard {
+    pub fn contain(child: &Child, memory_limit: Option<u64>) -> std::io::Result<Guard> {
+        Ok(make_job(child, memory_limit))
+    }
+
+    fn make_job(child: &Child, memory_limit: Option<u64>) -> Guard {
         // SAFETY : appels Win32 documentés ; les pointeurs passés sont valides pendant l'appel.
         unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
@@ -446,14 +485,51 @@ mod platform {
         pgid: i32,
     }
 
-    pub fn contain(child: &Child, _memory_limit: Option<u64>) -> Guard {
-        Guard { pgid: child.id() as i32 }
+    pub fn contain(child: &Child, _memory_limit: Option<u64>) -> std::io::Result<Guard> {
+        Ok(Guard { pgid: child.id() as i32 })
+    }
+
+    pub fn alive(pid: u32) -> bool {
+        // SAFETY : le signal 0 ne fait que tester l'existence. EPERM : il existe (autre compte).
+        unsafe { libc::kill(pid as i32, 0) == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM) }
+    }
+
+    /// Descendants de `root` d'après /proc (Linux), y compris ceux sortis du groupe de processus
+    /// (`setsid`). Vide là où /proc n'existe pas.
+    fn descendants(root: i32) -> Vec<i32> {
+        let mut parent_of = Vec::new();
+        if let Ok(rd) = std::fs::read_dir("/proc") {
+            for e in rd.flatten() {
+                let Some(pid) = e.file_name().to_str().and_then(|n| n.parse::<i32>().ok()) else { continue };
+                // « pid (nom) état ppid … » : le nom peut contenir des espaces et des parenthèses.
+                let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else { continue };
+                let Some(rest) = stat.rfind(')').map(|i| &stat[i + 1..]) else { continue };
+                if let Some(ppid) = rest.split_whitespace().nth(1).and_then(|v| v.parse::<i32>().ok()) {
+                    parent_of.push((pid, ppid));
+                }
+            }
+        }
+        let mut found = vec![root];
+        let mut i = 0;
+        while i < found.len() {
+            let p = found[i];
+            let children: Vec<i32> = parent_of.iter().filter(|(c, pp)| *pp == p && !found.contains(c)).map(|(c, _)| *c).collect();
+            found.extend(children);
+            i += 1;
+        }
+        found.remove(0);
+        found
     }
 
     impl Guard {
         pub fn kill_tree(&self, child: &mut Child) {
-            // SAFETY : envoi d'un signal au groupe de processus créé pour ce lancement.
+            // Les descendants d'abord, tant que le lien de parenté existe encore.
+            let tree = descendants(self.pgid);
+            // SAFETY : signaux envoyés au groupe créé pour ce lancement et à ses descendants.
             unsafe {
+                for pid in tree {
+                    libc::kill(pid, libc::SIGKILL);
+                }
                 libc::kill(-self.pgid, libc::SIGKILL);
             }
             let _ = child.kill();
@@ -527,6 +603,41 @@ mod tests {
         let out = run_capture(&shell("setsid sleep 30 & echo fini"), 1024).unwrap();
         assert!(out.stdout_text().contains("fini"));
         assert!(start.elapsed() < Duration::from_secs(15), "{:?}", start.elapsed());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cancelling_also_kills_descendants_outside_the_group() {
+        // Le descendant sort du groupe (`setsid`) puis écrit un fichier 2 s plus tard : il ne
+        // doit jamais y arriver.
+        let marker = std::env::temp_dir().join(format!("chud-escape-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let script = format!("setsid sh -c 'sleep 2; touch {}' & sleep 30", marker.display());
+        let start = Instant::now();
+        let e = run(&shell(&script), &|| start.elapsed() > Duration::from_millis(500), &mut |_| {}, &mut |_| {}).unwrap_err();
+        assert!(matches!(e, ProcessError::Cancelled { .. }));
+        std::thread::sleep(Duration::from_secs(3));
+        assert!(!marker.exists(), "le descendant a survécu à l'annulation");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn descendants_started_at_once_are_contained() {
+        // Le programme lance aussitôt un descendant détaché (`start /b`) : il est confiné aussi.
+        let marker = std::env::temp_dir().join(format!("chud-escape-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let script = format!("start /b cmd /d /c \"ping -n 3 127.0.0.1 >nul & echo x> {}\" & ping -n 30 127.0.0.1 >nul", marker.display());
+        let start = Instant::now();
+        let e = run(&shell(&script), &|| start.elapsed() > Duration::from_millis(500), &mut |_| {}, &mut |_| {}).unwrap_err();
+        assert!(matches!(e, ProcessError::Cancelled { .. }));
+        std::thread::sleep(Duration::from_secs(4));
+        assert!(!marker.exists(), "le descendant a survécu à l'annulation");
+    }
+
+    #[test]
+    fn the_current_process_is_alive() {
+        assert!(process_alive(std::process::id()));
+        assert!(!process_alive(u32::MAX - 1));
     }
 
     #[test]
