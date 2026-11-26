@@ -182,7 +182,7 @@ pour les archives ; s'ils manquent, l'écran propose de les installer.
 | 101 | `chud tool`, puis `chud tool pdf-merge "Exemples\rapport.pdf" "Exemples\annexe 2.pdf" --dry-run` | Liste des outils et de leurs options ; aperçu sans rien écrire |
 | 102 | **Moteurs → Calibre → Installer** | Le téléchargement fonctionne de nouveau (erreur 404 corrigée) |
 
-## Corrections après relecture (nouveau, 0.5.1)
+## Corrections après relecture (0.5.1)
 
 Une relecture indépendante du code a trouvé quelques défauts, corrigés ici. Rien ne change à
 l'écran : ces essais vérifient que tout se passe comme avant, en plus sûr.
@@ -193,6 +193,17 @@ l'écran : ces essais vérifient que tout se passe comme avant, en plus sûr.
 | 104 | **Convertir** une archive (`bd.cbz` ou un ZIP à vous) en **Dossier** | Même chose : le dossier apparaît complet ; aucun dossier `.~chud-….part` ne reste à côté |
 | 105 | **Convertir** `lettre.odt` en DOCX, puis en XLSX si proposé ; ouvrir le résultat | Le DOCX s'ouvre dans Word ou LibreOffice avec le texte ; le rapport détaillé dit « conteneur ZIP intact » |
 | 106 | Lancer une longue conversion vidéo, puis **Annuler** | Arrêt en une seconde environ ; aucun fichier partiel ; `ffmpeg.exe` disparaît du Gestionnaire des tâches |
+
+## Texte des documents vérifié (nouveau, 0.5.2)
+
+Les documents bureautiques produits par LibreOffice et Calibre sont maintenant relus : les mots
+de l'original doivent se retrouver dans le résultat.
+
+| # | Action | Résultat attendu |
+|---|---|---|
+| 107 | **Convertir** `lettre.odt` en DOCX, puis ouvrir le rapport détaillé | « texte relu : 100 % des … mots du document d'origine retrouvés » |
+| 108 | **Convertir** `livre.epub` en DOCX ou ODT | Même ligne dans le rapport ; le texte du livre est bien dans le document |
+| 109 | **Convertir** un document à vous sans titre (un `.txt` ou `.md`) en EPUB, puis l'ouvrir dans une liseuse | Le livre porte le nom du fichier, plus « input » |
 
 ## Écrans qui défilent (corrigé)
 

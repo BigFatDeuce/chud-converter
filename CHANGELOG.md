@@ -2,7 +2,7 @@
 
 All notable changes to Chud Converter. Versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.2] — 2026-11-26
 
 ### Fixed
 - **Office documents are now checked for their text**: when Chud can read both the original
